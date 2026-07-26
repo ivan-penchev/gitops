@@ -61,12 +61,12 @@ spec:
     txtOwnerId: homelab-k8s-pub
     txtPrefix: extdns-pub-
     domainFilters:
-      - 17072021.xyz
+      - ${domain}
     excludeDomains:
-      - int.home.17072021.xyz
+      - ${internal_domain}
     extraArgs:
       # Any host without its own target becomes a CNAME to the tunnel...
-      - --default-targets=d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647.cfargotunnel.com
+      - --default-targets=${tunnel_id}.cfargotunnel.com
       # ...and FORCE it even though the Ingress advertises the LB IP as a target
       # (external-dns >=0.20 otherwise prefers the source target, which for a
       # proxied record would be a private IP that Cloudflare rejects).
@@ -114,14 +114,14 @@ spec:
     txtOwnerId: homelab-k8s-int
     txtPrefix: extdns-int-
     domainFilters:
-      - int.home.17072021.xyz
+      - ${internal_domain}
     # int.home.17072021.xyz is NOT its own Cloudflare zone, so the domain filter
     # alone won't select the parent zone (external-dns matches zones by name).
     # Pin the zone by ID so the zone is selected, while the domain filter still
     # restricts which *records* this instance manages (only *.int.home, never
     # the apex-child public hosts owned by the public instance).
     extraArgs:
-      - --zone-id-filter=efc277581b9a576b31d2f2de7c78cade
+      - --zone-id-filter=${cf_zone_id}
     # No --default-targets: external-dns uses the Ingress status LB IP
     # (192.168.68.40) as the A-record target. No --cloudflare-proxied: these
     # stay grey-cloud (DNS-only), resolvable/reachable on the LAN only.

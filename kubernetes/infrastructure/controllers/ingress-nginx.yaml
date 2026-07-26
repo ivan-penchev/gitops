@@ -40,7 +40,7 @@ spec:
         # Pin a stable LAN IP from the Cilium LB pool (.40-.49) so the internal
         # wildcard DNS A record (*.int.home) has a fixed target.
         annotations:
-          lbipam.cilium.io/ips: "192.168.68.40"
+          lbipam.cilium.io/ips: "${ingress_lb_ip}"
       config:
         # cloudflared/Cloudflare forwards the real client IP + proto in headers.
         use-forwarded-headers: "true"

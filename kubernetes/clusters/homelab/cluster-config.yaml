@@ -1,0 +1,34 @@
+---
+# Central, NON-SECRET shared configuration for the homelab cluster.
+#
+# Single source of truth for the identifiers/addresses that were previously
+# hardcoded across many manifests (zone id, tunnel id, domains, LB IP, ...).
+# Every Flux Kustomization references this via `postBuild.substituteFrom`, so
+# manifests use ${var} placeholders instead of magic strings.
+#
+# SECRETS DO NOT BELONG HERE — this ConfigMap is plaintext in Git. Secrets stay
+# SOPS-encrypted and are consumed via secretKeyRef, never substitution.
+#
+# This is applied by the root `flux-system` Kustomization (path
+# ./kubernetes/clusters/homelab) alongside the infrastructure/apps Kustomizations
+# that consume it, so it exists before they reconcile.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-config
+  namespace: flux-system
+data:
+  # Cloudflare zone `17072021.xyz`.
+  domain: "17072021.xyz"
+  # Internal-only subdomain (grey/DNS-only records, LAN-reachable). NOTE: this is
+  # NOT its own Cloudflare zone — it lives inside `domain` above.
+  internal_domain: "int.home.17072021.xyz"
+  cf_zone_id: "efc277581b9a576b31d2f2de7c78cade"
+  cf_account_id: "f00915f09fdb4b6e6bfd1a75545eab3e"
+  # Cloudflare Tunnel id. The proxied edge target is ${tunnel_id}.cfargotunnel.com.
+  tunnel_id: "d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647"
+  # ingress-nginx LoadBalancer IP (target of *.int.home A records). It is the
+  # first address of the Cilium LB pool below.
+  ingress_lb_ip: "192.168.68.40"
+  lb_pool_start: "192.168.68.40"
+  lb_pool_stop: "192.168.68.49"
