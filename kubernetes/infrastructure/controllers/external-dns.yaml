@@ -1,0 +1,123 @@
+---
+# external-dns — automatic Cloudflare DNS registration driven by Ingress hosts.
+#
+# Routing is fully automatic (no per-Ingress annotations) via TWO instances
+# scoped by hostname suffix, both using the SAME Cloudflare API token
+# (Zone:Read + DNS:Edit on 17072021.xyz):
+#
+#   * public   : any <app>.17072021.xyz Ingress host  -> proxied CNAME to the
+#                cluster tunnel (<tunnel-id>.cfargotunnel.com). Edge TLS via CF.
+#                Scope: domainFilters=17072021.xyz, excludeDomains=int.home.
+#   * internal : any <app>.int.home.17072021.xyz host  -> grey (DNS-only) A
+#                record to the ingress-nginx LoadBalancer IP (LAN only).
+#                Scope: domainFilters=int.home.17072021.xyz.
+#
+# Safety on this SHARED zone (which already holds unrelated records such as
+# smb/jelly/sonarr/... pointing at a different tunnel):
+#   * registry=txt with a UNIQUE txtOwnerId + txtPrefix per instance, so each
+#     instance only ever manages records it created and its TXT bookkeeping
+#     records never collide with existing CNAMEs.
+#   * policy=upsert-only — external-dns NEVER deletes records, so pre-existing
+#     records can't be touched. (Flip to `sync` later for auto-cleanup on app
+#     removal; it stays safe because deletions are gated on txtOwnerId.)
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-dns
+  namespace: external-dns
+spec:
+  interval: 24h
+  url: https://kubernetes-sigs.github.io/external-dns/
+---
+# Public instance: apex-child hosts -> proxied CNAME to the tunnel.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns-public
+  namespace: external-dns
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: external-dns
+      version: "1.21.1"
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: external-dns
+  values:
+    provider:
+      name: cloudflare
+    env:
+      - name: CF_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: cloudflare-api-token
+            key: api-token
+    sources:
+      - ingress
+    policy: upsert-only
+    registry: txt
+    txtOwnerId: homelab-k8s-pub
+    txtPrefix: extdns-pub-
+    domainFilters:
+      - 17072021.xyz
+    excludeDomains:
+      - int.home.17072021.xyz
+    extraArgs:
+      # Any host without its own target becomes a CNAME to the tunnel...
+      - --default-targets=d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647.cfargotunnel.com
+      # ...proxied through Cloudflare's edge (orange cloud) for TLS + WAF.
+      - --cloudflare-proxied
+    # Reconcile shortly after Ingress changes as well as on the poll interval.
+    interval: 1m
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+---
+# Internal instance: *.int.home hosts -> grey A record to the ingress LB IP.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns-internal
+  namespace: external-dns
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: external-dns
+      version: "1.21.1"
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: external-dns
+  values:
+    provider:
+      name: cloudflare
+    env:
+      - name: CF_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: cloudflare-api-token
+            key: api-token
+    sources:
+      - ingress
+    policy: upsert-only
+    registry: txt
+    txtOwnerId: homelab-k8s-int
+    txtPrefix: extdns-int-
+    domainFilters:
+      - int.home.17072021.xyz
+    # No --default-targets: external-dns uses the Ingress status LB IP
+    # (192.168.68.40) as the A-record target. No --cloudflare-proxied: these
+    # stay grey-cloud (DNS-only), resolvable/reachable on the LAN only.
+    interval: 1m
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi

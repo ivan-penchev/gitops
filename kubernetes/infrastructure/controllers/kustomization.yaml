@@ -7,3 +7,4 @@ resources:
   - proxmox-csi.yaml
   - ingress-nginx.yaml
   - cloudflared.yaml
+  - external-dns.yaml
