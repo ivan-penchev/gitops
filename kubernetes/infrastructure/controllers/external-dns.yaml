@@ -17,9 +17,10 @@
 #   * registry=txt with a UNIQUE txtOwnerId + txtPrefix per instance, so each
 #     instance only ever manages records it created and its TXT bookkeeping
 #     records never collide with existing CNAMEs.
-#   * policy=upsert-only — external-dns NEVER deletes records, so pre-existing
-#     records can't be touched. (Flip to `sync` later for auto-cleanup on app
-#     removal; it stays safe because deletions are gated on txtOwnerId.)
+#   * policy=sync — external-dns creates AND deletes records to match the live
+#     Ingresses. Deletions are gated on txtOwnerId, so it only ever removes
+#     records THIS instance created (its own TXT bookkeeping proves ownership);
+#     pre-existing unrelated records in the shared zone are never touched.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -56,7 +57,7 @@ spec:
             key: api-token
     sources:
       - ingress
-    policy: upsert-only
+    policy: sync
     registry: txt
     txtOwnerId: homelab-k8s-pub
     txtPrefix: extdns-pub-
@@ -109,7 +110,7 @@ spec:
             key: api-token
     sources:
       - ingress
-    policy: upsert-only
+    policy: sync
     registry: txt
     txtOwnerId: homelab-k8s-int
     txtPrefix: extdns-int-
