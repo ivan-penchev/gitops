@@ -7,6 +7,13 @@
 # "static hostname is already set in v1alpha1 config". Overriding that doc with
 # `auto: off` + a static hostname is the only combination that validates.
 machine:
+  # proxmox-csi requires topology labels; zone MUST equal the Proxmox node name
+  # and region MUST match the `region` field in the proxmox-csi cloud-config
+  # secret. region/zone are in the kubelet-allowed label set, so Talos can apply
+  # them via machine.nodeLabels without NodeRestriction rejecting them.
+  nodeLabels:
+    topology.kubernetes.io/region: ${region}
+    topology.kubernetes.io/zone: ${zone}
   network:
     interfaces:
       - deviceSelector:

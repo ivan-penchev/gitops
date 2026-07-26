@@ -95,6 +95,8 @@ resource "talos_machine_configuration_apply" "this" {
       cidr     = var.network_cidr_bits
       gateway  = var.network_gateway
       vip      = each.value.role == "controlplane" ? var.cluster_vip : ""
+      region   = var.proxmox_region
+      zone     = var.proxmox_node
     })
   ]
 

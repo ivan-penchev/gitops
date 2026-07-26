@@ -21,9 +21,15 @@ variable "proxmox_insecure" {
 }
 
 variable "proxmox_node" {
-  description = "Proxmox node name."
+  description = "Proxmox node name. Also used as the CSI topology zone (must match the real node name)."
   type        = string
   default     = "pve"
+}
+
+variable "proxmox_region" {
+  description = "CSI topology region label. Must match the `region` field in the proxmox-csi cloud-config secret."
+  type        = string
+  default     = "homelab"
 }
 
 # ---------------------------------------------------------------------------
