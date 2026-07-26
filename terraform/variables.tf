@@ -211,3 +211,108 @@ variable "internal_ingress_ip" {
   type        = string
   default     = "192.168.68.40"
 }
+
+# ---------------------------------------------------------------------------
+# Fileserver LXC (shared media over NFS)
+#
+# A privileged Debian 12 LXC that bind-mounts the host's ZFS media dir and
+# re-exports it over NFS so k8s pods (via csi-driver-nfs) get an RWX shared
+# media tree instead of per-app RWO copies. Created via the root@pam provider
+# alias; NFS is configured over container-SSH (host stays API-only).
+# ---------------------------------------------------------------------------
+variable "fileserver_enabled" {
+  description = "Create the fileserver LXC + its Cloudflare record. Set false for cluster-only applies (then root@pam creds are not needed)."
+  type        = bool
+  default     = true
+}
+
+variable "fileserver_vm_id" {
+  description = "Proxmox CT ID for the fileserver LXC."
+  type        = number
+  default     = 110
+}
+
+variable "fileserver_hostname" {
+  description = "Hostname of the fileserver container."
+  type        = string
+  default     = "fileserver"
+}
+
+variable "fileserver_ip" {
+  description = "Static IPv4 address of the fileserver (no CIDR suffix)."
+  type        = string
+  default     = "192.168.68.11"
+}
+
+variable "fileserver_cores" {
+  description = "vCPU cores for the fileserver LXC."
+  type        = number
+  default     = 2
+}
+
+variable "fileserver_memory" {
+  description = "RAM (MiB) for the fileserver LXC."
+  type        = number
+  default     = 2048
+}
+
+variable "fileserver_swap" {
+  description = "Swap (MiB) for the fileserver LXC."
+  type        = number
+  default     = 512
+}
+
+variable "fileserver_disk_size" {
+  description = "Root filesystem size (GiB) for the fileserver LXC."
+  type        = number
+  default     = 8
+}
+
+variable "fileserver_template" {
+  description = "Proxmox CT template volume id (already present on the node)."
+  type        = string
+  default     = "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
+}
+
+variable "fileserver_host_media_path" {
+  description = "Host path bind-mounted into the container (the existing media dir)."
+  type        = string
+  default     = "/tank/media"
+}
+
+variable "fileserver_container_media_path" {
+  description = "Path inside the container where the host media dir is mounted + exported."
+  type        = string
+  default     = "/srv/media"
+}
+
+variable "fileserver_export_cidr" {
+  description = "CIDR allowed to mount the NFS export."
+  type        = string
+  default     = "192.168.68.0/24"
+}
+
+variable "fileserver_root_password" {
+  description = "Optional root password for console/rescue access to the LXC (SSH is key-only). Empty = no password set."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "fileserver_ssh_public_key_path" {
+  description = "Public key injected as the container's root authorized_key."
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "fileserver_ssh_private_key_path" {
+  description = "Private key used to SSH into the container for NFS provisioning."
+  type        = string
+  default     = "~/.ssh/id_rsa"
+}
+
+variable "fileserver_record_name" {
+  description = "Cloudflare DNS record name (relative to the zone) for the fileserver."
+  type        = string
+  default     = "fileserver.int.home"
+}

@@ -1,0 +1,57 @@
+---
+# Shared media over NFS (fileserver LXC 110 -> 192.168.68.11:/srv/media, which
+# is the host's /tank/media bind-mount).
+#
+# TWO ways to consume it, both via the nfs.csi.k8s.io driver:
+#
+#  1) StorageClass `nfs-media` (below) — DYNAMIC. A PVC using it makes the driver
+#     create a fresh sub-directory under /srv/media (named after the PV). Use
+#     this for NEW per-app scratch shares, not for reaching existing folders.
+#
+#  2) STATIC PV per app (recommended for the media tree) — point a PV straight at
+#     an EXISTING folder (e.g. /srv/media/audiobooks) and pre-bind it to a PVC in
+#     the app's namespace. Because NFS is inherently shared, every app gets its
+#     own PV+PVC pair aimed at the same server; they all read/write the one tree.
+#     Template (create alongside each app):
+#
+#       apiVersion: v1
+#       kind: PersistentVolume
+#       metadata:
+#         name: <app>-media
+#       spec:
+#         capacity: { storage: 1Ti }        # nominal; NFS ignores the quota
+#         accessModes: [ReadWriteMany]
+#         persistentVolumeReclaimPolicy: Retain
+#         storageClassName: nfs-media
+#         mountOptions: [nfsvers=4.1, hard, noatime]
+#         claimRef: { namespace: <app-ns>, name: <app>-media }
+#         csi:
+#           driver: nfs.csi.k8s.io
+#           # volumeHandle must be globally unique: server#share#subdir
+#           volumeHandle: 192.168.68.11#srv/media/<subdir>#
+#           volumeAttributes:
+#             server: 192.168.68.11
+#             share: /srv/media/<subdir>
+#       ---
+#       apiVersion: v1
+#       kind: PersistentVolumeClaim
+#       metadata: { name: <app>-media, namespace: <app-ns> }
+#       spec:
+#         accessModes: [ReadWriteMany]
+#         storageClassName: nfs-media
+#         resources: { requests: { storage: 1Ti } }
+#         volumeName: <app>-media
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-media
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: "192.168.68.11"
+  share: /srv/media
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+mountOptions:
+  - nfsvers=4.1
+  - hard
+  - noatime

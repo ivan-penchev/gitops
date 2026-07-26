@@ -1,0 +1,34 @@
+---
+# csi-driver-nfs (kubernetes-csi). Lets pods mount the fileserver LXC's NFS
+# export (192.168.68.11:/srv/media) as RWX volumes — the shared media tree for
+# Jellyfin / *arr / Audiobookshelf. Chosen for Talos because the node plugin
+# image bundles mount.nfs, so the minimal Talos nodes need no host NFS tooling.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: csi-driver-nfs
+  namespace: kube-system
+spec:
+  interval: 24h
+  url: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: csi-driver-nfs
+  namespace: kube-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: csi-driver-nfs
+      version: "4.13.4"
+      sourceRef:
+        kind: HelmRepository
+        name: csi-driver-nfs
+        namespace: kube-system
+  values:
+    # Controller Deployment + per-node DaemonSet. Defaults are fine for Talos;
+    # the node plugin mounts into the kubelet dir and does the NFS mount itself.
+    externalSnapshotter:
+      enabled: false
