@@ -15,6 +15,10 @@ spec:
   path: ./kubernetes/infrastructure/controllers
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
 ---
 # Layer 2: infrastructure configs (issuers, storage classes, secrets).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
