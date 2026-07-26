@@ -1,10 +1,14 @@
 ---
 # Central, NON-SECRET shared configuration for the homelab cluster.
 #
-# Single source of truth for the identifiers/addresses that were previously
-# hardcoded across many manifests (zone id, tunnel id, domains, LB IP, ...).
-# Every Flux Kustomization references this via `postBuild.substituteFrom`, so
-# manifests use ${var} placeholders instead of magic strings.
+# Single source of truth for the STATIC identifiers/addresses that were
+# previously hardcoded across many manifests (domains, LB IPs). Every Flux
+# Kustomization references this via `postBuild.substituteFrom`, so manifests use
+# ${var} placeholders instead of magic strings.
+#
+# DERIVED / TERRAFORM-OWNED values (cf_zone_id, cf_account_id, tunnel_id) do NOT
+# live here — Terraform writes them to the `cluster-config-tf` ConfigMap
+# (see terraform/cloudflare.tf), which is listed second in every substituteFrom.
 #
 # SECRETS DO NOT BELONG HERE — this ConfigMap is plaintext in Git. Secrets stay
 # SOPS-encrypted and are consumed via secretKeyRef, never substitution.
@@ -23,10 +27,6 @@ data:
   # Internal-only subdomain (grey/DNS-only records, LAN-reachable). NOTE: this is
   # NOT its own Cloudflare zone — it lives inside `domain` above.
   internal_domain: "int.home.17072021.xyz"
-  cf_zone_id: "efc277581b9a576b31d2f2de7c78cade"
-  cf_account_id: "f00915f09fdb4b6e6bfd1a75545eab3e"
-  # Cloudflare Tunnel id. The proxied edge target is ${tunnel_id}.cfargotunnel.com.
-  tunnel_id: "d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647"
   # ingress-nginx LoadBalancer IP (target of *.int.home A records). It is the
   # first address of the Cilium LB pool below.
   ingress_lb_ip: "192.168.68.40"

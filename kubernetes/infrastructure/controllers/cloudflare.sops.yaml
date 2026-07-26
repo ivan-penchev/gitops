@@ -1,49 +1,3 @@
-# Cloudflare credentials — a single file, two correctly-scoped Secrets.
-#
-# These are TWO different Cloudflare credential types (they cannot be merged
-# into one value, and they live in different namespaces):
-#
-#   1. cloudflared-token   (ns cloudflared)   -> Tunnel *connector* token.
-#      Cloudflare Zero Trust dashboard -> Networks -> Tunnels -> create a
-#      `cloudflared` tunnel -> copy the token (the long `eyJ...` string).
-#
-#   2. cloudflare-api-token (ns cert-manager) -> Zone *DNS API* token, used by
-#      cert-manager for the ACME dns-01 challenge.
-#      Cloudflare dashboard -> My Profile -> API Tokens -> Create Token.
-#      Permissions: Zone:DNS:Edit + Zone:Zone:Read; Zone Resources: your zone.
-#
-# HOW TO USE:
-#   1. Replace the two REPLACE_ME values below.
-#   2. Encrypt in place:
-#        sops --encrypt --in-place kubernetes/infrastructure/configs/cloudflare.sops.yaml
-#   3. Uncomment `- cloudflare.sops.yaml` in kustomization.yaml.
-#   4. git add + commit + push. Flux decrypts with the sops-age key and creates
-#      both Secrets; cloudflared and the cert-manager ClusterIssuer then start.
-apiVersion: v1
-kind: Secret
-metadata:
-    name: cloudflared-token
-    namespace: cloudflared
-type: Opaque
-stringData:
-    token: ENC[AES256_GCM,data:U9HmYswZiLT1v4fj6Nocuq4DS7waIrYicafkBHn8zKG0TWfqsyIqk0tsog2ud7K15Q7zlfEV8SswxAlPAQkrrdfdKroOuIhUXEbU6xBCRLUykoa9iHl1qRwttF/MWs8cEocfo0B2wnREE7n83LZpRedm08D0WIGN8eQ3iSZCbBUMBeSTvZMxR/YWVZT2X94ixqTFHp1Qc1+jRI84RYZwly0ipOtob7G7kQxjCdlG7KY6+IS9Au6E2w==,iv:OsbXN16+v66lx9ImsxpTvMCYoOnYhPBknPFkfm+a1Bc=,tag:uHC4b3TvLRJip6nun4gIQQ==,type:str]
-    credentials.json: ENC[AES256_GCM,data:kzbmN6YRrSUd4aTvZbIhTIs3Zf/MqG34cDmX4IHcpyGZjzCccuGW9Pl+CiNGSBycCx8Gf4swSoxBIkWSRGGF6rG33OmRT0NPZd6RJa2FfTAxLwPNgiWNI72/xYc4x4WF+vqW4DAzY/SzX2/q2dj+8esqEXOakYgToEZMBcinx7qsKm5Y/X6INr99I7AwNQP0ZR7drc57bKFZ9THjIbIAllpZ/ta/WAy5cfg=,iv:DtdfnmGrgZjGOcoL7E950kePidWcIuG8KgMLZgPXd8o=,tag:7RmFvCdQUCQUXmeKuGOiRw==,type:str]
-sops:
-    age:
-        - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
-          enc: |
-            -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQTGhPSS9HK3FnVHVqS0d2
-            bDNKQlNQVnMxTHd4cUh0VkE5cHdzdEtQcGpVCjdVM3FRbHltU3JXYlpUQVFiUTls
-            VzB2QmhrQXY1YUZmSHVKY0gwZlBjRmMKLS0tIFlETE5yMFkzUEI0eG1sQTFvVjBQ
-            RmVFYVI1Wmp5akorR2xSUnN2b2J2dmcK6S1iXnt5fHn54BxNPnyqX7oYhxm2vo1t
-            jyrmF3GvI8tIOtNny66j28ePBx70rCUkd0tpzULKrXHXLsijO8gK+A==
-            -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-07-26T10:41:06Z"
-    mac: ENC[AES256_GCM,data:NpfISb2E3tP4/qUgNq7v9vVrpVZMxkkCyv9Jj2n6oPydyVkurUW9am11mOcNht4hF9WULRmI/YEglrL0j1zatwgGWGeKb/e6+W/0yeTWn7QT8K8xSe2oAtT5W+WFecRkqKq8xwWqsTy7hjR+Nd5VvrPtgo1WPZYoSIwAThIrqj8=,iv:lXcqQ56RDuvdwu2Bj1EDrt8TIzA1LS43OdmyR22VzD0=,tag:1CjtnEkIKPnlTJxxw6ouzA==,type:str]
-    encrypted_regex: ^(data|stringData)$
-    version: 3.12.1
----
 apiVersion: v1
 kind: Secret
 metadata:
@@ -51,20 +5,20 @@ metadata:
     namespace: cert-manager
 type: Opaque
 stringData:
-    api-token: ENC[AES256_GCM,data:9AKaHLqHsgnwkddUoYtbvkLVapxHyRG/HEe8KAo8cSt7Hj1IDth6t7r9Q6C4tWK3Hzgx5zs=,iv:HvFLd8ujG7OKVbQzOKtuqpkiwLVdvKbUeM4+uGvgRKg=,tag:k2uQWS7Asobw3qLrd1nuQw==,type:str]
+    api-token: ENC[AES256_GCM,data:RlMmIjddpNav7h/TDCcMVGCgnspOnKts8TqMjA0bx5vmCzXt75W2C7Lpwni/erc0VY/PaPk=,iv:Pi5k4D8iEtjrpHcK6cj7Zcnr4DvVrdAFw6+zUmrJY0k=,tag:9GYWuHJTZ1sYIh8vt45U4Q==,type:str]
 sops:
     age:
         - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQTGhPSS9HK3FnVHVqS0d2
-            bDNKQlNQVnMxTHd4cUh0VkE5cHdzdEtQcGpVCjdVM3FRbHltU3JXYlpUQVFiUTls
-            VzB2QmhrQXY1YUZmSHVKY0gwZlBjRmMKLS0tIFlETE5yMFkzUEI0eG1sQTFvVjBQ
-            RmVFYVI1Wmp5akorR2xSUnN2b2J2dmcK6S1iXnt5fHn54BxNPnyqX7oYhxm2vo1t
-            jyrmF3GvI8tIOtNny66j28ePBx70rCUkd0tpzULKrXHXLsijO8gK+A==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB0UkZ4UTJ0OVZ6eml4bmpL
+            ZXgwdjRzSkdqVFRoOFlrNEkxREoxZkppdGpBCnBIV3I0b2pxbUhUVWZIWEZwYWp5
+            RVV3aUg5YVI3M2xkMEV2LytuQmRmOFUKLS0tIGR5ZzR2NTRrdTllcmhyL0wyMk5r
+            OFNzTlVaZ29KM2wwQ3lxd1cwNXNIVGMK1y2p7XVqba4icCVWCK6N/c4h9mUsFKB6
+            KzqN/WhFvB6W2e5Ru2J3kKve4wHE1j9FaYXV1NJPUyN0uQ6HuxBCmw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-07-26T10:41:06Z"
-    mac: ENC[AES256_GCM,data:NpfISb2E3tP4/qUgNq7v9vVrpVZMxkkCyv9Jj2n6oPydyVkurUW9am11mOcNht4hF9WULRmI/YEglrL0j1zatwgGWGeKb/e6+W/0yeTWn7QT8K8xSe2oAtT5W+WFecRkqKq8xwWqsTy7hjR+Nd5VvrPtgo1WPZYoSIwAThIrqj8=,iv:lXcqQ56RDuvdwu2Bj1EDrt8TIzA1LS43OdmyR22VzD0=,tag:1CjtnEkIKPnlTJxxw6ouzA==,type:str]
+    lastmodified: "2026-07-26T12:09:44Z"
+    mac: ENC[AES256_GCM,data:m9ObqCgxmdY9hzVyVZjTkF3OlvWgqLmOb/9qkgcJr1Mcsb3uBbjQ2tP1D3vVN3Eptc/5UijbU+1a/b0Li7OIsNXyi6ve3+1+OrH2vSWEoCGcw7tVcWJ5PEa0ikwM3qW/pNOYJ/l+f6EJ5iHQVMCpwujLCjnwx7cDXSzXOcvcMtg=,iv:F2IKYDNMJNwb3ErdZJXPSY6PhSbn+0FM2qxS9bdAvLk=,tag:zUIqvSetzPWHlUHtbSnLpw==,type:str]
     encrypted_regex: ^(data|stringData)$
     version: 3.12.1
 ---
@@ -75,19 +29,19 @@ metadata:
     namespace: external-dns
 type: Opaque
 stringData:
-    api-token: ENC[AES256_GCM,data:vJ6P4Xowlu/ITVjsIm8FVJImu3rd2mG/PvuQjmIuuPip35Sk/Lqy5ag2Wup5iLR2KopbCBk=,iv:dOZ+okNNo+tKl/h0K/3jnEVYmHaKqT6boNw6/z/reWI=,tag:kcJ9mGQxUZ7t7vvPrCec+Q==,type:str]
+    api-token: ENC[AES256_GCM,data:7FO1vG/eRGLAfA/GEYBY/fanwYsRusR8zWOw6YMaflrKHvzSBVfmt4hr0IvyCvARt4jFNN0=,iv:R0vK3LkCmcw86CPR/XxB2+V2tZpyA8sRe/WCPRYBhGE=,tag:7MkhFXEDJeb/ztS5AEtkdA==,type:str]
 sops:
     age:
         - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQTGhPSS9HK3FnVHVqS0d2
-            bDNKQlNQVnMxTHd4cUh0VkE5cHdzdEtQcGpVCjdVM3FRbHltU3JXYlpUQVFiUTls
-            VzB2QmhrQXY1YUZmSHVKY0gwZlBjRmMKLS0tIFlETE5yMFkzUEI0eG1sQTFvVjBQ
-            RmVFYVI1Wmp5akorR2xSUnN2b2J2dmcK6S1iXnt5fHn54BxNPnyqX7oYhxm2vo1t
-            jyrmF3GvI8tIOtNny66j28ePBx70rCUkd0tpzULKrXHXLsijO8gK+A==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB0UkZ4UTJ0OVZ6eml4bmpL
+            ZXgwdjRzSkdqVFRoOFlrNEkxREoxZkppdGpBCnBIV3I0b2pxbUhUVWZIWEZwYWp5
+            RVV3aUg5YVI3M2xkMEV2LytuQmRmOFUKLS0tIGR5ZzR2NTRrdTllcmhyL0wyMk5r
+            OFNzTlVaZ29KM2wwQ3lxd1cwNXNIVGMK1y2p7XVqba4icCVWCK6N/c4h9mUsFKB6
+            KzqN/WhFvB6W2e5Ru2J3kKve4wHE1j9FaYXV1NJPUyN0uQ6HuxBCmw==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-07-26T10:41:06Z"
-    mac: ENC[AES256_GCM,data:NpfISb2E3tP4/qUgNq7v9vVrpVZMxkkCyv9Jj2n6oPydyVkurUW9am11mOcNht4hF9WULRmI/YEglrL0j1zatwgGWGeKb/e6+W/0yeTWn7QT8K8xSe2oAtT5W+WFecRkqKq8xwWqsTy7hjR+Nd5VvrPtgo1WPZYoSIwAThIrqj8=,iv:lXcqQ56RDuvdwu2Bj1EDrt8TIzA1LS43OdmyR22VzD0=,tag:1CjtnEkIKPnlTJxxw6ouzA==,type:str]
+    lastmodified: "2026-07-26T12:09:44Z"
+    mac: ENC[AES256_GCM,data:m9ObqCgxmdY9hzVyVZjTkF3OlvWgqLmOb/9qkgcJr1Mcsb3uBbjQ2tP1D3vVN3Eptc/5UijbU+1a/b0Li7OIsNXyi6ve3+1+OrH2vSWEoCGcw7tVcWJ5PEa0ikwM3qW/pNOYJ/l+f6EJ5iHQVMCpwujLCjnwx7cDXSzXOcvcMtg=,iv:F2IKYDNMJNwb3ErdZJXPSY6PhSbn+0FM2qxS9bdAvLk=,tag:zUIqvSetzPWHlUHtbSnLpw==,type:str]
     encrypted_regex: ^(data|stringData)$
     version: 3.12.1
