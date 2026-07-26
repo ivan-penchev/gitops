@@ -67,6 +67,10 @@ spec:
     extraArgs:
       # Any host without its own target becomes a CNAME to the tunnel...
       - --default-targets=d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647.cfargotunnel.com
+      # ...and FORCE it even though the Ingress advertises the LB IP as a target
+      # (external-dns >=0.20 otherwise prefers the source target, which for a
+      # proxied record would be a private IP that Cloudflare rejects).
+      - --force-default-targets
       # ...proxied through Cloudflare's edge (orange cloud) for TLS + WAF.
       - --cloudflare-proxied
     # Reconcile shortly after Ingress changes as well as on the poll interval.
