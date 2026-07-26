@@ -32,6 +32,12 @@ variable "proxmox_region" {
   default     = "homelab"
 }
 
+variable "proxmox_csi_endpoint" {
+  description = "Proxmox API URL used by proxmox-csi-plugin (must include /api2/json)."
+  type        = string
+  default     = "https://192.168.68.2:8006/api2/json"
+}
+
 # ---------------------------------------------------------------------------
 # Datastores / networking (confirmed live)
 # ---------------------------------------------------------------------------
