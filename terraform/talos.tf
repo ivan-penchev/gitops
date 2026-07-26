@@ -16,6 +16,23 @@ locals {
     install_image = "factory.talos.dev/installer/${var.talos_schematic_id}:${var.talos_version}"
   })
 
+  # Cilium is bootstrapped as a Talos inline manifest so the CNI is present the
+  # moment the first control-plane node comes up — otherwise Flux's own
+  # controllers (ordinary pods) could never schedule to install it (chicken/egg).
+  # Rendered from the Cilium Helm chart (talos/cilium/cilium.yaml); Cilium is
+  # owned here (git-versioned in the Talos config), NOT by Flux. Applied to the
+  # control-plane config only. yamlencode keeps the multi-doc string well-formed.
+  cilium_inline_patch = yamlencode({
+    cluster = {
+      inlineManifests = [
+        {
+          name     = "cilium"
+          contents = file("${path.module}/../talos/cilium/cilium.yaml")
+        },
+      ]
+    }
+  })
+
   # In Talos maintenance mode each node DHCPs a temporary lease; the qemu guest
   # agent reports it. We target that IP for the FIRST config apply (which then
   # sets the real static IP + reboots). Pick the first routable, non-loopback,
@@ -43,7 +60,7 @@ data "talos_machine_configuration" "controlplane" {
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   talos_version      = var.talos_version
   kubernetes_version = var.kubernetes_version
-  config_patches     = [local.cluster_patch]
+  config_patches     = [local.cluster_patch, local.cilium_inline_patch]
 }
 
 data "talos_machine_configuration" "worker" {

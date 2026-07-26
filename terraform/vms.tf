@@ -13,6 +13,11 @@ resource "proxmox_virtual_environment_vm" "this" {
   bios          = "seabios"
   scsi_hardware = "virtio-scsi-single"
 
+  # Force-stop (not ACPI/agent graceful shutdown) when destroying/recreating.
+  # Talos has no ACPI powerbutton handler and, if the guest agent is ever absent,
+  # a graceful shutdown blocks indefinitely — force stop keeps destroy hands-off.
+  stop_on_destroy = true
+
   operating_system {
     type = "l26"
   }
