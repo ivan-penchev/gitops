@@ -11,7 +11,7 @@
 #   metadata -> /metadata  : cover art, cached transcodes, logs, backups. Stays
 #                            on proxmox-tank (RWO).
 #   media    -> /mnt/audiobooks : the audio library. NOW backed by the SHARED NFS
-#                            export (fileserver LXC 110, 192.168.68.11:/srv/media
+#                            export (fileserver LXC 110, fileserver.int.home.17072021.xyz:/srv/media
 #                            = host /tank/media) at subdir /audiobooks — i.e. the
 #                            SAME files the old LXC bind-mounted, no longer a
 #                            proxmox-tank copy. Mount path is kept at
@@ -70,9 +70,9 @@ spec:
     name: audiobookshelf-media-nfs
   csi:
     driver: nfs.csi.k8s.io
-    volumeHandle: 192.168.68.11#srv/media/audiobooks#audiobookshelf
+    volumeHandle: fileserver.int.home.17072021.xyz#srv/media/audiobooks#audiobookshelf
     volumeAttributes:
-      server: "192.168.68.11"
+      server: "fileserver.int.home.17072021.xyz"
       share: /srv/media/audiobooks
 ---
 apiVersion: v1

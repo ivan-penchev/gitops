@@ -1,6 +1,6 @@
 ---
 # csi-driver-nfs (kubernetes-csi). Lets pods mount the fileserver LXC's NFS
-# export (192.168.68.11:/srv/media) as RWX volumes — the shared media tree for
+# export (fileserver.int.home.17072021.xyz:/srv/media) as RWX volumes — the shared media tree for
 # Jellyfin / *arr / Audiobookshelf. Chosen for Talos because the node plugin
 # image bundles mount.nfs, so the minimal Talos nodes need no host NFS tooling.
 apiVersion: source.toolkit.fluxcd.io/v1

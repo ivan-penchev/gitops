@@ -1,5 +1,5 @@
 ---
-# Shared media over NFS (fileserver LXC 110 -> 192.168.68.11:/srv/media, which
+# Shared media over NFS (fileserver LXC 110 -> fileserver.int.home.17072021.xyz:/srv/media, which
 # is the host's /tank/media bind-mount).
 #
 # TWO ways to consume it, both via the nfs.csi.k8s.io driver:
@@ -28,9 +28,9 @@
 #         csi:
 #           driver: nfs.csi.k8s.io
 #           # volumeHandle must be globally unique: server#share#subdir
-#           volumeHandle: 192.168.68.11#srv/media/<subdir>#
+#           volumeHandle: fileserver.int.home.17072021.xyz#srv/media/<subdir>#
 #           volumeAttributes:
-#             server: 192.168.68.11
+#             server: fileserver.int.home.17072021.xyz
 #             share: /srv/media/<subdir>
 #       ---
 #       apiVersion: v1
@@ -47,7 +47,7 @@ metadata:
   name: nfs-media
 provisioner: nfs.csi.k8s.io
 parameters:
-  server: "192.168.68.11"
+  server: "fileserver.int.home.17072021.xyz"
   share: /srv/media
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
