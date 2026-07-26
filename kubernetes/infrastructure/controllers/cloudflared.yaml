@@ -1,7 +1,30 @@
 ---
+# Locally-managed tunnel config. Because our Cloudflare API token lacks the
+# Zero Trust "Tunnel: Edit" permission, we do NOT use the remote (dashboard)
+# config. Instead cloudflared runs in credentials-file mode and reads its
+# ingress rules from this ConfigMap (GitOps-managed). Any hostname CNAME'd to
+# this tunnel (<app>.17072021.xyz) is forwarded to ingress-nginx in-cluster;
+# ingress-nginx then routes by Host header. Only hosts explicitly pointed at
+# this tunnel via DNS ever arrive here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cloudflared
+data:
+  config.yaml: |
+    tunnel: d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+    # Origin requests keep their original Host header, so ingress-nginx can
+    # route by hostname. Catch-all -> ingress; ingress 404s unknown hosts.
+    ingress:
+      - service: http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80
+---
 # Cloudflare Tunnel connector — the ONLY inbound path from the internet (no
-# public IP / CGNAT). The tunnel token is a SOPS-encrypted secret named
-# `cloudflared-token` created in infrastructure/configs.
+# public IP / CGNAT). Runs in credentials-file mode using `credentials.json`
+# from the SOPS-encrypted `cloudflared-token` Secret.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,20 +44,44 @@ spec:
     spec:
       containers:
         - name: cloudflared
-          image: cloudflare/cloudflared:latest # TODO: pin a digest/tag
+          image: cloudflare/cloudflared:2026.7.3
           args:
             - tunnel
-            - --no-autoupdate
+            - --config
+            - /etc/cloudflared/config.yaml
             - run
-          env:
-            - name: TUNNEL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: cloudflared-token
-                  key: token
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: creds
+              mountPath: /etc/cloudflared/creds
+              readOnly: true
           resources:
             requests:
               cpu: 50m
               memory: 64Mi
             limits:
               memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config
+        - name: creds
+          secret:
+            secretName: cloudflared-token
+            items:
+              - key: credentials.json
+                path: credentials.json

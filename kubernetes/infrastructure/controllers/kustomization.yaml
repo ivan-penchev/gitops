@@ -5,4 +5,5 @@ resources:
   - cloudflare.sops.yaml
   - cert-manager.yaml
   - proxmox-csi.yaml
+  - ingress-nginx.yaml
   - cloudflared.yaml

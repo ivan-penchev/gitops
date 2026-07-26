@@ -22,6 +22,10 @@ terraform {
       source  = "hashicorp/local"
       version = ">= 2.4"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.52"
+    }
   }
 
   # Local state (homelab choice). Contains Talos secrets + kubeconfig — gitignored.

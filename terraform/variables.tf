@@ -184,3 +184,24 @@ variable "sops_age_key_file" {
   type        = string
   default     = ""
 }
+
+# ---------------------------------------------------------------------------
+# Cloudflare DNS
+# ---------------------------------------------------------------------------
+variable "cloudflare_zone_id" {
+  description = "Cloudflare zone ID for 17072021.xyz."
+  type        = string
+  default     = "efc277581b9a576b31d2f2de7c78cade"
+}
+
+variable "cloudflare_tunnel_id" {
+  description = "Cloudflare Tunnel ID that the in-cluster cloudflared connects to."
+  type        = string
+  default     = "d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647"
+}
+
+variable "internal_ingress_ip" {
+  description = "LAN IP assigned to the ingress-nginx LoadBalancer (Cilium LB pool)."
+  type        = string
+  default     = "192.168.68.40"
+}

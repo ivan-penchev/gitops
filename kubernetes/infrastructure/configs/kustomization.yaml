@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - cluster-issuer.yaml
   - cilium-lb.yaml
+  - internal-cert.yaml
   # Cloudflare creds live in ONE SOPS file (two namespaced Secrets inside).
   # It lives in the controllers layer (with its cloudflared consumer + the
   # cert-manager namespace), decrypted by the controllers Kustomization.

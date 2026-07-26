@@ -1,0 +1,19 @@
+---
+# Wildcard TLS for internal apps. cert-manager solves DNS-01 via the Cloudflare
+# API token (Let's Encrypt DOES issue multi-level wildcards). The resulting
+# `int-home-tls` Secret is used by ingress-nginx as its default SSL cert (see
+# controller.extraArgs.default-ssl-certificate), so every *.int.home host is
+# served over valid HTTPS on the LAN without a per-Ingress tls block.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: int-home-wildcard
+  namespace: ingress-nginx
+spec:
+  secretName: int-home-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.int.home.17072021.xyz"
+  dnsNames:
+    - "*.int.home.17072021.xyz"

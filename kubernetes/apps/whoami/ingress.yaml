@@ -1,0 +1,44 @@
+---
+# PUBLIC: internet -> Cloudflare edge (TLS) -> tunnel -> ingress-nginx -> whoami.
+# No tls block: TLS is terminated at the Cloudflare edge; the tunnel -> origin
+# leg is plain HTTP inside the cluster.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami-public
+  namespace: whoami
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: whoami.17072021.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  number: 80
+---
+# INTERNAL: LAN client -> DNS (*.int.home -> ingress LB .40) -> ingress-nginx.
+# HTTPS is served with the ingress-nginx default cert (the int-home-tls
+# wildcard), so no per-Ingress tls block is needed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami-internal
+  namespace: whoami
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: whoami.int.home.17072021.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  number: 80
