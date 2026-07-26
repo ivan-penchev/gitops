@@ -115,6 +115,13 @@ spec:
     txtPrefix: extdns-int-
     domainFilters:
       - int.home.17072021.xyz
+    # int.home.17072021.xyz is NOT its own Cloudflare zone, so the domain filter
+    # alone won't select the parent zone (external-dns matches zones by name).
+    # Pin the zone by ID so the zone is selected, while the domain filter still
+    # restricts which *records* this instance manages (only *.int.home, never
+    # the apex-child public hosts owned by the public instance).
+    extraArgs:
+      - --zone-id-filter=efc277581b9a576b31d2f2de7c78cade
     # No --default-targets: external-dns uses the Ingress status LB IP
     # (192.168.68.40) as the A-record target. No --cloudflare-proxied: these
     # stay grey-cloud (DNS-only), resolvable/reachable on the LAN only.
