@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - cluster-issuer.yaml
   - cilium-lb.yaml
-  # SOPS-encrypted secrets (add after `terraform apply`, then commit):
-  #   - cloudflare-api-token.sops.yaml   (ns cert-manager, key api-token)
-  #   - cloudflared-token.sops.yaml      (ns cloudflared,  key token)
-  #   - proxmox-csi-plugin.sops.yaml     (ns kube-system,  cloud config)
+  # Cloudflare creds live in ONE SOPS file (two namespaced Secrets inside).
+  # Fill the two values, `sops --encrypt --in-place` it, then uncomment:
+  #   - cloudflare.sops.yaml   (cloudflared-token @ cloudflared, cloudflare-api-token @ cert-manager)

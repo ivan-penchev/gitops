@@ -1,0 +1,39 @@
+# Cloudflare credentials — a single file, two correctly-scoped Secrets.
+#
+# These are TWO different Cloudflare credential types (they cannot be merged
+# into one value, and they live in different namespaces):
+#
+#   1. cloudflared-token   (ns cloudflared)   -> Tunnel *connector* token.
+#      Cloudflare Zero Trust dashboard -> Networks -> Tunnels -> create a
+#      `cloudflared` tunnel -> copy the token (the long `eyJ...` string).
+#
+#   2. cloudflare-api-token (ns cert-manager) -> Zone *DNS API* token, used by
+#      cert-manager for the ACME dns-01 challenge.
+#      Cloudflare dashboard -> My Profile -> API Tokens -> Create Token.
+#      Permissions: Zone:DNS:Edit + Zone:Zone:Read; Zone Resources: your zone.
+#
+# HOW TO USE:
+#   1. Replace the two REPLACE_ME values below.
+#   2. Encrypt in place:
+#        sops --encrypt --in-place kubernetes/infrastructure/configs/cloudflare.sops.yaml
+#   3. Uncomment `- cloudflare.sops.yaml` in kustomization.yaml.
+#   4. git add + commit + push. Flux decrypts with the sops-age key and creates
+#      both Secrets; cloudflared and the cert-manager ClusterIssuer then start.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-token
+  namespace: cloudflared
+type: Opaque
+stringData:
+  token: REPLACE_ME_tunnel_connector_token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+type: Opaque
+stringData:
+  api-token: REPLACE_ME_zone_dns_api_token
