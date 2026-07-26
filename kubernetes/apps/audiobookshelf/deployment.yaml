@@ -80,7 +80,7 @@ spec:
             claimName: audiobookshelf-metadata
         - name: media
           persistentVolumeClaim:
-            claimName: audiobookshelf-media
+            claimName: audiobookshelf-media-nfs
 ---
 apiVersion: v1
 kind: Service

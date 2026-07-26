@@ -6,17 +6,21 @@
 #
 #   config   -> /config    : the SQLite database (users, listening sessions /
 #                            statistics, server settings). SMALL but critical —
-#                            this is the "username & statistics" data.
-#   metadata -> /metadata  : cover art, cached transcodes, logs, backups.
-#   media    -> /mnt/audiobooks : the audio library. Kept at the SAME path the
-#                            old LXC used (mp=/mnt/audiobooks) so the library
-#                            folder paths stored in the DB stay valid after the
-#                            backup/restore. Filled once via host rsync from
-#                            /tank/media/audiobooks.
-#
-# proxmox-tank has allowVolumeExpansion=true — bump `media` storage below if the
-# library is larger than 100Gi (edit + `kubectl` apply / Flux reconcile expands
-# in place).
+#                            this is the "username & statistics" data. Stays on
+#                            proxmox-tank (RWO).
+#   metadata -> /metadata  : cover art, cached transcodes, logs, backups. Stays
+#                            on proxmox-tank (RWO).
+#   media    -> /mnt/audiobooks : the audio library. NOW backed by the SHARED NFS
+#                            export (fileserver LXC 110, 192.168.68.11:/srv/media
+#                            = host /tank/media) at subdir /audiobooks — i.e. the
+#                            SAME files the old LXC bind-mounted, no longer a
+#                            proxmox-tank copy. Mount path is kept at
+#                            /mnt/audiobooks so the library folder paths stored in
+#                            the DB stay valid. RWX so future apps can share the
+#                            tree; Retain so deleting the claim never touches the
+#                            real library. ABS runs as root and the export is
+#                            no_root_squash, so the UID/GID 100000 file ownership
+#                            is readable/writable.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -43,15 +47,44 @@ spec:
     requests:
       storage: 10Gi
 ---
+# Static PV bound straight to the existing /srv/media/audiobooks folder on the
+# NFS fileserver (no dynamic sub-dir provisioning). One PV per consuming
+# namespace is the pattern for reaching a shared NFS tree.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: audiobookshelf-media-nfs
+spec:
+  capacity:
+    storage: 1Ti          # nominal; NFS ignores the quota
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-media
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - noatime
+  claimRef:
+    namespace: audiobookshelf
+    name: audiobookshelf-media-nfs
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: 192.168.68.11#srv/media/audiobooks#audiobookshelf
+    volumeAttributes:
+      server: "192.168.68.11"
+      share: /srv/media/audiobooks
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: audiobookshelf-media
+  name: audiobookshelf-media-nfs
   namespace: audiobookshelf
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: proxmox-tank
+    - ReadWriteMany
+  storageClassName: nfs-media
   resources:
     requests:
-      storage: 100Gi
+      storage: 1Ti
+  volumeName: audiobookshelf-media-nfs
