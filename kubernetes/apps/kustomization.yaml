@@ -3,3 +3,4 @@ kind: Kustomization
 # Workloads. Each app lives in its own subdirectory.
 resources:
   - whoami
+  - audiobookshelf

@@ -1,0 +1,96 @@
+---
+# Audiobookshelf — official image, version-pinned to match the LXC we are
+# migrating FROM (2.35.0) so the backup/restore is exactly compatible. Listens
+# on port 80 in the container. Single replica with a Recreate strategy because
+# all three volumes are RWO (a rolling update can't attach them to two pods).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audiobookshelf
+  namespace: audiobookshelf
+  labels:
+    app: audiobookshelf
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: audiobookshelf
+  template:
+    metadata:
+      labels:
+        app: audiobookshelf
+    spec:
+      securityContext:
+        # ABS runs as root in the official image; the restored DB and the
+        # rsynced media are root-owned, so keep uid/gid 0 to match the LXC.
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+      containers:
+        - name: audiobookshelf
+          image: ghcr.io/advplyr/audiobookshelf:2.35.0
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: PORT
+              value: "80"
+            - name: CONFIG_PATH
+              value: /config
+            - name: METADATA_PATH
+              value: /metadata
+            - name: TZ
+              value: Europe/Copenhagen
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: metadata
+              mountPath: /metadata
+            - name: media
+              mountPath: /mnt/audiobooks
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: audiobookshelf-config
+        - name: metadata
+          persistentVolumeClaim:
+            claimName: audiobookshelf-metadata
+        - name: media
+          persistentVolumeClaim:
+            claimName: audiobookshelf-media
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audiobookshelf
+  namespace: audiobookshelf
+spec:
+  selector:
+    app: audiobookshelf
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

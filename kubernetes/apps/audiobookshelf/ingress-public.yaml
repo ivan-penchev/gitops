@@ -1,0 +1,31 @@
+---
+# PUBLIC: internet -> Cloudflare edge (TLS) -> tunnel -> ingress-nginx -> ABS.
+# The host audiobookshelf.${domain} is auto-registered by external-dns as a
+# proxied CNAME to the cluster tunnel (same pattern as whoami). No tls block:
+# TLS terminates at the Cloudflare edge; tunnel -> origin is plain HTTP.
+#
+# NOTE: this file is intentionally NOT in kustomization.yaml until the ABS
+# backup has been restored, so an uninitialized (open-signup) ABS is never
+# exposed publicly. Add it to kustomization.yaml resources to go live.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: audiobookshelf-public
+  namespace: audiobookshelf
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: audiobookshelf.${domain}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: audiobookshelf
+                port:
+                  number: 80

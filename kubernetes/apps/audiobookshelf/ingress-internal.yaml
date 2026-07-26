@@ -1,0 +1,31 @@
+---
+# INTERNAL: LAN client -> DNS (*.int.home -> ingress LB) -> ingress-nginx -> ABS.
+# HTTPS via the ingress-nginx default int-home wildcard cert. This is the ONLY
+# ingress enabled during migration so an un-restored (open "create admin") ABS
+# is never reachable from the internet. The public ingress is added once the
+# backup is restored (see ingress-public.yaml).
+#
+# ABS uses websockets (socket.io) for live progress/UI and allows cover/book
+# uploads, so raise the proxy timeouts and body size.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: audiobookshelf-internal
+  namespace: audiobookshelf
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: audiobookshelf.${internal_domain}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: audiobookshelf
+                port:
+                  number: 80

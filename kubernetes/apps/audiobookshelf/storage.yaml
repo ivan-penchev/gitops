@@ -1,0 +1,57 @@
+---
+# Audiobookshelf persistent volumes, all on the existing proxmox-csi
+# `proxmox-tank` StorageClass (RWO block volumes / ZFS zvols on the `tank`
+# pool). volumeBindingMode is WaitForFirstConsumer, so each zvol is created
+# and attached to the worker that first schedules the ABS pod.
+#
+#   config   -> /config    : the SQLite database (users, listening sessions /
+#                            statistics, server settings). SMALL but critical —
+#                            this is the "username & statistics" data.
+#   metadata -> /metadata  : cover art, cached transcodes, logs, backups.
+#   media    -> /mnt/audiobooks : the audio library. Kept at the SAME path the
+#                            old LXC used (mp=/mnt/audiobooks) so the library
+#                            folder paths stored in the DB stay valid after the
+#                            backup/restore. Filled once via host rsync from
+#                            /tank/media/audiobooks.
+#
+# proxmox-tank has allowVolumeExpansion=true — bump `media` storage below if the
+# library is larger than 100Gi (edit + `kubectl` apply / Flux reconcile expands
+# in place).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audiobookshelf-config
+  namespace: audiobookshelf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-tank
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audiobookshelf-metadata
+  namespace: audiobookshelf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-tank
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audiobookshelf-media
+  namespace: audiobookshelf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-tank
+  resources:
+    requests:
+      storage: 100Gi
