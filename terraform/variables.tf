@@ -186,18 +186,24 @@ variable "sops_age_key_file" {
 }
 
 # ---------------------------------------------------------------------------
-# Cloudflare DNS
+# Cloudflare
 # ---------------------------------------------------------------------------
-variable "cloudflare_zone_id" {
-  description = "Cloudflare zone ID for 17072021.xyz."
+# zone id + account id are DERIVED from the domain at apply time
+# (data.cloudflare_zone) and the tunnel is CREATED by Terraform
+# (cloudflare_tunnel). All three are written into the `cluster-config-tf`
+# ConfigMap that Flux substitutes, so they are no longer hand-copied magic
+# strings. Requires CLOUDFLARE_API_TOKEN with Zone:Read + Account /
+# Cloudflare Tunnel:Edit.
+variable "cloudflare_domain" {
+  description = "Apex domain / Cloudflare zone name (used to derive zone id + account id)."
   type        = string
-  default     = "efc277581b9a576b31d2f2de7c78cade"
+  default     = "17072021.xyz"
 }
 
-variable "cloudflare_tunnel_id" {
-  description = "Cloudflare Tunnel ID that the in-cluster cloudflared connects to."
+variable "cloudflare_tunnel_name" {
+  description = "Name of the Cloudflare Tunnel Terraform creates for the cluster."
   type        = string
-  default     = "d5f7a187-d8ac-4eb3-900f-d2c2a2d8f647"
+  default     = "homelab-k8s"
 }
 
 variable "internal_ingress_ip" {

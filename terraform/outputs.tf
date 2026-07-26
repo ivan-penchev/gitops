@@ -37,3 +37,18 @@ output "node_ips" {
   description = "Static IPs assigned to each Talos node."
   value       = { for k, v in local.nodes : k => v.ip }
 }
+
+output "cloudflare_tunnel_id" {
+  description = "ID of the Terraform-created Cloudflare Tunnel."
+  value       = cloudflare_tunnel.homelab.id
+}
+
+output "cloudflare_zone_id" {
+  description = "Derived Cloudflare zone id for the domain."
+  value       = data.cloudflare_zone.main.id
+}
+
+output "cloudflare_account_id" {
+  description = "Derived Cloudflare account id for the domain."
+  value       = data.cloudflare_zone.main.account_id
+}
