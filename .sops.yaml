@@ -10,5 +10,4 @@
 creation_rules:
   - path_regex: kubernetes/.*\.sops\.ya?ml$
     encrypted_regex: "^(data|stringData)$"
-    # Replace with YOUR age public key from `age-keygen`.
-    age: "age1REPLACE_WITH_YOUR_PUBLIC_KEY"
+    age: "age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa"

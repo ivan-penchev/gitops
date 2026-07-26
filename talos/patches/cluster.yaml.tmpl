@@ -1,6 +1,8 @@
 # Cluster-wide patch applied to BOTH control-plane and worker configs:
 # - Cilium owns networking (cni: none), kube-proxy disabled (Cilium replaces it)
-# - Talos installs to the virtio-scsi boot disk
+# - Talos installs to the virtio-scsi boot disk via the Image Factory schematic
+#   installer, so the on-disk system keeps our extensions (qemu-guest-agent) and
+#   the exact pinned Talos version after kexec.
 # - Nodes resolve DNS via Pi-hole
 cluster:
   network:
@@ -11,6 +13,7 @@ cluster:
 machine:
   install:
     disk: ${install_disk}
+    image: ${install_image}
   network:
     nameservers:
       - ${nameserver}

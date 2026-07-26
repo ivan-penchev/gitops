@@ -8,6 +8,12 @@ locals {
   cluster_patch = templatefile("${path.module}/../talos/patches/cluster.yaml.tmpl", {
     install_disk = "/dev/sda" # virtio-scsi boot disk (scsi0)
     nameserver   = var.nameserver
+    # Install the Image Factory schematic installer (NOT the provider's bundled
+    # ghcr.io/siderolabs/installer:<machinery-version>). This pins the on-disk
+    # system to our exact Talos version AND bakes in the qemu-guest-agent (and
+    # any other schematic) extension so Proxmox keeps seeing the guest agent
+    # after the node kexecs into the installed system.
+    install_image = "factory.talos.dev/installer/${var.talos_schematic_id}:${var.talos_version}"
   })
 
   # In Talos maintenance mode each node DHCPs a temporary lease; the qemu guest

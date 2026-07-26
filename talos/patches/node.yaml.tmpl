@@ -1,8 +1,13 @@
 # Per-node patch: hostname + static IP (replaces the maintenance-mode DHCP lease).
 # Control-plane nodes additionally get the shared API VIP on the same interface.
+#
+# Hostname is set via the standalone HostnameConfig document (Talos >=1.11), NOT
+# via machine.network.hostname. The talos provider already emits a HostnameConfig
+# doc with `auto: stable`; setting a v1alpha1 hostname alongside it triggers
+# "static hostname is already set in v1alpha1 config". Overriding that doc with
+# `auto: off` + a static hostname is the only combination that validates.
 machine:
   network:
-    hostname: ${hostname}
     interfaces:
       - deviceSelector:
           driver: virtio_net
@@ -16,3 +21,8 @@ machine:
         vip:
           ip: ${vip}
 %{ endif ~}
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+auto: "off"
+hostname: ${hostname}
