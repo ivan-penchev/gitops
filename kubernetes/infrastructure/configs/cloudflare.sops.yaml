@@ -19,21 +19,50 @@
 #   3. Uncomment `- cloudflare.sops.yaml` in kustomization.yaml.
 #   4. git add + commit + push. Flux decrypts with the sops-age key and creates
 #      both Secrets; cloudflared and the cert-manager ClusterIssuer then start.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: cloudflared-token
+    namespace: cloudflared
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:4n1rCp3p6DmE2pTfjU2po3nSa/UwVubleZR/XuJvkLO8osQLi5v+LcC0SKw6BcPBy9mi+41LdTCOoTIkROHNq1K3QF3SH2zzjPk6MUkoT7uEATpvLPXxW5U8RPsanq8lW/H54ioEv/tOhnHl2qmN+QMzWbK5iH3+cVjSgJmIuwWO6KWrS2RHWL6PviZUSogGv89f0yA9QE1nA5+Ul3NiMVQStORrLxJcvUr7e/KDvJ8dzKjXEyhspA==,iv:VsRINmInfOAWaW04gEJv+QCkbonwWz7sDceUu181cUs=,tag:F4KuljhF0IaBeFWwh5ah4w==,type:str]
+sops:
+    age:
+        - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYdWhJeUk3Yi85SHBBb0I3
+            eDhpbXU5VEpObnpKK2ltV3A1U3gwRlNHa2tNCjR4WmZpTDRSellvakthRm1YU3BQ
+            TDMvVVRRM2M1eWFuNFZKKzJCMUY5STQKLS0tIExKSkJxNGNySGl1R0RROVNOUGJh
+            bWFqbGQ4TkhUL045cnFRcVYvWHdFTUUKyxK9zM/ywxxcZp6eznLiUF0uhiMC38KT
+            NozXvC1cJaNklozwUz75Xqtv7jDVip9riAM0Gjj7BhBDY6FrX9iwiA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-26T10:00:35Z"
+    mac: ENC[AES256_GCM,data:EC36BEW6KfTFYSxUI66a04MSoR+ala6i3dMIdEkJIGP+vwBt5WsQv3iA+EXcICdzTXh1u0z79oZMvmmrj/R/beynOOIH3YAXMC6irdWxEVamhQD/xQMVowXJt+R6wDCQApQyS9uekRsMP0+K6P8vduU9yR3U4rxE4HyOyHeVK+c=,iv:RqdvBRrfzcB4Fn3anLUA4d519/5jMPpLgKFmiqefNh0=,tag:Qt63z8mPLU7hCbINgTPvVQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: cloudflared-token
-  namespace: cloudflared
+    name: cloudflare-api-token
+    namespace: cert-manager
 type: Opaque
 stringData:
-  token: REPLACE_ME_tunnel_connector_token
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cloudflare-api-token
-  namespace: cert-manager
-type: Opaque
-stringData:
-  api-token: REPLACE_ME_zone_dns_api_token
+    api-token: ENC[AES256_GCM,data:1UU1g08shY8FDmG1QMHUDmWuuwoSwdWXRm/PVjmpf8ibe1/NcHZmW0hmP0yFPO3TbvsswHc=,iv:imiRRdvgekgGK7H0znO9JkZlJ9AxPVh15IgnJ4hKWU4=,tag:0BWWGFDP9ZTsO1sjSf3o7A==,type:str]
+sops:
+    age:
+        - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYdWhJeUk3Yi85SHBBb0I3
+            eDhpbXU5VEpObnpKK2ltV3A1U3gwRlNHa2tNCjR4WmZpTDRSellvakthRm1YU3BQ
+            TDMvVVRRM2M1eWFuNFZKKzJCMUY5STQKLS0tIExKSkJxNGNySGl1R0RROVNOUGJh
+            bWFqbGQ4TkhUL045cnFRcVYvWHdFTUUKyxK9zM/ywxxcZp6eznLiUF0uhiMC38KT
+            NozXvC1cJaNklozwUz75Xqtv7jDVip9riAM0Gjj7BhBDY6FrX9iwiA==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-26T10:00:35Z"
+    mac: ENC[AES256_GCM,data:EC36BEW6KfTFYSxUI66a04MSoR+ala6i3dMIdEkJIGP+vwBt5WsQv3iA+EXcICdzTXh1u0z79oZMvmmrj/R/beynOOIH3YAXMC6irdWxEVamhQD/xQMVowXJt+R6wDCQApQyS9uekRsMP0+K6P8vduU9yR3U4rxE4HyOyHeVK+c=,iv:RqdvBRrfzcB4Fn3anLUA4d519/5jMPpLgKFmiqefNh0=,tag:Qt63z8mPLU7hCbINgTPvVQ==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

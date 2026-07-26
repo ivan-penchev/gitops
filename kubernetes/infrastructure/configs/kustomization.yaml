@@ -4,5 +4,4 @@ resources:
   - cluster-issuer.yaml
   - cilium-lb.yaml
   # Cloudflare creds live in ONE SOPS file (two namespaced Secrets inside).
-  # Fill the two values, `sops --encrypt --in-place` it, then uncomment:
-  #   - cloudflare.sops.yaml   (cloudflared-token @ cloudflared, cloudflare-api-token @ cert-manager)
+  - cloudflare.sops.yaml   # cloudflared-token @ cloudflared, cloudflare-api-token @ cert-manager
