@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cluster-issuer.yaml
+  - cilium-lb.yaml
+  # SOPS-encrypted secrets (add after `terraform apply`, then commit):
+  #   - cloudflare-api-token.sops.yaml   (ns cert-manager, key api-token)
+  #   - cloudflared-token.sops.yaml      (ns cloudflared,  key token)
+  #   - proxmox-csi-plugin.sops.yaml     (ns kube-system,  cloud config)

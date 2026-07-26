@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Workloads go here. Add app manifests (or app subdirectories) and list them
+# below. Kept empty on purpose so the initial reconcile is a no-op.
+resources: []

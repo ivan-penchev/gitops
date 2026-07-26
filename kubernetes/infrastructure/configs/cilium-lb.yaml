@@ -1,0 +1,23 @@
+---
+# Cilium L2 LoadBalancer: hand out LAN IPs for Service type=LoadBalancer and
+# announce them via ARP on the flat network. Range is OUTSIDE the Deco DHCP
+# scope (>=.50) and clear of node IPs (.29 VIP, .31-.35 nodes).
+apiVersion: cilium.io/v2alpha1
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: lan-pool
+spec:
+  blocks:
+    - start: 192.168.68.40
+      stop: 192.168.68.49
+---
+apiVersion: cilium.io/v2alpha1
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: lan-l2
+spec:
+  loadBalancerIPs: true
+  interfaces:
+    - ^eth[0-9]+
+  nodeSelector:
+    matchLabels: {}

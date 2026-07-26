@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+# Proxmox creds are best supplied via env instead:
+#   export PROXMOX_VE_ENDPOINT='https://192.168.68.2:8006/'
+#   export PROXMOX_VE_API_TOKEN='terraform-prov@pve!mytoken=<secret>'
+
+# --- Versions (pin to real, current releases) ---
+talos_version      = "v1.9.0"  # TODO: set to a current Talos release
+kubernetes_version = "v1.32.0" # TODO: set to a version supported by that Talos release
+
+# Verify this schematic on https://factory.talos.dev (must include qemu-guest-agent):
+# talos_schematic_id = "ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515"
+
+# --- Optional Proxmox overrides (else read from env) ---
+# proxmox_endpoint  = "https://192.168.68.2:8006/"
+# proxmox_api_token = "terraform-prov@pve!mytoken=REPLACE_ME"
+
+# --- Flux / GitOps (monorepo over SSH) ---
+flux_git_url              = "ssh://git@github.com/ivan-penchev/gitops.git"
+flux_git_private_key_path = "~/.ssh/id_rsa"
+flux_path                 = "kubernetes/clusters/homelab"
+
+# --- SOPS/age (Flux secret decryption) ---
+# sops_age_public_key = "age1..."
+# sops_age_key_file   = "../age.key"

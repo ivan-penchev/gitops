@@ -1,0 +1,18 @@
+# Per-node patch: hostname + static IP (replaces the maintenance-mode DHCP lease).
+# Control-plane nodes additionally get the shared API VIP on the same interface.
+machine:
+  network:
+    hostname: ${hostname}
+    interfaces:
+      - deviceSelector:
+          driver: virtio_net
+        dhcp: false
+        addresses:
+          - ${ip}/${cidr}
+        routes:
+          - network: 0.0.0.0/0
+            gateway: ${gateway}
+%{ if vip != "" ~}
+        vip:
+          ip: ${vip}
+%{ endif ~}

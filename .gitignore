@@ -1,0 +1,37 @@
+# ---- Secrets: never commit ----
+*.tfvars
+!*.tfvars.example
+*.auto.tfvars
+!*.auto.tfvars.example
+
+# Cluster access artifacts (generated) — kept local, never committed
+kubeconfig
+talosconfig
+*.kubeconfig
+*.talosconfig
+
+# SOPS / age private keys
+*.agekey
+age.key
+*.age.key
+key.txt
+
+# ---- Terraform ----
+.terraform/
+.terraform.lock.hcl.tmp
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ---- Editor / OS ----
+.DS_Store
+*.swp
+.idea/
+.vscode/

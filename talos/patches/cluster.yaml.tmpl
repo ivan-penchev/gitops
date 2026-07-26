@@ -1,0 +1,16 @@
+# Cluster-wide patch applied to BOTH control-plane and worker configs:
+# - Cilium owns networking (cni: none), kube-proxy disabled (Cilium replaces it)
+# - Talos installs to the virtio-scsi boot disk
+# - Nodes resolve DNS via Pi-hole
+cluster:
+  network:
+    cni:
+      name: none
+  proxy:
+    disabled: true
+machine:
+  install:
+    disk: ${install_disk}
+  network:
+    nameservers:
+      - ${nameserver}

@@ -1,0 +1,14 @@
+# SOPS configuration for encrypting Kubernetes secrets in Git.
+# Flux decrypts these in-cluster with the age private key seeded at bootstrap.
+#
+# 1) Generate an age key:   age-keygen -o age.key   (age.key is gitignored)
+# 2) Copy the public key (age1...) into `age:` below.
+# 3) Encrypt a secret:      sops --encrypt --in-place kubernetes/.../secret.sops.yaml
+#
+# Only files matching path_regex + *.sops.yaml are encrypted, and only the
+# `data`/`stringData` fields, so YAML structure stays diff-friendly.
+creation_rules:
+  - path_regex: kubernetes/.*\.sops\.ya?ml$
+    encrypted_regex: "^(data|stringData)$"
+    # Replace with YOUR age public key from `age-keygen`.
+    age: "age1REPLACE_WITH_YOUR_PUBLIC_KEY"

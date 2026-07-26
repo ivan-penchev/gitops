@@ -1,0 +1,36 @@
+---
+# Proxmox CSI (sergelogvinov). Provisions PVs as Proxmox disks on `tank`.
+# Requires a `proxmox-csi-plugin` config secret (see infrastructure/configs).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: proxmox-csi
+  namespace: kube-system
+spec:
+  interval: 24h
+  url: https://sergelogvinov.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: proxmox-csi-plugin
+  namespace: kube-system
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: proxmox-csi-plugin
+      version: "0.3.2" # TODO: pin to a current chart release
+      sourceRef:
+        kind: HelmRepository
+        name: proxmox-csi
+        namespace: kube-system
+  values:
+    # Cluster config is supplied via the existingConfigSecret created in configs.
+    existingConfigSecret: proxmox-csi-plugin
+    storageClass:
+      - name: proxmox-tank
+        storage: tank
+        reclaimPolicy: Delete
+        fstype: ext4
+        cache: writethrough
