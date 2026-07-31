@@ -1,13 +1,16 @@
 # Destructive, live pre-merge health-test for Renovate PRs.
 #
 # WHAT IT DOES (mechanism "A" from the design):
-#   1. Repoints the cluster's flux-system GitRepository from `main` to the PR's
-#      HEAD branch, so the ENTIRE cluster's desired state becomes `main + this
-#      one Renovate bump`.
-#   2. Reconciles the Flux source + Kustomization layers and uses Flux's own
-#      `wait: true` Ready condition as the verdict — i.e. it literally runs a
-#      flux reconcile and checks the health assessment.
-#   3. Always repoints back to `main` and reconciles, restoring production.
+#   1. SUSPENDS the root flux-system Kustomization (it renders gotk-sync.yaml and
+#      would otherwise re-apply `ref.branch: main`, reverting our repoint within
+#      seconds — the trivial-pass bug), then repoints the flux-system
+#      GitRepository from `main` to the PR's HEAD branch, so the ENTIRE cluster's
+#      desired state becomes `main + this one Renovate bump`.
+#   2. Waits until the stored artifact revision actually reflects the PR branch,
+#      then reconciles the child Kustomization layers and uses Flux's own
+#      `wait: true` Ready condition as the verdict.
+#   3. Always repoints back to `main`, resumes the root Kustomization, and
+#      reconciles, restoring production.
 #
 # WHY IT RUNS HERE: the job runs on the in-cluster ARC runner `gha-homelab-arc`
 # as the `ci-deployer` ServiceAccount, so kubectl/flux auto-detect the
@@ -19,8 +22,9 @@
 #
 # DEAD-MAN'S-SWITCH: before repointing, we launch an in-cluster watchdog Job
 # (runs independently of this runner) that force-resets the GitRepository ref
-# to `main` after a hard timeout. So even if a bad bump kills THIS runner
-# (e.g. an ARC/CNI/ingress break), the cluster self-heals back to main.
+# to `main` AND resumes the root flux-system Kustomization after a hard timeout.
+# So even if a bad bump kills THIS runner (e.g. an ARC/CNI/ingress break), the
+# cluster self-heals back to main.
 name: gitops-live-test
 
 on:
@@ -103,12 +107,24 @@ jobs:
                     command: ["/bin/sh", "-c"]
                     args:
                       - |
-                        echo "watchdog armed: will reset flux-system ref to main in ${WATCHDOG_SECONDS}s unless deleted"
+                        echo "watchdog armed: in ${WATCHDOG_SECONDS}s (unless deleted) will reset ref to main AND resume the flux-system Kustomization"
                         sleep ${WATCHDOG_SECONDS}
-                        echo "watchdog firing: runner presumed dead, resetting ref to main"
+                        echo "watchdog firing: runner presumed dead — restoring main"
                         kubectl -n flux-system patch gitrepository flux-system \
                           --type=merge -p '{"spec":{"ref":{"branch":"main"}}}'
+                        kubectl -n flux-system patch kustomization flux-system \
+                          --type=merge -p '{"spec":{"suspend":false}}'
           EOF
+
+      # The flux-system (root) Kustomization RENDERS gotk-sync.yaml, i.e. it owns
+      # the GitRepository and continuously re-applies `ref.branch: main`. If we
+      # don't suspend it, it reverts our repoint within seconds and the test
+      # silently runs against main. Suspend it so the repoint sticks; the child
+      # Kustomizations (which we health-check) still reconcile from the source.
+      - name: Suspend the root flux-system Kustomization
+        run: |
+          set -euo pipefail
+          flux suspend kustomization flux-system
 
       - name: Repoint cluster at the PR branch
         run: |
@@ -122,19 +138,38 @@ jobs:
         run: |
           set +e
           FAIL=0
-          echo "::group::reconcile source"
-          flux reconcile source git flux-system --timeout=3m || FAIL=1
-          echo "::endgroup::"
-          for k in flux-system infrastructure-controllers infrastructure-configs apps; do
-            echo "::group::reconcile kustomization ${k}"
-            flux reconcile kustomization "${k}" --timeout=6m
-            rc=$?
-            echo "::endgroup::"
-            [ "${rc}" -ne 0 ] && FAIL=1
+          echo "::group::reconcile source + wait for the PR branch artifact"
+          flux reconcile source git flux-system --timeout=3m
+          # Guard against the trivial-pass trap: only proceed once the stored
+          # artifact revision actually reflects the PR branch, not main.
+          SWITCHED=0
+          for _ in $(seq 1 20); do
+            REV="$(kubectl -n flux-system get gitrepository flux-system \
+              -o jsonpath='{.status.artifact.revision}' 2>/dev/null)"
+            echo "artifact revision: ${REV}"
+            case "${REV}" in
+              "${HEAD_BRANCH}@"*) SWITCHED=1; break ;;
+            esac
+            flux reconcile source git flux-system --timeout=60s
+            sleep 3
           done
+          echo "::endgroup::"
+          if [ "${SWITCHED}" -ne 1 ]; then
+            echo "::error::source never switched to ${HEAD_BRANCH} — cannot health-test"
+            FAIL=1
+          else
+            for k in infrastructure-controllers infrastructure-configs apps; do
+              echo "::group::reconcile kustomization ${k}"
+              flux reconcile kustomization "${k}" --timeout=6m
+              rc=$?
+              echo "::endgroup::"
+              [ "${rc}" -ne 0 ] && FAIL=1
+            done
+          fi
           echo "verdict_fail=${FAIL}" >> "${GITHUB_OUTPUT}"
-          { echo '### Flux live health-test'; echo; echo '```'; \
-            flux get kustomizations 2>&1; echo '```'; } > flux-status.md
+          { echo '### Flux live health-test'; echo; \
+            echo "Tested source revision: \`$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')\`"; \
+            echo; echo '```'; flux get kustomizations 2>&1; echo '```'; } > flux-status.md
           if [ "${FAIL}" -ne 0 ]; then
             echo "::error::Live health-test FAILED — see reconcile logs above"
           fi
@@ -143,11 +178,12 @@ jobs:
         if: always()
         run: |
           set +e
-          echo "Reverting flux-system GitRepository -> main"
+          echo "Reverting flux-system GitRepository -> main and resuming the root Kustomization"
           kubectl -n flux-system patch gitrepository flux-system \
             --type=merge -p '{"spec":{"ref":{"branch":"main"}}}'
+          flux resume kustomization flux-system --timeout=3m
           flux reconcile source git flux-system --timeout=3m
-          for k in flux-system infrastructure-controllers infrastructure-configs apps; do
+          for k in infrastructure-controllers infrastructure-configs apps; do
             flux reconcile kustomization "${k}" --timeout=6m
           done
           kubectl -n arc-runners delete job "gitops-watchdog-${GITHUB_RUN_ID}" --ignore-not-found
