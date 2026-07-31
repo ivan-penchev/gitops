@@ -1,0 +1,68 @@
+---
+# Layer: observability. A dedicated pair of Kustomizations (mirroring the
+# infrastructure controllers/configs split) so the heavy, CRD-emitting metrics
+# + logs stack reconciles on its own timeout/retry, isolated from core infra.
+#
+#   monitoring-controllers : kube-prometheus-stack + Loki + Alloy (installs the
+#                            Prometheus Operator CRDs). dependsOn
+#                            infrastructure-configs — needs ingress-nginx, the
+#                            cert-manager int-home wildcard cert and the
+#                            proxmox-tank storage class first.
+#   monitoring-configs     : ServiceMonitors/PodMonitors for ingress-nginx,
+#                            cert-manager and Flux. dependsOn
+#                            monitoring-controllers so the CRDs it references
+#                            already exist (avoids a first-apply CRD deadlock).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-controllers
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure-configs
+  interval: 1h
+  retryInterval: 2m
+  timeout: 20m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./kubernetes/monitoring/controllers
+  prune: true
+  wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-config
+      - kind: ConfigMap
+        name: cluster-config-tf
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-configs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: monitoring-controllers
+  interval: 1h
+  retryInterval: 2m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./kubernetes/monitoring/configs
+  prune: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-config
+      - kind: ConfigMap
+        name: cluster-config-tf

@@ -49,4 +49,4 @@ spec:
       extraArgs:
         default-ssl-certificate: "ingress-nginx/int-home-tls"
       metrics:
-        enabled: false
+        enabled: true

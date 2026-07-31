@@ -1,0 +1,67 @@
+---
+# Extra scrape targets for the components that already expose Prometheus metrics
+# but aren't part of kube-prometheus-stack. These live in the monitoring layer
+# (so the ServiceMonitor/PodMonitor CRDs already exist) and reach across
+# namespaces via namespaceSelector. Prometheus discovers them because
+# *SelectorNilUsesHelmValues is false in the stack values.
+
+# ingress-nginx: request rates, latency, status codes (needs controller.metrics
+# enabled in the ingress-nginx HelmRelease, which exposes the -metrics service).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ingress-nginx
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+spec:
+  namespaceSelector:
+    matchNames:
+      - ingress-nginx
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+# cert-manager: certificate expiry, renewal success/failure.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: cert-manager
+spec:
+  namespaceSelector:
+    matchNames:
+      - cert-manager
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: tcp-prometheus-servicemonitor
+      interval: 30s
+---
+# Flux controllers expose metrics on the pod port `http-prom` (8080); scrape all
+# of them by the shared part-of=flux label.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flux-system
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: flux
+spec:
+  namespaceSelector:
+    matchNames:
+      - flux-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: flux
+  podMetricsEndpoints:
+    - port: http-prom
+      interval: 30s

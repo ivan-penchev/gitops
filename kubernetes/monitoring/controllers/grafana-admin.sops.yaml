@@ -1,0 +1,28 @@
+# Grafana break-glass admin login. Grafana runs anonymous-Admin on the LAN with
+# the login form disabled (see kube-prometheus-stack values), so this account is
+# only needed if anonymous access is ever turned off. Encrypted with SOPS/age;
+# Flux decrypts it in-cluster.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: grafana-admin
+    namespace: monitoring
+type: Opaque
+stringData:
+    admin-user: ENC[AES256_GCM,data:tb9xdXQ=,iv:VnE+X1NJThbtT6GO6Vvk3NETG7a7FWHJYthah+cM4qs=,tag:TYdBHqUBqPN4ftKvFytRiQ==,type:str]
+    admin-password: ENC[AES256_GCM,data:S+pOG20UomnPuNjeTJAhirYtaotWZKtTFyAnjw==,iv:uK5PWj+yVHptLfM86xY/Iz0uYGRyWGNbmglOpo+kJQQ=,tag:giIufjXJhIWhfiUwO32zjQ==,type:str]
+sops:
+    age:
+        - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBEMmcrMmZLVG9KQW9Ddy9r
+            Z0xiMUZsSGtLb0sxU0dvTDNydGJwVm42aHlrCmM0Z2ptcG93S2RpNDRzWXhQYVlS
+            N1ZLM3BDOGxnOEorZmxEczFFUVJrSjAKLS0tIGhBcVVnaUxFMzR2RTk3T0I4d0gy
+            d3I0Qlo1MUFPbFJmMjZCb2doU0lIc1EKZXHXXjG69gV1dOlm4DTr5I1pjfD2mnze
+            PTkSlESK9XnpLYOmB7erQT+Nt+ieMeC5sdZYD05/2BrPGQzFftqojw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-07-31T20:05:36Z"
+    mac: ENC[AES256_GCM,data:oFPPEDul0Zo33LblJ91GpPUCwZMcklqu60y0zBl4IWz8/CpQwVyumIFqAGby/BFujzusm83X7+TyXXi0xaojWvqQZJbbAg0fPwzSo9iXikeV2CKNkuMPEdx8LEgMtVWkWE+WyKna7heI163yIQ8LOZSgKHrGaFwAm/dFl+5azT4=,iv:aP0uUVNPIuwLwpLH3xwuC19DqL5soMENAkY2SKzG/Z8=,tag:p/t/iXtg7bG7VhXnUBT4Vw==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

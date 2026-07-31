@@ -1,0 +1,170 @@
+---
+# kube-prometheus-stack — Prometheus + Alertmanager + Grafana + node-exporter +
+# kube-state-metrics, plus the Prometheus Operator (ServiceMonitor/PodMonitor
+# CRDs). This is the metrics half of the observability stack.
+#
+#   * Nodes    : node-exporter DaemonSet on all 3 nodes (tolerates the CP taint).
+#   * Workloads: kubelet/cAdvisor + kube-state-metrics.
+#   * Control-plane components (scheduler/controller-manager/etcd/kube-proxy) are
+#     DISABLED on purpose — Talos doesn't expose them without machineconfig
+#     patches and we run Cilium's kube-proxy replacement, so scraping them just
+#     produces permanent "down" targets. See plan.md / the observability grill.
+#   * Grafana is anonymous-Admin on the LAN (login form off) with a SOPS
+#     break-glass admin password (grafana-admin secret). Grafana, Prometheus and
+#     Alertmanager are each served on *.int.home over the ingress-nginx default
+#     wildcard cert (no per-Ingress tls block needed).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: monitoring
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  timeout: 15m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "88.0.1"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: monitoring
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    # ---- Control-plane component scrape jobs: OFF (Talos, see header) ----
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeProxy:
+      enabled: false
+
+    # ---- Alerting: default rules evaluate, but no external receiver yet ----
+    defaultRules:
+      create: true
+
+    alertmanager:
+      alertmanagerSpec:
+        retention: 120h
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        storage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: proxmox-tank
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 1Gi
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hosts:
+          - alertmanager.${internal_domain}
+        paths:
+          - /
+
+    # ---- node-exporter: run on every node incl. the tainted control-plane ----
+    prometheus-node-exporter:
+      tolerations:
+        - operator: Exists
+
+    # ---- Prometheus: 30d / 40Gi on proxmox-tank, size-capped ----
+    prometheus:
+      prometheusSpec:
+        retention: 30d
+        retentionSize: "36GiB"
+        # Discover ServiceMonitors/PodMonitors/Rules in ALL namespaces without
+        # requiring the Helm release label (needed for our ingress-nginx,
+        # cert-manager and Flux monitors that live outside this release).
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        scrapeConfigSelectorNilUsesHelmValues: false
+        resources:
+          requests:
+            cpu: 200m
+            memory: 768Mi
+          limits:
+            memory: 3Gi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: proxmox-tank
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 40Gi
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hosts:
+          - prometheus.${internal_domain}
+        paths:
+          - /
+
+    # ---- Grafana: anonymous admin on LAN + SOPS break-glass login ----
+    grafana:
+      admin:
+        existingSecret: grafana-admin
+        userKey: admin-user
+        passwordKey: admin-password
+      persistence:
+        enabled: true
+        storageClassName: proxmox-tank
+        size: 2Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+      grafana.ini:
+        server:
+          root_url: https://grafana.${internal_domain}
+        auth:
+          disable_login_form: true
+        "auth.anonymous":
+          enabled: true
+          org_role: Admin
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hosts:
+          - grafana.${internal_domain}
+        path: /
+      # Loki wired as a second datasource so logs are explorable from Grafana.
+      additionalDataSources:
+        - name: Loki
+          type: loki
+          uid: loki
+          access: proxy
+          url: http://loki.monitoring.svc.cluster.local:3100
+
+    # ---- kube-state-metrics: modest footprint ----
+    kube-state-metrics:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
