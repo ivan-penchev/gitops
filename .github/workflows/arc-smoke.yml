@@ -9,12 +9,15 @@ jobs:
     steps:
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
-      - name: Who am I / cluster reachable (in-cluster SA)
+      - name: Cluster reachable via in-cluster SA
         run: |
-          echo "=== version ==="; kubectl version
-          echo "=== namespaces (proves API reachable + read) ==="; kubectl get ns
-      - name: RBAC assertions
+          echo "=== client/server version ==="; kubectl version
+          echo "=== namespaces (API reachable + read works) ==="; kubectl get ns
+      - name: RBAC assertions (can-i returns no => exit 1, so don't fail the job)
         run: |
-          echo "can-i get secrets -A (expect no):"; kubectl auth can-i get secrets -A
-          echo "can-i patch kustomizations -n flux-system (expect yes):"; kubectl auth can-i patch kustomizations.kustomize.toolkit.fluxcd.io -n flux-system
-          echo "can-i edit deployments -A (expect yes):"; kubectl auth can-i update deployments -A
+          set +e
+          s=$(kubectl auth can-i get secrets -A);            echo "get secrets -A            -> $s   (want: no)"
+          k=$(kubectl auth can-i patch kustomizations.kustomize.toolkit.fluxcd.io -n flux-system); echo "patch kustomizations       -> $k   (want: yes)"
+          d=$(kubectl auth can-i update deployments -A);     echo "update deployments -A      -> $d   (want: yes)"
+          i=$(kubectl auth can-i impersonate serviceaccounts -A); echo "impersonate SAs -A        -> $i   (want: no)"
+          [ "$s" = "no" ] && [ "$k" = "yes" ] && [ "$d" = "yes" ] && [ "$i" = "no" ] && { echo "RBAC SHAPE OK"; exit 0; } || { echo "RBAC SHAPE UNEXPECTED"; exit 1; }
