@@ -40,7 +40,7 @@ output "node_ips" {
 
 output "cloudflare_tunnel_id" {
   description = "ID of the Terraform-created Cloudflare Tunnel."
-  value       = cloudflare_tunnel.homelab.id
+  value       = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
 }
 
 output "cloudflare_zone_id" {
@@ -50,7 +50,7 @@ output "cloudflare_zone_id" {
 
 output "cloudflare_account_id" {
   description = "Derived Cloudflare account id for the domain."
-  value       = data.cloudflare_zone.main.account_id
+  value       = data.cloudflare_zone.main.account.id
 }
 
 # ---------------------------------------------------------------------------

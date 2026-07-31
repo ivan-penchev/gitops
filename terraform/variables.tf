@@ -188,7 +188,7 @@ variable "sops_age_key_file" {
 # ---------------------------------------------------------------------------
 # zone id + account id are DERIVED from the domain at apply time
 # (data.cloudflare_zone) and the tunnel is CREATED by Terraform
-# (cloudflare_tunnel). All three are written into the `cluster-config-tf`
+# (cloudflare_zero_trust_tunnel_cloudflared). All three are written into the `cluster-config-tf`
 # ConfigMap that Flux substitutes, so they are no longer hand-copied magic
 # strings. Requires CLOUDFLARE_API_TOKEN with Zone:Read + Account /
 # Cloudflare Tunnel:Edit.

@@ -211,14 +211,20 @@ resource "null_resource" "fileserver_nfs" {
 # external-dns won't fight this: it only deletes records carrying its ownership
 # TXT registry entry, and nothing in-cluster owns this name.
 # ---------------------------------------------------------------------------
-resource "cloudflare_record" "fileserver" {
+resource "cloudflare_dns_record" "fileserver" {
   count = var.fileserver_enabled ? 1 : 0
 
   zone_id = data.cloudflare_zone.main.id
   name    = var.fileserver_record_name
   type    = "A"
-  value   = var.fileserver_ip
+  content = var.fileserver_ip
   proxied = false
   ttl     = 60
   comment = "Terraform: fileserver LXC NFS (DNS-only, LAN)"
+}
+
+# cloudflare v4->v5 rename (cloudflare_record -> cloudflare_dns_record, value -> content).
+moved {
+  from = cloudflare_record.fileserver[0]
+  to   = cloudflare_dns_record.fileserver[0]
 }

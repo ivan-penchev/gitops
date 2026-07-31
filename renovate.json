@@ -53,6 +53,19 @@
       "addLabels": [
         "major-update"
       ]
+    },
+    {
+      "description": "renovatebot/github-action: track minor + major only. Patch bumps of the Renovate engine wrapper are noise; minors/majors (behaviour changes) still get a PR + live-test gate.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "renovatebot/github-action"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "enabled": false
     }
   ]
 }

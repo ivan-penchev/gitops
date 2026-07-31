@@ -5,8 +5,8 @@
 # `terraform apply` reproduces it with no hand-copied ids:
 #
 #   * data.cloudflare_zone  -> derives zone id + account id from the domain.
-#   * cloudflare_tunnel      -> CREATES a named tunnel (local config mode) and
-#                               a random tunnel secret.
+#   * cloudflare_zero_trust_tunnel_cloudflared -> CREATES a named tunnel (local
+#                               config mode) and a random tunnel secret.
 #   * kubernetes_secret      -> writes credentials.json into the cloudflared ns
 #                               (replaces the old SOPS `cloudflared-token`).
 #   * kubernetes_config_map  -> `cluster-config-tf` in flux-system carries the
@@ -26,8 +26,12 @@ provider "cloudflare" {
 }
 
 # Zone id + account id derived from the domain (no hand-copied ids).
+# provider v5: lookup wrapped in a `filter` block; account id is read back as the
+# nested `.account.id` (was flat `.account_id` in v4).
 data "cloudflare_zone" "main" {
-  name = var.cloudflare_domain
+  filter = {
+    name = var.cloudflare_domain
+  }
 }
 
 # 32-byte tunnel secret; cloudflared expects the base64 form in credentials.json
@@ -38,18 +42,27 @@ resource "random_id" "tunnel_secret" {
 
 # The cluster's Cloudflare Tunnel. config_src = "local" keeps ingress rules in
 # the GitOps ConfigMap (cloudflared runs in credentials-file mode).
-resource "cloudflare_tunnel" "homelab" {
-  account_id = data.cloudflare_zone.main.account_id
-  name       = var.cloudflare_tunnel_name
-  secret     = random_id.tunnel_secret.b64_std
-  config_src = "local"
+# provider v5: resource renamed cloudflare_tunnel -> cloudflare_zero_trust_tunnel_cloudflared,
+# and `secret` -> `tunnel_secret` (same base64 value).
+resource "cloudflare_zero_trust_tunnel_cloudflared" "homelab" {
+  account_id    = data.cloudflare_zone.main.account.id
+  name          = var.cloudflare_tunnel_name
+  tunnel_secret = random_id.tunnel_secret.b64_std
+  config_src    = "local"
+}
+
+# cloudflare v4->v5 rename. The provider's MoveState upgrader transforms the
+# existing state in place (preserving tunnel_secret), so no destroy/recreate.
+moved {
+  from = cloudflare_tunnel.homelab
+  to   = cloudflare_zero_trust_tunnel_cloudflared.homelab
 }
 
 locals {
   # credentials.json consumed by cloudflared (credentials-file mode).
   cloudflared_credentials = jsonencode({
-    AccountTag   = data.cloudflare_zone.main.account_id
-    TunnelID     = cloudflare_tunnel.homelab.id
+    AccountTag   = data.cloudflare_zone.main.account.id
+    TunnelID     = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
     TunnelSecret = random_id.tunnel_secret.b64_std
   })
 }
@@ -88,8 +101,8 @@ resource "kubernetes_config_map_v1" "cluster_config_tf" {
 
   data = {
     cf_zone_id    = data.cloudflare_zone.main.id
-    cf_account_id = data.cloudflare_zone.main.account_id
-    tunnel_id     = cloudflare_tunnel.homelab.id
+    cf_account_id = data.cloudflare_zone.main.account.id
+    tunnel_id     = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
   }
 
   depends_on = [flux_bootstrap_git.this]

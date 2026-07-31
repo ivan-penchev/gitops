@@ -1,5 +1,9 @@
 terraform {
-  required_version = ">= 1.5"
+  # >= 1.10: cross-type `moved` blocks (cloudflare v4->v5 renames migrate state
+  # via the provider's MoveState upgrader) need >= 1.8, and the state is now
+  # written by TF 1.10.x (older CLIs refuse newer state). The plugin-framework
+  # cloudflare v5 provider also requires a modern Terraform.
+  required_version = ">= 1.10"
 
   required_providers {
     proxmox = {
@@ -32,7 +36,7 @@ terraform {
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 4.52"
+      version = "~> 5"
     }
   }
 

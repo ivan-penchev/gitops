@@ -183,6 +183,20 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
   [`secrets.sops.env`](./secrets.sops.env); decode via
   [`docs/terraform-secrets.md`](./docs/terraform-secrets.md).
 
+## Dependency updates (2026-07-31)
+- **GitHub Actions:** `actions/checkout@v7`, `actions/github-script@v9`,
+  `renovatebot/github-action@v46.2.0` (exact pin; a Renovate `packageRule`
+  disables *patch* bumps for the Renovate wrapper so only minor/major open PRs).
+- **Terraform `cloudflare` provider v4 → v5** (5.22.0). Breaking renames handled:
+  `cloudflare_tunnel` → `cloudflare_zero_trust_tunnel_cloudflared` (`secret` →
+  `tunnel_secret`); `cloudflare_record` → `cloudflare_dns_record` (`value` →
+  `content`); `data.cloudflare_zone` now uses a `filter{}` block and account id
+  reads back as nested `.account.id`. State migrated in place via cross-type
+  `moved` blocks (provider MoveState upgrader) — **no destroy/recreate**, tunnel
+  id and secret preserved, `terraform plan` clean.
+- **`required_version` is now `>= 1.10`** (cross-type `moved` needs ≥1.8 and the
+  state was rewritten by TF 1.10.x). Upgrade your local Terraform accordingly.
+
 ## Proposed repo layout
 ```
 /
