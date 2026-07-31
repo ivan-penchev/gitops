@@ -183,6 +183,32 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
   [`secrets.sops.env`](./secrets.sops.env); decode via
   [`docs/terraform-secrets.md`](./docs/terraform-secrets.md).
 
+## Observability stack (2026-07-31)
+Metrics + logs for the cluster and its K8s nodes, deployed as a dedicated Flux
+layer (`kubernetes/monitoring/`, `controllers` → `configs`,
+`dependsOn: infrastructure-configs`). Live-verified: all Prometheus targets UP,
+Loki ingesting logs from every namespace, Grafana anonymous-admin reachable.
+- **kube-prometheus-stack 88.0.1** — Prometheus (30d/40Gi), Alertmanager (1Gi),
+  Grafana (2Gi), node-exporter (all 3 nodes, tolerates CP taint),
+  kube-state-metrics. CP component scrape jobs (scheduler/controller-manager/
+  etcd/kube-proxy) **disabled** (Talos doesn't expose them; Cilium replaces
+  kube-proxy) — no down-target noise.
+- **Loki 7.2.0** SingleBinary, filesystem PVC 40Gi / 30d retention (no MinIO,
+  no caches). **Grafana Alloy 1.11.0** DaemonSet tails container logs via the
+  K8s API → Loki (no Talos node/system log shipping).
+- **Access:** `grafana` / `prometheus` / `alertmanager`.int.home.17072021.xyz
+  on the ingress-nginx default wildcard cert. Grafana runs anonymous-**Admin**
+  (login form off) with a SOPS break-glass secret
+  (`kubernetes/monitoring/controllers/grafana-admin.sops.yaml`).
+- **Extra scrape targets:** ServiceMonitors for ingress-nginx (metrics flag
+  flipped on) + cert-manager, PodMonitor for Flux.
+- **Alerting:** default rules evaluate in-cluster only, **no external receiver
+  yet** (SMTP2GO email is an easy later add — one SOPS Alertmanager-config
+  secret). Only `Watchdog` fires (pipeline healthy).
+- **Talos gotcha:** the `monitoring` namespace runs at PodSecurity
+  `privileged` — node-exporter's hostNetwork/hostPID/hostPath/hostPort is
+  rejected by Talos' cluster-wide `baseline` default otherwise.
+
 ## Dependency updates (2026-07-31)
 - **GitHub Actions:** `actions/checkout@v7`, `actions/github-script@v9`,
   `renovatebot/github-action@v46.2.0` (exact pin; a Renovate `packageRule`
