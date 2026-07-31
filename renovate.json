@@ -1,0 +1,58 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "Europe/Copenhagen",
+  "schedule": [
+    "* 0-6 * * 1"
+  ],
+  "labels": [
+    "renovate"
+  ],
+  "commitMessagePrefix": "chore(deps):",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 0,
+  "separateMinorPatch": true,
+  "separateMultipleMajor": true,
+  "ignorePaths": [
+    "**/*.sops.yaml"
+  ],
+  "flux": {
+    "fileMatch": [
+      "kubernetes/.+\\.ya?ml$"
+    ]
+  },
+  "kubernetes": {
+    "fileMatch": [
+      "kubernetes/.+\\.ya?ml$"
+    ]
+  },
+  "github-actions": {
+    "fileMatch": [
+      "^\\.github/workflows/.+\\.ya?ml$"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "One dependency per PR (no grouping) so the live health-test isolates a single change and a red result pinpoints the culprit.",
+      "matchManagers": [
+        "flux",
+        "kubernetes",
+        "github-actions"
+      ],
+      "groupName": null
+    },
+    {
+      "description": "Keep major bumps on their own so an infra major never rides along with something else.",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "addLabels": [
+        "major-update"
+      ]
+    }
+  ]
+}

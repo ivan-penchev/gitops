@@ -1,0 +1,170 @@
+# Destructive, live pre-merge health-test for Renovate PRs.
+#
+# WHAT IT DOES (mechanism "A" from the design):
+#   1. Repoints the cluster's flux-system GitRepository from `main` to the PR's
+#      HEAD branch, so the ENTIRE cluster's desired state becomes `main + this
+#      one Renovate bump`.
+#   2. Reconciles the Flux source + Kustomization layers and uses Flux's own
+#      `wait: true` Ready condition as the verdict — i.e. it literally runs a
+#      flux reconcile and checks the health assessment.
+#   3. Always repoints back to `main` and reconciles, restoring production.
+#
+# WHY IT RUNS HERE: the job runs on the in-cluster ARC runner `gha-homelab-arc`
+# as the `ci-deployer` ServiceAccount, so kubectl/flux auto-detect the
+# in-cluster config. The API is never exposed off-LAN.
+#
+# BLAST RADIUS (accepted, "B for everything"): every Renovate PR briefly flips
+# ALL of prod to an unmerged SHA and cycles whatever changed. A broken infra
+# bump can momentarily disrupt prod until it is reverted.
+#
+# DEAD-MAN'S-SWITCH: before repointing, we launch an in-cluster watchdog Job
+# (runs independently of this runner) that force-resets the GitRepository ref
+# to `main` after a hard timeout. So even if a bad bump kills THIS runner
+# (e.g. an ARC/CNI/ingress break), the cluster self-heals back to main.
+name: gitops-live-test
+
+on:
+  pull_request:
+    branches: [main]
+
+# Serialize: only ONE live test may hold the cluster on a PR SHA at a time.
+concurrency:
+  group: gitops-live-test
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  live-test:
+    # Only Renovate's PRs drive the automated live test.
+    if: startsWith(github.head_ref, 'renovate/')
+    runs-on: gha-homelab-arc
+    timeout-minutes: 25
+    env:
+      HEAD_BRANCH: ${{ github.head_ref }}
+      # Watchdog hard cap (seconds). Must exceed the expected reconcile window
+      # (source + 3 layers, each up to a few minutes) but bound how long prod
+      # can be stranded on a PR SHA if this runner dies. 20 minutes.
+      WATCHDOG_SECONDS: "1200"
+      WATCHDOG_IMAGE: "registry.k8s.io/kubectl:v1.33.0"
+    steps:
+      - name: Install flux + kubectl
+        run: |
+          set -euo pipefail
+          curl -s https://fluxcd.io/install.sh | sudo bash
+          if ! command -v kubectl >/dev/null 2>&1; then
+            KVER="$(curl -sL https://dl.k8s.io/release/stable.txt)"
+            curl -sLO "https://dl.k8s.io/release/${KVER}/bin/linux/amd64/kubectl"
+            sudo install -m 0755 kubectl /usr/local/bin/kubectl
+          fi
+          flux version --client
+          kubectl version --client
+
+      - name: Sanity — confirm in-cluster access and current ref
+        run: |
+          set -euo pipefail
+          kubectl -n flux-system get gitrepository flux-system \
+            -o jsonpath='{.spec.ref.branch}{"\n"}'
+          flux get kustomizations
+
+      - name: Launch watchdog (dead-man's-switch)
+        run: |
+          set -euo pipefail
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: gitops-watchdog-${GITHUB_RUN_ID}
+            namespace: arc-runners
+            labels:
+              app.kubernetes.io/name: gitops-watchdog
+          spec:
+            backoffLimit: 0
+            ttlSecondsAfterFinished: 300
+            activeDeadlineSeconds: $((WATCHDOG_SECONDS + 300))
+            template:
+              spec:
+                serviceAccountName: ci-deployer
+                restartPolicy: Never
+                containers:
+                  - name: watchdog
+                    image: ${WATCHDOG_IMAGE}
+                    command: ["/bin/sh", "-c"]
+                    args:
+                      - |
+                        echo "watchdog armed: will reset flux-system ref to main in ${WATCHDOG_SECONDS}s unless deleted"
+                        sleep ${WATCHDOG_SECONDS}
+                        echo "watchdog firing: runner presumed dead, resetting ref to main"
+                        kubectl -n flux-system patch gitrepository flux-system \
+                          --type=merge -p '{"spec":{"ref":{"branch":"main"}}}'
+          EOF
+
+      - name: Repoint cluster at the PR branch
+        run: |
+          set -euo pipefail
+          echo "Repointing flux-system GitRepository -> ${HEAD_BRANCH}"
+          kubectl -n flux-system patch gitrepository flux-system \
+            --type=merge -p "{\"spec\":{\"ref\":{\"branch\":\"${HEAD_BRANCH}\"}}}"
+
+      - name: Reconcile + health verdict
+        id: verdict
+        run: |
+          set +e
+          FAIL=0
+          echo "::group::reconcile source"
+          flux reconcile source git flux-system --timeout=3m || FAIL=1
+          echo "::endgroup::"
+          for k in flux-system infrastructure-controllers infrastructure-configs apps; do
+            echo "::group::reconcile kustomization ${k}"
+            flux reconcile kustomization "${k}" --timeout=6m
+            rc=$?
+            echo "::endgroup::"
+            [ "${rc}" -ne 0 ] && FAIL=1
+          done
+          echo "verdict_fail=${FAIL}" >> "${GITHUB_OUTPUT}"
+          { echo '### Flux live health-test'; echo; echo '```'; \
+            flux get kustomizations 2>&1; echo '```'; } > flux-status.md
+          if [ "${FAIL}" -ne 0 ]; then
+            echo "::error::Live health-test FAILED — see reconcile logs above"
+          fi
+
+      - name: Revert cluster to main (always)
+        if: always()
+        run: |
+          set +e
+          echo "Reverting flux-system GitRepository -> main"
+          kubectl -n flux-system patch gitrepository flux-system \
+            --type=merge -p '{"spec":{"ref":{"branch":"main"}}}'
+          flux reconcile source git flux-system --timeout=3m
+          for k in flux-system infrastructure-controllers infrastructure-configs apps; do
+            flux reconcile kustomization "${k}" --timeout=6m
+          done
+          kubectl -n arc-runners delete job "gitops-watchdog-${GITHUB_RUN_ID}" --ignore-not-found
+
+      - name: Comment verdict on PR (always)
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const fail = '${{ steps.verdict.outputs.verdict_fail }}';
+            let body = fs.existsSync('flux-status.md')
+              ? fs.readFileSync('flux-status.md', 'utf8')
+              : '### Flux live health-test\n\n(no status captured — the test aborted before reconcile)';
+            const verdict = fail === '0'
+              ? '\n\n✅ **PASS** — cluster reconciled the PR SHA and all Kustomizations reached Ready. Safe to merge.'
+              : '\n\n❌ **FAIL** — a Kustomization did not become Ready (or the test aborted). Do NOT merge.';
+            body += verdict + '\n\n<sub>Cluster was reverted to `main` after the test.</sub>';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Fail the job if the health-test failed
+        if: always()
+        run: |
+          test "${{ steps.verdict.outputs.verdict_fail }}" = "0"

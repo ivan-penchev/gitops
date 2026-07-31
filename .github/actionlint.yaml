@@ -1,0 +1,5 @@
+# Register our in-cluster ARC self-hosted runner label so actionlint does not
+# flag `runs-on: gha-homelab-arc` as unknown.
+self-hosted-runner:
+  labels:
+    - gha-homelab-arc
