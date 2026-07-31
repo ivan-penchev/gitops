@@ -15,12 +15,21 @@ reconcile against the live cluster**, not just a dry-run.
    `renovate/*` PR, on the in-cluster ARC runner `gha-homelab-arc`
    (ServiceAccount `ci-deployer`, so kubectl/flux use the in-cluster config —
    the API is never exposed off-LAN). It is serialized by a `concurrency` group.
-   - Arms an in-cluster **watchdog Job** (dead-man's-switch).
+   - Arms an in-cluster **watchdog Job** (dead-man's-switch) that resets the ref
+     to `main` **and resumes the root Kustomization** if the runner dies.
+   - **Suspends the root `flux-system` Kustomization.** It renders
+     `gotk-sync.yaml` (which owns the GitRepository and hardcodes
+     `ref.branch: main`), so leaving it running would re-apply `main` and revert
+     the repoint within seconds — the test would then silently pass against
+     `main`. Suspending it makes the repoint stick.
    - Repoints the `flux-system` GitRepository `ref.branch` from `main` to the
      PR branch → the whole cluster's desired state becomes `main + this bump`.
-   - `flux reconcile` source + Kustomization layers; the **`wait: true` Ready
-     condition is the verdict**.
-   - **Always** repoints back to `main` and reconciles, restoring production.
+   - Waits until `status.artifact.revision` actually reflects the PR branch,
+     then `flux reconcile`s the **child** Kustomization layers
+     (`infrastructure-controllers` → `infrastructure-configs` → `apps`); the
+     **`wait: true` Ready condition is the verdict**.
+   - **Always** repoints back to `main`, **resumes** the root Kustomization, and
+     reconciles, restoring production.
    - Posts a check + a PR comment with `flux get kustomizations`.
 3. On green you **merge by hand** (no auto-merge). Flux then applies it for real.
 
@@ -29,8 +38,9 @@ reconcile against the live cluster**, not just a dry-run.
 Every Renovate PR briefly flips **all** of prod to an unmerged SHA and cycles
 whatever changed. A broken infra bump can momentarily disrupt prod until it is
 reverted. The **watchdog** (`gitops-watchdog-<run_id>` Job in `arc-runners`)
-force-resets the ref to `main` after ~20 min even if the test runner is killed
-by a bad bump (e.g. an ARC/CNI/ingress break), so the cluster self-heals.
+force-resets the ref to `main` (and resumes the root Kustomization) after
+~20 min even if the test runner is killed by a bad bump (e.g. an
+ARC/CNI/ingress break), so the cluster self-heals.
 
 ## One-time manual setup
 
@@ -59,5 +69,5 @@ The pipeline is **dormant** until this is done.
 
 No new RBAC was needed - `ci-deployer` already has (via the ARC roles):
 `patch` on `source.toolkit.fluxcd.io/*` (repoint the GitRepository), `patch` on
-`kustomize.toolkit.fluxcd.io/*` (reconcile), and `create/delete` on `batch/jobs`
+`kustomize.toolkit.fluxcd.io/*` (reconcile + suspend/resume), and `create/delete` on `batch/jobs`
 (the watchdog). It still **cannot read Secrets** - the carve-out is intact.
