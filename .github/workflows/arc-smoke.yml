@@ -1,0 +1,20 @@
+name: arc-smoke
+on:
+  push:
+    paths: [.github/workflows/arc-smoke.yml]
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: gha-homelab-arc
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+      - name: Who am I / cluster reachable (in-cluster SA)
+        run: |
+          echo "=== version ==="; kubectl version
+          echo "=== namespaces (proves API reachable + read) ==="; kubectl get ns
+      - name: RBAC assertions
+        run: |
+          echo "can-i get secrets -A (expect no):"; kubectl auth can-i get secrets -A
+          echo "can-i patch kustomizations -n flux-system (expect yes):"; kubectl auth can-i patch kustomizations.kustomize.toolkit.fluxcd.io -n flux-system
+          echo "can-i edit deployments -A (expect yes):"; kubectl auth can-i update deployments -A
