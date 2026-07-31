@@ -88,9 +88,18 @@ jobs:
               spec:
                 serviceAccountName: ci-deployer
                 restartPolicy: Never
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 65532
+                  seccompProfile:
+                    type: RuntimeDefault
                 containers:
                   - name: watchdog
                     image: ${WATCHDOG_IMAGE}
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
                     command: ["/bin/sh", "-c"]
                     args:
                       - |
