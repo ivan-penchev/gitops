@@ -11,3 +11,7 @@ creation_rules:
   - path_regex: kubernetes/.*\.sops\.ya?ml$
     encrypted_regex: "^(data|stringData)$"
     age: "age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa"
+  # Root Terraform provider credentials (Proxmox). dotenv → SOPS encrypts every
+  # value, keys stay in cleartext. Decode via docs/terraform-secrets.md.
+  - path_regex: (^|/)secrets\.sops\.env$
+    age: "age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa"

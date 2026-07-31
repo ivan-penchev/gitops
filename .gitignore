@@ -16,6 +16,10 @@ age.key
 *.age.key
 key.txt
 
+# Plaintext env is never committed; only SOPS-encrypted *.sops.env may be.
+*.env
+!*.sops.env
+
 # ---- Terraform ----
 .terraform/
 .terraform.lock.hcl.tmp

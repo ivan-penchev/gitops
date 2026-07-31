@@ -131,9 +131,7 @@ variable "control_planes" {
     disk   = number # GiB
   }))
   default = {
-    cp-1 = { vmid = 131, ip = "192.168.68.31", cpu = 2, memory = 4096, disk = 30 }
-    cp-2 = { vmid = 132, ip = "192.168.68.32", cpu = 2, memory = 4096, disk = 30 }
-    cp-3 = { vmid = 133, ip = "192.168.68.33", cpu = 2, memory = 4096, disk = 30 }
+    cp-1 = { vmid = 131, ip = "192.168.68.31", cpu = 4, memory = 8192, disk = 30 }
   }
 }
 

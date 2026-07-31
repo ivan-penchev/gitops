@@ -11,8 +11,8 @@ boundary only: `terraform apply`. Everything else is Git-driven.
 | Provisioner | Terraform + `bpg/proxmox` provider | Modern, declarative, template-clone support |
 | Talos delivery | See "Talos delivery (revised)" below — API-only ISO boot | Superseded the disk-image/template approach (that needs SSH) |
 | Talos config/bootstrap | `siderolabs/talos` Terraform provider | Pure IaC: gen-config + apply + bootstrap in one apply |
-| Topology | 3 control-plane + N workers | etcd HA, production-like |
-| API endpoint (VIP) | Talos built-in L2 VIP in machineconfig | No extra pods/VMs; covers API server HA |
+| Topology | **1 control-plane + 2 workers** (was 3 CP; collapsed 2026-07-31) | Single Proxmox host → multi-CP adds no hardware HA, only cost; see "Single control-plane collapse" below |
+| API endpoint (VIP) | Talos built-in L2 VIP in machineconfig | Kept after CP collapse: stable endpoint even if cp-1 is rebuilt / CPs re-added |
 | Terraform state | Local, gitignored, manually backed up | Homelab choice (see risk below) |
 | GitOps engine | Flux CD | Lightweight, Talos community favorite |
 | CNI | Cilium (eBPF, kube-proxy replacement, L2 LB) | Talos favorite; disable kube-proxy + default CNI |
@@ -164,6 +164,24 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
   then reverts to `main` (with an in-cluster watchdog dead-man's-switch).
   Human-merge on green. `RENOVATE_TOKEN` Actions secret is set. See
   [`docs/renovate-live-test.md`](./docs/renovate-live-test.md).
+
+## Single control-plane collapse (done, 2026-07-31)
+- **Why:** on one Proxmox host, 3 control planes give no hardware fault tolerance
+  (host death kills all three) while costing 6 vCPU / 12 GB + 3× etcd write
+  amplification. Collapsed to **1 dedicated CP + 2 workers**.
+- **cp-1** resized to 4 vCPU / 8 GB (sole etcd + apiserver, stays tainted).
+  **cp-2/cp-3** removed. Workers unchanged. **VIP kept.**
+- **Method (non-destructive to PVCs):** pre-migration `talosctl etcd snapshot`
+  → `talosctl reset --graceful` cp-3 then cp-2 one-at-a-time (each leaves etcd)
+  → `terraform apply` (drop cp-2/cp-3 from `control_planes`, bump cp-1) → delete
+  stale node objects. Orphaned DaemonSet pods GC'd automatically.
+- **Safety net:** manual `talosctl etcd snapshot` only — **mandatory before every
+  Talos/k8s upgrade** (single etcd = upgrades are the top risk). No CronJob.
+- **Accepted risk:** a cp-1 loss is *recoverable from snapshot* but not
+  *transparent* (API down until restore); host loss still takes everything.
+- Terraform provider creds are now SOPS-encrypted at repo root in
+  [`secrets.sops.env`](./secrets.sops.env); decode via
+  [`docs/terraform-secrets.md`](./docs/terraform-secrets.md).
 
 ## Proposed repo layout
 ```
