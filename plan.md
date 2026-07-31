@@ -155,6 +155,16 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
 - Keep bootstrap Cilium values == Flux HelmRelease values to avoid drift/adoption pain.
 - Reserve a static VIP + a LB IP range (Cilium L2) outside Proxmox DHCP scope.
 
+## Dependency automation (done)
+- **Renovate + live Flux health-test** — `renovate.json` + `.github/workflows/`.
+  Renovate opens one PR per dependency (flux charts/OCI tags, container images,
+  GH Actions); every `renovate/*` PR triggers a destructive **live** test on the
+  in-cluster ARC runner that repoints the `flux-system` GitRepository at the PR
+  SHA, reconciles, and uses Flux's `wait:true` Ready as the green/red verdict,
+  then reverts to `main` (with an in-cluster watchdog dead-man's-switch).
+  Human-merge on green. `RENOVATE_TOKEN` Actions secret is set. See
+  [`docs/renovate-live-test.md`](./docs/renovate-live-test.md).
+
 ## Proposed repo layout
 ```
 /
