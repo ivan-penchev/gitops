@@ -9,3 +9,5 @@ resources:
   - ingress-nginx.yaml
   - cloudflared.yaml
   - external-dns.yaml
+  - actions-runner-controller.yaml
+  - arc-runner-pat.sops.yaml

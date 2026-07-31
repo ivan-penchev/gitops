@@ -1,0 +1,320 @@
+---
+# Actions Runner Controller (ARC) — GitHub's official gha-runner-scale-set.
+#
+# WHY: lets GitHub Actions run imperative kubectl/helm/flux against this cluster
+# WITHOUT exposing the API (192.168.68.29:6443) to the internet. The runner
+# lives in-cluster and makes an OUTBOUND long-poll to GitHub, so there is no
+# inbound path at all — the API stays exactly as LAN-only as before.
+#
+# AUTH TO GITHUB: a fine-grained PAT (repo Administration:RW + Metadata:RO on
+# ivan-penchev/gitops) stored SOPS-encrypted in arc-runner-pat.sops.yaml as the
+# Secret `arc-github-pat` (key `github_token`).
+#
+# AUTH TO THE CLUSTER: runner pods run as the in-cluster ServiceAccount
+# `ci-deployer` (below). No kubeconfig/token ever leaves the network; RBAC is
+# the entire ceiling. `kubectl`/`flux` auto-detect the in-cluster config.
+#
+# Two charts (mirrors the proxmox-csi OCIRepository+HelmRelease pattern):
+#   * controller  (arc-systems)  — installs CRDs + the operator.
+#   * scale set   (arc-runners)  — the actual runner pool `gha-homelab-arc`.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: gha-runner-scale-set-controller
+  namespace: arc-systems
+spec:
+  interval: 24h
+  url: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+  ref:
+    tag: "0.14.2"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: arc-controller
+  namespace: arc-systems
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: gha-runner-scale-set-controller
+    namespace: arc-systems
+  values: {}
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: gha-runner-scale-set
+  namespace: arc-runners
+spec:
+  interval: 24h
+  url: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+  ref:
+    tag: "0.14.2"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gha-homelab-arc
+  namespace: arc-runners
+spec:
+  interval: 1h
+  # CRDs (AutoscalingRunnerSet) come from the controller chart — wait for it.
+  dependsOn:
+    - name: arc-controller
+      namespace: arc-systems
+  chartRef:
+    kind: OCIRepository
+    name: gha-runner-scale-set
+    namespace: arc-runners
+  values:
+    # Repo-level registration on the gitops repo.
+    githubConfigUrl: https://github.com/ivan-penchev/gitops
+    # Pre-created SOPS Secret (key: github_token) in this namespace.
+    githubConfigSecret: arc-github-pat
+    # This is the `runs-on:` label workflows target.
+    runnerScaleSetName: gha-homelab-arc
+    minRunners: 0
+    maxRunners: 2
+    # Only override serviceAccountName — deep-merges into the chart's default
+    # pod spec, so the stock runner container/image is kept (CLI-only; no dind).
+    template:
+      spec:
+        serviceAccountName: ci-deployer
+---
+# The identity CI jobs run as inside the cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-deployer
+  namespace: arc-runners
+---
+# Cluster-wide `edit` REPRODUCED FAITHFULLY, MINUS:
+#   * secrets            — CI must not read/write cluster Secrets.
+#   * serviceaccounts/impersonate + serviceaccounts/token:create — otherwise CI
+#     could mint/impersonate a token to reach Secrets indirectly, defeating the
+#     point of dropping `secrets`.
+# Everything else matches the built-in `edit` so CI can manage workloads in any
+# namespace. Regenerate from `kubectl get clusterrole edit` if k8s adds rules.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: arc-ci-edit-nosecrets
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests", "issuers"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates/status"]
+    verbs: ["update"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["challenges", "orders"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests", "issuers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources: ["challenges", "orders"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups:
+      - notification.toolkit.fluxcd.io
+      - source.toolkit.fluxcd.io
+      - source.extensions.fluxcd.io
+      - helm.toolkit.fluxcd.io
+      - image.toolkit.fluxcd.io
+      - kustomize.toolkit.fluxcd.io
+    resources: ["*"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups:
+      - notification.toolkit.fluxcd.io
+      - source.toolkit.fluxcd.io
+      - source.extensions.fluxcd.io
+      - helm.toolkit.fluxcd.io
+      - image.toolkit.fluxcd.io
+      - kustomize.toolkit.fluxcd.io
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/attach", "pods/exec", "pods/portforward", "pods/proxy", "services/proxy"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/attach", "pods/exec", "pods/portforward", "pods/proxy"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - persistentvolumeclaims
+      - replicationcontrollers
+      - replicationcontrollers/scale
+      - serviceaccounts
+      - services
+      - services/proxy
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - deployments/rollback
+      - deployments/scale
+      - replicasets
+      - replicasets/scale
+      - statefulsets
+      - statefulsets/scale
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["extensions"]
+    resources:
+      - daemonsets
+      - deployments
+      - deployments/rollback
+      - deployments/scale
+      - ingresses
+      - networkpolicies
+      - replicasets
+      - replicasets/scale
+      - replicationcontrollers/scale
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims", "resourceclaimtemplates"]
+    verbs: ["create", "delete", "deletecollection", "patch", "update"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - endpoints
+      - persistentvolumeclaims
+      - persistentvolumeclaims/status
+      - pods
+      - replicationcontrollers
+      - replicationcontrollers/scale
+      - serviceaccounts
+      - services
+      - services/status
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - bindings
+      - limitranges
+      - namespaces/status
+      - pods/log
+      - pods/status
+      - replicationcontrollers/status
+      - resourcequotas
+      - resourcequotas/status
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - controllerrevisions
+      - daemonsets
+      - daemonsets/status
+      - deployments
+      - deployments/scale
+      - deployments/status
+      - replicasets
+      - replicasets/scale
+      - replicasets/status
+      - statefulsets
+      - statefulsets/scale
+      - statefulsets/status
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers", "horizontalpodautoscalers/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "cronjobs/status", "jobs", "jobs/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions"]
+    resources:
+      - daemonsets
+      - daemonsets/status
+      - deployments
+      - deployments/scale
+      - deployments/status
+      - ingresses
+      - ingresses/status
+      - networkpolicies
+      - replicasets
+      - replicasets/scale
+      - replicasets/status
+      - replicationcontrollers/scale
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets", "poddisruptionbudgets/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "ingresses/status", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims", "resourceclaims/status", "resourceclaimtemplates"]
+    verbs: ["get", "list", "watch"]
+---
+# Explicit Flux-reconcile role. Redundant with the flux rules already in
+# arc-ci-edit-nosecrets, but kept as documentation + resilience if that role is
+# ever narrowed. Covers `flux reconcile` (annotate/patch the Flux objects).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: arc-ci-flux-reconcile
+rules:
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+      - kustomize.toolkit.fluxcd.io
+      - helm.toolkit.fluxcd.io
+      - notification.toolkit.fluxcd.io
+      - image.toolkit.fluxcd.io
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: arc-ci-edit-nosecrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: arc-ci-edit-nosecrets
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: arc-runners
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: arc-ci-flux-reconcile
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: arc-ci-flux-reconcile
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: arc-runners
