@@ -25,15 +25,18 @@ spec:
         app: audiobookshelf
     spec:
       securityContext:
-        # ABS runs non-root as the image's built-in `node` user (uid/gid 1000).
-        # It joins group 0 (supplementalGroups) because all three volumes are
-        # group-0 owned with group-write + setgid dirs (block config/metadata and
-        # the root-populated NFS media), so it can read/write every mount with no
-        # data migration. NO fsGroup on purpose: it would make kubelet try to
-        # recursively chown the 1 TiB NFS mount (nfs.csi fsGroupPolicy=File).
+        # ABS runs non-root as uid/gid 100000 — the owner the fileserver assigns
+        # to the media tree (the unprivileged fileserver LXC maps its root to host
+        # 100000). That NFS export (sec=sys) ignores the client's supplemental
+        # group list, so group-0 membership does NOT grant media write; only the
+        # file owner does. Running as 100000 gives read/write on the NFS media,
+        # and supplementalGroups [0] gives read/write on the group-0-owned block
+        # config/metadata PVCs. New UI uploads land as 100000:0, matching the
+        # existing root-populated media. NO fsGroup on purpose: it would make
+        # kubelet recursively chown the 1 TiB NFS mount (nfs.csi fsGroupPolicy=File).
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        runAsUser: 100000
+        runAsGroup: 100000
         supplementalGroups: [0]
       containers:
         - name: audiobookshelf
