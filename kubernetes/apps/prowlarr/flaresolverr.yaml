@@ -1,0 +1,96 @@
+---
+# FlareSolverr — the proxy Prowlarr calls to solve Cloudflare / DDoS-GUARD
+# challenges for protected indexers. Stateless: no PVC, one replica. Prowlarr
+# reaches it in-cluster at http://flaresolverr:8191 (ClusterIP only, no ingress).
+#
+# It drives a headless Chromium, so:
+#   * runs non-root (uid/gid 1000); Chromium uses --no-sandbox already,
+#   * needs a writable HOME + /tmp (emptyDir) for the browser profile,
+#   * gets a real /dev/shm (in-memory emptyDir) — the default 64Mi shm makes
+#     Chromium tabs crash under load,
+#   * is memory-hungry, so it has its own request/limit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flaresolverr
+  namespace: prowlarr
+  labels:
+    app: flaresolverr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flaresolverr
+  template:
+    metadata:
+      labels:
+        app: flaresolverr
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: flaresolverr
+          image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
+          ports:
+            - name: http
+              containerPort: 8191
+          env:
+            - name: LOG_LEVEL
+              value: info
+            - name: LOG_HTML
+              value: "false"
+            - name: CAPTCHA_SOLVER
+              value: none
+            - name: TZ
+              value: Europe/Copenhagen
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: dshm
+              mountPath: /dev/shm
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flaresolverr
+  namespace: prowlarr
+spec:
+  selector:
+    app: flaresolverr
+  ports:
+    - name: http
+      port: 8191
+      targetPort: http

@@ -1,0 +1,102 @@
+---
+# Prowlarr — LinuxServer image, version-pinned. We migrate FROM an LXC running
+# Prowlarr 2.3.5.5327 (branch master); this image (2.5.2.x) is newer, so the
+# copied prowlarr.db is migrated FORWARD automatically on first start (Prowlarr
+# never migrates down — the old LXC DB stays as our rollback).
+#
+# Runs NON-ROOT (uid/gid 1000 + fsGroup 1000). The config lives only on a
+# proxmox-tank block PVC (no NFS), so fsGroup ownership is cheap and clean.
+# PUID/PGID match runAsUser/runAsGroup so the s6 init finds /config already
+# owned correctly and skips its chown. s6-overlay needs a writable /run, and
+# Prowlarr writes scratch to /tmp, so both are emptyDir.
+#
+# Single replica, Recreate strategy: the config PVC is RWO so a rolling update
+# can't attach it to two pods at once.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prowlarr
+  namespace: prowlarr
+  labels:
+    app: prowlarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prowlarr
+  template:
+    metadata:
+      labels:
+        app: prowlarr
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: prowlarr
+          image: lscr.io/linuxserver/prowlarr:2.5.2.5491-ls155
+          ports:
+            - name: http
+              containerPort: 9696
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Copenhagen
+            - name: UMASK
+              value: "022"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: run
+              mountPath: /run
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: prowlarr-config
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr
+  namespace: prowlarr
+spec:
+  selector:
+    app: prowlarr
+  ports:
+    - name: http
+      port: 9696
+      targetPort: http

@@ -1,0 +1,23 @@
+---
+# Prowlarr config volume on the existing proxmox-csi `proxmox-tank`
+# StorageClass (RWO block volume / ZFS zvol on the `tank` pool).
+# volumeBindingMode is WaitForFirstConsumer, so the zvol is created and attached
+# to whichever worker first schedules the Prowlarr pod.
+#
+#   config -> /config : the SQLite database (prowlarr.db — indexers, indexer
+#                       proxies, tags, app + download-client links) plus
+#                       config.xml (holds the ApiKey). This is ALL of Prowlarr's
+#                       state and is what we cold-copy from the LXC we migrate
+#                       from. SMALL but critical. proxmox-tank (RWO).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prowlarr-config
+  namespace: prowlarr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-tank
+  resources:
+    requests:
+      storage: 2Gi
