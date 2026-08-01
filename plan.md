@@ -223,6 +223,24 @@ Loki ingesting logs from every namespace, Grafana anonymous-admin reachable.
 - **`required_version` is now `>= 1.10`** (cross-type `moved` needs ≥1.8 and the
   state was rewritten by TF 1.10.x). Upgrade your local Terraform accordingly.
 
+## Audiobookshelf non-root (2026-08-01)
+ABS now runs **non-root** (`runAsNonRoot: true`, no `fsGroup`) on port **13378**.
+- **uid/gid 100000, `supplementalGroups: [0]`.** 100000 is the owner the
+  fileserver assigns to the media tree — the unprivileged fileserver LXC (id 110)
+  maps its root to host uid 100000, so files land as `100000:0`.
+- **Why not group 0 for media:** the NFS export is `sec=sys`, and that server
+  **ignores the client's supplemental group list**, so gid-0 membership grants
+  neither read nor write on media (reads only worked via the world `r-x` bits).
+  Empirically only the *file owner* uid 100000 (or root, via `no_root_squash`)
+  can write. Verified live: uid 1000+grp0 → `Permission denied`; uid 100000 → OK.
+- **Block PVCs (config/metadata, proxmox-csi):** owned `0:0`, group-0 `rwx`
+  setgid dirs, so `supplementalGroups: [0]` grants RW there (local ext4 honors
+  supplemental gids normally).
+- **No `fsGroup` on purpose:** it applies pod-wide and `nfs.csi` fsGroupPolicy is
+  `File` → kubelet would recursively chown the 1 TiB media mount on every mount.
+- New UI uploads land as `100000:0`, matching the existing root-`mv`-populated
+  media, so the two population paths stay consistent.
+
 ## Proposed repo layout
 ```
 /
