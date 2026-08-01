@@ -24,11 +24,14 @@ spec:
       storage: 2Gi
 ---
 # Static PV bound straight to the PARENT /srv/media folder on the NFS fileserver
-# (fileserver LXC 110, = host /tank/media). We mount the whole tree ONCE and use
-# subPath volumeMounts for /downloads and /media/movies. Mounting the parent (not
-# per-subdir PVs) keeps both subPaths on the SAME NFS mount / st_dev, so Radarr's
-# atomic-move + hardlink import from /downloads into /media/movies works (separate
-# NFS mounts would be different devices and force a slow copy+delete instead).
+# (fileserver LXC 110, = host /tank/media). We mount the whole tree ONCE at
+# /media (no subPath) and Radarr uses /media/movies + /media/torrent-download.
+# Mounting the parent once (rather than per-subdir PVs or k8s subPaths) keeps
+# both under ONE NFS mount / st_dev, so Radarr's atomic-move + hardlink import
+# from downloads into the movie library works. nfs.csi implements subPath as
+# SEPARATE server mounts, and NFS rejects cross-mount hardlinks with EXDEV even
+# on the same dataset — so a single parent mount is the only layout that keeps
+# hardlinks.
 #
 # The old LXC also bind-mounted /media/tv, but that was a verified-unused leftover
 # (Radarr manages movies only; tv is Sonarr's library and the dir is empty on

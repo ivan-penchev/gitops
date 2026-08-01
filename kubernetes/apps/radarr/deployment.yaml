@@ -77,14 +77,19 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
-            # subPaths of the ONE media PVC -> same NFS mount / st_dev, so
-            # /downloads -> /media/movies imports stay atomic-move + hardlink.
+            # The ONE NFS share mounted ONCE at /media (NO subPath). nfs.csi
+            # implements subPath as *separate* NFS mounts (distinct server
+            # exports), and NFS rejects hardlink/atomic-move across separate
+            # client mounts with EXDEV even on the same dataset. Mounting the
+            # parent once keeps /media/movies and /media/torrent-download on a
+            # single mount, so Radarr's import hardlink from downloads into the
+            # movie library stays a fast atomic move.
+            #   root folder      -> /media/movies          (unchanged from LXC)
+            #   completed grabs  -> /media/torrent-download (qBittorrent's
+            #                       /downloads is bridged by a Radarr remote
+            #                       path mapping; qBittorrent is a separate host)
             - name: media
-              mountPath: /downloads
-              subPath: torrent-download
-            - name: media
-              mountPath: /media/movies
-              subPath: movies
+              mountPath: /media
             - name: run
               mountPath: /run
             - name: tmp
