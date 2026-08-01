@@ -318,10 +318,23 @@ non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
 - **Incident note.** While probing, an early `rmdir`+`mkdir` of the `movies`
   placeholder dir on the fileserver detached the host's `tank/media/movies` mount
   (`mounted no`); remounted with `zfs mount`, **no data lost** (136G intact).
-- **Follow-ups:** decommission LXC 104 once satisfied (stopped = rollback); reflect
-  the LXC 110 mountpoints + NFS exports in the fileserver Terraform; qBittorrent's
-  Share Ratio Limiting is set to *Remove them* (pre-existing) — switch to *Pause
-  them* so torrents aren't deleted before Radarr imports.
+- **Memory / OOMKilled (fixed 2026-08-01).** Radarr crash-looped on `OOMKilled`
+  (exit 137) at the initial **512Mi** limit while rescanning the migrated library.
+  Root cause: Radarr's **.NET Server GC** (default) reserves one heap per CPU (4 on
+  the node) and grows to the cgroup limit, deferring collection — real RSS is only
+  ~250–300MB, the rest was GC-reserved + reclaimable NFS page cache. Fix: raised the
+  limit **512Mi→1Gi** (request 128→256Mi, matches audiobookshelf) *and* set
+  `DOTNET_gcServer=0` (workstation GC). Peak memory dropped **1024MiB→~144MiB**,
+  0 restarts. Both in `deployment.yaml`.
+- **Fileserver child datasets in IaC (done 2026-08-01).** Folded the LXC 110
+  `movies` + `torrent-download` bind mounts and NFS exports into
+  `terraform/fileserver.tf` (driven by `var.fileserver_child_datasets`): the
+  provisioner now writes all export lines and `output.fileserver_host_mount_command`
+  emits the full `pct set -mp0/-mp1/-mp2 … && pct reboot`. Verified byte-identical
+  to the live hand-applied state.
+- **Follow-ups:** decommission LXC 104 once satisfied (stopped = rollback);
+  qBittorrent's Share Ratio Limiting is set to *Remove them* (pre-existing) —
+  switch to *Pause them* so torrents aren't deleted before Radarr imports.
 
 ## Proposed repo layout
 ```
