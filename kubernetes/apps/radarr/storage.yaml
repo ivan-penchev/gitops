@@ -23,25 +23,25 @@ spec:
     requests:
       storage: 2Gi
 ---
-# Static PV bound straight to the PARENT /srv/media folder on the NFS fileserver
-# (fileserver LXC 110, = host /tank/media). We mount the whole tree ONCE at
-# /media (no subPath) and Radarr uses /media/movies + /media/torrent-download.
-# Mounting the parent once (rather than per-subdir PVs or k8s subPaths) keeps
-# both under ONE NFS mount / st_dev, so Radarr's atomic-move + hardlink import
-# from downloads into the movie library works. nfs.csi implements subPath as
-# SEPARATE server mounts, and NFS rejects cross-mount hardlinks with EXDEV even
-# on the same dataset — so a single parent mount is the only layout that keeps
-# hardlinks.
+# Two static NFS PVs, one per underlying ZFS child dataset on the fileserver
+# (fileserver LXC 110). /tank/media/{movies,torrent-download} are SEPARATE ZFS
+# datasets (not folders in tank/media), each bind-mounted into the fileserver and
+# exported on its own. Because they are distinct filesystems, Radarr's import
+# from /downloads into /media/movies was NEVER a hardlink — cross-dataset moves
+# are always copy+delete — so there is no benefit to forcing them under one mount
+# (and nfs.csi can't hardlink across separate mounts anyway). Mapping each dataset
+# to its own PV keeps the exact LXC paths (/media/movies + /downloads), so the
+# migrated radarr.db — root folder /media/movies, remote path mapping
+# /downloads -> /downloads — needs ZERO edits.
 #
 # The old LXC also bind-mounted /media/tv, but that was a verified-unused leftover
-# (Radarr manages movies only; tv is Sonarr's library and the dir is empty on
-# disk), so it is intentionally dropped here.
+# (Radarr manages movies only; tv is Sonarr's library), so it is dropped here.
 #
-# RWX + Retain: deleting this claim never touches the real library.
+# RWX + Retain: deleting a claim never touches the real library.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: radarr-media-nfs
+  name: radarr-movies-nfs
 spec:
   capacity:
     storage: 1Ti          # nominal; NFS ignores the quota
@@ -55,18 +55,18 @@ spec:
     - noatime
   claimRef:
     namespace: radarr
-    name: radarr-media-nfs
+    name: radarr-movies-nfs
   csi:
     driver: nfs.csi.k8s.io
-    volumeHandle: fileserver.int.home.17072021.xyz#srv/media#radarr
+    volumeHandle: fileserver.int.home.17072021.xyz#srv/media/movies#radarr
     volumeAttributes:
       server: "fileserver.int.home.17072021.xyz"
-      share: /srv/media
+      share: /srv/media/movies
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: radarr-media-nfs
+  name: radarr-movies-nfs
   namespace: radarr
 spec:
   accessModes:
@@ -75,4 +75,43 @@ spec:
   resources:
     requests:
       storage: 1Ti
-  volumeName: radarr-media-nfs
+  volumeName: radarr-movies-nfs
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: radarr-downloads-nfs
+spec:
+  capacity:
+    storage: 1Ti          # nominal; NFS ignores the quota
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-media
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - noatime
+  claimRef:
+    namespace: radarr
+    name: radarr-downloads-nfs
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: fileserver.int.home.17072021.xyz#srv/media/torrent-download#radarr
+    volumeAttributes:
+      server: "fileserver.int.home.17072021.xyz"
+      share: /srv/media/torrent-download
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-downloads-nfs
+  namespace: radarr
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-media
+  resources:
+    requests:
+      storage: 1Ti
+  volumeName: radarr-downloads-nfs

@@ -77,19 +77,18 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
-            # The ONE NFS share mounted ONCE at /media (NO subPath). nfs.csi
-            # implements subPath as *separate* NFS mounts (distinct server
-            # exports), and NFS rejects hardlink/atomic-move across separate
-            # client mounts with EXDEV even on the same dataset. Mounting the
-            # parent once keeps /media/movies and /media/torrent-download on a
-            # single mount, so Radarr's import hardlink from downloads into the
-            # movie library stays a fast atomic move.
-            #   root folder      -> /media/movies          (unchanged from LXC)
-            #   completed grabs  -> /media/torrent-download (qBittorrent's
-            #                       /downloads is bridged by a Radarr remote
-            #                       path mapping; qBittorrent is a separate host)
-            - name: media
-              mountPath: /media
+            # Two separate NFS mounts, one per ZFS child dataset, at the EXACT
+            # paths the migrated radarr.db already uses. movies and
+            # torrent-download are distinct filesystems, so imports are
+            # cross-dataset copies (never hardlinks) — separate mounts are
+            # correct and need no DB path edits.
+            #   /media/movies -> movies dataset (root folder)
+            #   /downloads    -> torrent-download dataset (qBittorrent grabs;
+            #                    remote path mapping /downloads -> /downloads)
+            - name: movies
+              mountPath: /media/movies
+            - name: downloads
+              mountPath: /downloads
             - name: run
               mountPath: /run
             - name: tmp
@@ -119,9 +118,12 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: radarr-config
-        - name: media
+        - name: movies
           persistentVolumeClaim:
-            claimName: radarr-media-nfs
+            claimName: radarr-movies-nfs
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: radarr-downloads-nfs
         - name: run
           emptyDir: {}
         - name: tmp
