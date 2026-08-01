@@ -77,6 +77,6 @@ output "fileserver_verify_hint" {
 }
 
 output "fileserver_host_mount_command" {
-  description = "REQUIRED one-time host command: attach /tank/media as the bind mount + enable nesting (both root@pam-only on a privileged CT, so they can't be done via the API token)."
-  value       = var.fileserver_enabled ? "pct set ${var.fileserver_vm_id} -mp0 ${var.fileserver_host_media_path},mp=${var.fileserver_container_media_path} --features nesting=1 && pct reboot ${var.fileserver_vm_id}" : null
+  description = "REQUIRED one-time host command: attach /tank/media (mp0) + each child dataset (mp1…) as bind mounts + enable nesting (all root@pam-only on a privileged CT, so they can't be done via the API token)."
+  value       = var.fileserver_enabled ? local.fileserver_mount_command : null
 }

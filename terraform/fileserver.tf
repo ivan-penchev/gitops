@@ -33,7 +33,11 @@
 # flag, and you add BOTH once by hand on the Proxmox host (root@pam on the host
 # shell is allowed):
 #
-#     pct set 110 -mp0 /tank/media,mp=/srv/media --features nesting=1 && pct reboot 110
+#     pct set 110 -mp0 /tank/media,mp=/srv/media -mp1 /tank/media/movies,mp=/srv/media/movies -mp2 /tank/media/torrent-download,mp=/srv/media/torrent-download --features nesting=1 && pct reboot 110
+#
+# (mp1/mp2 attach the separate ZFS child datasets — see var.fileserver_child_datasets;
+# the exact command is generated and printed by null_resource.fileserver_nfs and
+# exposed as output.fileserver_host_mount_command.)
 #
 # (`nesting=1` is likewise root@pam-only for a privileged CT on PVE 9 — verified
 # HTTP 403 — and nfsd needs it to mount nfsd/rpc_pipefs.)
@@ -63,6 +67,43 @@
 #     # then run the printed `pct set ... && pct reboot ...` on the PVE host
 #     # verify:  showmount -e 192.168.68.11
 # ===========================================================================
+
+locals {
+  # Child ZFS datasets under /tank/media are SEPARATE filesystems, so the
+  # non-recursive parent bind mount doesn't include them and they need their own
+  # bind mount (mp1, mp2, …) + NFS export line. Derive both from one list so the
+  # host `pct set` command and /etc/exports never drift apart.
+  fileserver_child_mounts = [
+    for i, d in var.fileserver_child_datasets : {
+      index     = i + 1 # mp0 is the parent; children start at mp1
+      host      = "${var.fileserver_host_media_path}/${d}"
+      container = "${var.fileserver_container_media_path}/${d}"
+    }
+  ]
+
+  # Every path that gets exported over NFS: the parent, then each child dataset.
+  fileserver_export_paths = concat(
+    [var.fileserver_container_media_path],
+    [for m in local.fileserver_child_mounts : m.container],
+  )
+  fileserver_export_lines = [
+    for p in local.fileserver_export_paths :
+    "${p} ${var.fileserver_export_cidr}(rw,sync,no_subtree_check,no_root_squash)"
+  ]
+
+  # The single root@pam host command: parent bind (mp0) + each child bind
+  # (mp1…) + nesting, then reboot. Bind mounts + feature flags on a privileged
+  # CT are root@pam-only via the API, so this is run by hand on the PVE host and
+  # ignored by lifecycle.ignore_changes (mount_point/features) below.
+  fileserver_mount_command = join(" ", concat(
+    [
+      "pct set ${var.fileserver_vm_id}",
+      "-mp0 ${var.fileserver_host_media_path},mp=${var.fileserver_container_media_path}",
+    ],
+    [for m in local.fileserver_child_mounts : "-mp${m.index} ${m.host},mp=${m.container}"],
+    ["--features nesting=1 && pct reboot ${var.fileserver_vm_id}"],
+  ))
+}
 
 resource "proxmox_virtual_environment_container" "fileserver" {
   count = var.fileserver_enabled ? 1 : 0
@@ -167,7 +208,7 @@ resource "null_resource" "fileserver_nfs" {
 
   triggers = {
     container_id = proxmox_virtual_environment_container.fileserver[0].id
-    export_line  = "${var.fileserver_container_media_path} ${var.fileserver_export_cidr}(rw,sync,no_subtree_check,no_root_squash)"
+    export_lines = join("\n", local.fileserver_export_lines)
   }
 
   connection {
@@ -186,18 +227,20 @@ resource "null_resource" "fileserver_nfs" {
       "for i in $(seq 1 30); do getent hosts deb.debian.org >/dev/null 2>&1 && break; sleep 2; done",
       "apt-get update -qq",
       "apt-get install -y -qq nfs-kernel-server",
-      # Ensure the export dir exists even before the host bind mount is attached
-      # (empty for now; becomes /tank/media after `pct set ... && pct reboot`).
-      "mkdir -p ${var.fileserver_container_media_path}",
-      "echo '${var.fileserver_container_media_path} ${var.fileserver_export_cidr}(rw,sync,no_subtree_check,no_root_squash)' > /etc/exports",
+      # Ensure every export dir exists even before its host bind mount is
+      # attached (empty for now; parent becomes /tank/media and each child its
+      # own dataset after `pct set ... && pct reboot`). Children are separate
+      # ZFS datasets, so each needs its own bind mount + export line.
+      "mkdir -p ${join(" ", local.fileserver_export_paths)}",
+      "printf '%s\\n' ${join(" ", [for l in local.fileserver_export_lines : "'${l}'"])} > /etc/exports",
       "exportfs -ra || true",
       "systemctl enable nfs-server >/dev/null 2>&1 || true",
       "systemctl restart nfs-server || true",
       "sleep 2",
       "echo '----------------------------------------------------------------'",
       "if systemctl is-active --quiet nfs-server; then echo 'NFS server: ACTIVE'; exportfs -v; else echo 'NFS server: FAILED to start. On the PVE HOST run then re-apply:'; echo \"  echo 'lxc.apparmor.profile: unconfined' >> /etc/pve/lxc/${var.fileserver_vm_id}.conf && pct reboot ${var.fileserver_vm_id}\"; fi",
-      "echo 'NEXT (required) — on the PVE HOST attach the media bind mount + nesting, then reboot:'",
-      "echo \"  pct set ${var.fileserver_vm_id} -mp0 ${var.fileserver_host_media_path},mp=${var.fileserver_container_media_path} --features nesting=1 && pct reboot ${var.fileserver_vm_id}\"",
+      "echo 'NEXT (required) — on the PVE HOST attach the media bind mounts + nesting, then reboot:'",
+      "echo \"  ${local.fileserver_mount_command}\"",
       "echo '----------------------------------------------------------------'",
     ]
   }

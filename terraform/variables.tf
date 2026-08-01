@@ -290,6 +290,19 @@ variable "fileserver_export_cidr" {
   default     = "192.168.68.0/24"
 }
 
+variable "fileserver_child_datasets" {
+  description = <<-EOT
+    Names of ZFS child datasets under `fileserver_host_media_path` (e.g.
+    /tank/media/movies) that are SEPARATE filesystems, not plain folders. Each
+    needs its own bind mount (mp1, mp2, …) AND its own NFS export line, because
+    the parent bind mount of /tank/media is non-recursive and does NOT include
+    nested dataset mounts (a plain folder like `audiobooks` needs nothing here —
+    it rides along with the parent export). Order defines the mp index.
+  EOT
+  type        = list(string)
+  default     = ["movies", "torrent-download"]
+}
+
 variable "fileserver_root_password" {
   description = "Optional root password for console/rescue access to the LXC (SSH is key-only). Empty = no password set."
   type        = string
