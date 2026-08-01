@@ -277,6 +277,52 @@ alongside FlareSolverr so protected indexers can clear Cloudflare/DDoS-GUARD.
 - **Follow-up:** LXC 105 is currently stopped (kept as rollback); decommission it
   once satisfied. Radarr/Sonarr/qBittorrent remain LXCs on the LAN.
 
+## Radarr (2026-08-01)
+Migrated Radarr off the DHCP LXC 104 into k8s (`kubernetes/apps/radarr/`),
+non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
+- **Radarr** `lscr.io/linuxserver/radarr:6.3.0.10514-ls312`, **fully non-root**
+  (uid/gid **100000**), config on a 2Gi `proxmox-tank` block PVC, port 7878,
+  **internal-only** ingress `radarr.int.home.17072021.xyz`. `emptyDir` `/run`+`/tmp`,
+  `/ping` probes, PUID/PGID 100000.
+- **uid 100000 + root initContainer.** The media lives on NFS owned `100000:100000`
+  (the unprivileged fileserver LXC maps root→100000) and the `sec=sys` export
+  ignores supplemental groups, so Radarr must run **as the owner** to write imports.
+  A root `initContainer` chowns only the block config PVC to 100000 (no pod-wide
+  `fsGroup`, which would recursively chown the huge NFS mount under nfs.csi
+  `fsGroupPolicy=File`).
+- **The storage surprise — child datasets weren't exported.** `tank/media/movies`,
+  `tank/media/torrent-download`, `tank/media/tv` are **separate ZFS child datasets**,
+  not folders. The fileserver LXC 110's bind of `/tank/media` is **non-recursive**,
+  so it only ever exported the `audiobooks` *folder* (why ABS worked) and never the
+  child datasets — the NFS export showed empty `movies`/`downloads`. Fixed by adding
+  explicit bind mounts to LXC 110 (`pct set 110 -mp1 /tank/media/movies,... -mp2
+  /tank/media/torrent-download,...`) and NFS export lines for each on the fileserver.
+  **These live-infra changes must be folded into the fileserver Terraform** so a
+  rebuild keeps them (see follow-up).
+- **Two NFS mounts, not one.** Because movies/downloads are distinct filesystems,
+  Radarr's import from `/downloads`→`/media/movies` is a **cross-dataset copy, never
+  a hardlink** (an early single-mount/subPath design chasing hardlinks was wrong —
+  nfs.csi subPath = separate mounts = `EXDEV` anyway). Mapped each dataset to its
+  own static NFS PV at the **exact LXC paths** (`/media/movies`, `/downloads`), so
+  the migrated `radarr.db` (root folder `/media/movies`, remote path mapping
+  `/downloads`→`/downloads`) needed **zero edits**.
+- **Migration = cold file-copy.** Stopped LXC 104's `radarr`, tar'd
+  `/var/lib/radarr/{radarr.db,config.xml}`, loaded into the PVC via a root helper
+  pod, chown 100000. **API key preserved**; schema 242 DB migrated **forward** to
+  6.3.0. Verified: **14/14 movies present (0 missing)**, root folder accessible,
+  media RW as 100000, qBittorrent (.30) reachable, cross-dir hardlinks work within a
+  dataset.
+- **DHCP drift fixed.** Repointed Prowlarr's Radarr `baseUrl` from the old LXC
+  `.58` to `https://radarr.int.home.17072021.xyz`; app test passes, 5 indexers
+  synced (incl. the FlareSolverr-gated `kickasstorrents.ws`).
+- **Incident note.** While probing, an early `rmdir`+`mkdir` of the `movies`
+  placeholder dir on the fileserver detached the host's `tank/media/movies` mount
+  (`mounted no`); remounted with `zfs mount`, **no data lost** (136G intact).
+- **Follow-ups:** decommission LXC 104 once satisfied (stopped = rollback); reflect
+  the LXC 110 mountpoints + NFS exports in the fileserver Terraform; qBittorrent's
+  Share Ratio Limiting is set to *Remove them* (pre-existing) — switch to *Pause
+  them* so torrents aren't deleted before Radarr imports.
+
 ## Proposed repo layout
 ```
 /
