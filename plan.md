@@ -241,6 +241,42 @@ ABS now runs **non-root** (`runAsNonRoot: true`, no `fsGroup`) on port **13378**
 - New UI uploads land as `100000:0`, matching the existing root-`mv`-populated
   media, so the two population paths stay consistent.
 
+## Prowlarr + FlareSolverr (2026-08-01)
+Migrated Prowlarr off the DHCP LXC 105 into k8s (`kubernetes/apps/prowlarr/`),
+alongside FlareSolverr so protected indexers can clear Cloudflare/DDoS-GUARD.
+- **Prowlarr** `lscr.io/linuxserver/prowlarr:2.5.2.5491-ls155`, **non-root**
+  (uid/gid 1000 + `fsGroup: 1000`), config on a 2Gi `proxmox-tank` block PVC,
+  port 9696, **internal-only** ingress `prowlarr.int.home.17072021.xyz`. s6 needs
+  a writable `/run` and Prowlarr a writable `/tmp` → both `emptyDir`; PUID/PGID
+  match runAsUser so s6 skips its chown.
+- **FlareSolverr** `ghcr.io/flaresolverr/flaresolverr:v3.5.0`, stateless, non-root,
+  ClusterIP-only at `http://flaresolverr:8191` (no ingress). Headless Chromium →
+  writable `/tmp` + in-memory `/dev/shm` (256Mi) `emptyDir` (the default 64Mi shm
+  crashes tabs), ~256Mi req / 1Gi limit.
+- **Migration = cold file-copy.** Stopped LXC 105's `prowlarr` service, tar'd
+  `/var/lib/prowlarr/{prowlarr.db,config.xml}`, loaded it into the PVC via a root
+  helper pod (overwriting the fresh DB), chown 1000:1000. The **API key is
+  preserved** (`config.xml` carried over), and the 2.3.5 DB migrated **forward**
+  to 2.5.2 on first start. All 8 indexers + Radarr/Sonarr app links survived.
+- **FlareSolverr wiring (lives in the DB/PVC, not git).** Added a FlareSolverr
+  indexer proxy (host `http://flaresolverr:8191/`) with a `flaresolverr` tag;
+  tagged `kickasstorrents.ws` (was *"blocked by CloudFlare Protection"* → now OK,
+  and it returns real search results through the proxy). Only Cloudflare-gated
+  indexers get the tag so others aren't needlessly routed through the browser.
+- **DHCP drift fixed by the move.** The apps' Prowlarr callback URL was stale
+  (`.57`) and Radarr had drifted from `.53` → `.58` (LXC 104). Repointed both
+  apps' `prowlarrUrl` at the stable ingress and Radarr's `baseUrl` to `.58`;
+  both app tests pass, full ApplicationIndexerSync completed, health clean.
+  Prowlarr now behind a stable ingress, so its own IP can never drift again.
+- **Out of scope:** `0Magnet` (redirects to a parked craigslist page) and
+  `ACG.RIP` (connection-refused / site down) still fail — dead indexers, not a
+  Cloudflare problem, so FlareSolverr doesn't help them.
+- **Access note:** the build host's SSH key reaches the fileserver (.11) and the
+  cluster, but **not** the Proxmox host (.2) or the LXCs — the LXC config was
+  pulled over the LAN from the container's own `python3 -m http.server`.
+- **Follow-up:** LXC 105 is currently stopped (kept as rollback); decommission it
+  once satisfied. Radarr/Sonarr/qBittorrent remain LXCs on the LAN.
+
 ## Proposed repo layout
 ```
 /
