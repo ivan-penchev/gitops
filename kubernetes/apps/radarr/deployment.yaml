@@ -74,6 +74,13 @@ spec:
               value: Europe/Copenhagen
             - name: UMASK
               value: "022"
+            # Radarr runs on .NET. Server GC (the default) reserves one heap per
+            # CPU (4 on this node) and sizes itself to the cgroup limit, deferring
+            # collection until near the ceiling — which balloons memory and OOM'd
+            # the pod during library scans. A low-throughput *arr app doesn't need
+            # server GC; workstation GC keeps the footprint small and predictable.
+            - name: DOTNET_gcServer
+              value: "0"
           volumeMounts:
             - name: config
               mountPath: /config
