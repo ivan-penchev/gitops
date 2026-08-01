@@ -1,8 +1,10 @@
 ---
 # Audiobookshelf — official image, version-pinned to match the LXC we are
-# migrating FROM (2.35.0) so the backup/restore is exactly compatible. Listens
-# on port 80 in the container. Single replica with a Recreate strategy because
-# all three volumes are RWO (a rolling update can't attach them to two pods).
+# migrating FROM (2.35.0) so the backup/restore is exactly compatible. Runs
+# non-root (uid/gid 1000) and therefore listens on 13378 (a privileged <1024
+# port can't be bound as non-root); the Service still fronts it on 80. Single
+# replica with a Recreate strategy because all three volumes are RWO (a rolling
+# update can't attach them to two pods).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,26 +25,35 @@ spec:
         app: audiobookshelf
     spec:
       securityContext:
-        # ABS runs as root in the official image; the restored DB and the
-        # rsynced media are root-owned, so keep uid/gid 0 to match the LXC.
-        runAsUser: 0
-        runAsGroup: 0
-        fsGroup: 0
+        # ABS runs non-root as the image's built-in `node` user (uid/gid 1000).
+        # It joins group 0 (supplementalGroups) because all three volumes are
+        # group-0 owned with group-write + setgid dirs (block config/metadata and
+        # the root-populated NFS media), so it can read/write every mount with no
+        # data migration. NO fsGroup on purpose: it would make kubelet try to
+        # recursively chown the 1 TiB NFS mount (nfs.csi fsGroupPolicy=File).
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        supplementalGroups: [0]
       containers:
         - name: audiobookshelf
           image: ghcr.io/advplyr/audiobookshelf:2.35.1
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 13378
           env:
             - name: PORT
-              value: "80"
+              value: "13378"
             - name: CONFIG_PATH
               value: /config
             - name: METADATA_PATH
               value: /metadata
             - name: TZ
               value: Europe/Copenhagen
+            # uid 1000 can't write the image's /root; point HOME at the writable
+            # config PVC in case anything in ABS/node touches $HOME.
+            - name: HOME
+              value: /config
           volumeMounts:
             - name: config
               mountPath: /config
