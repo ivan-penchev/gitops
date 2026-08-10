@@ -10,7 +10,7 @@ spec:
   interval: 24h
   url: oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin
   ref:
-    tag: "0.5.9"
+    tag: "0.5.10"
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
