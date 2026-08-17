@@ -47,7 +47,7 @@ spec:
         # container can write /config. Runs as root and is the ONE place root is
         # used; it never touches the NFS media mount.
         - name: init-chown-config
-          image: busybox:1.37.0
+          image: busybox:1.38.0
           command:
             - sh
             - -c
