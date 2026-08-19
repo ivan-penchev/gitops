@@ -140,6 +140,8 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
 - Image Factory schematic includes `siderolabs/qemu-guest-agent`
 
 ## Bootstrap ordering (chicken-and-egg to solve, in order)
+> Full step-by-step runbook (incl. the manual `root@pam` LXC host steps): [`docs/bootstrap.md`](./docs/bootstrap.md).
+
 1. Import Talos Image Factory disk image as Proxmox template.
 2. Terraform clones control-plane + worker VMs from template.
 3. Talos provider: gen machineconfigs, apply-config, bootstrap etcd (1 CP node).

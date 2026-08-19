@@ -4,6 +4,7 @@ IaC for a Talos-based, HA Kubernetes cluster on a single Proxmox host, managed b
 Flux (GitOps). One imperative boundary: `terraform apply`. Everything else is Git.
 
 See [`plan.md`](./plan.md) for the full design, decisions, and rationale.
+For standing a fresh host up step-by-step, see [`docs/bootstrap.md`](./docs/bootstrap.md).
 
 ## Layout
 
