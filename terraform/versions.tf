@@ -38,6 +38,10 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5"
     }
+    postgresql = {
+      source  = "cyrilgdn/postgresql"
+      version = ">= 1.22"
+    }
   }
 
   # Local state (homelab choice). Contains Talos secrets + kubeconfig — gitignored.

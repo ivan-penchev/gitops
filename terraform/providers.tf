@@ -46,3 +46,22 @@ provider "flux" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# PostgreSQL (cyrilgdn/postgresql) — manages roles/databases on the pg-01 LXC.
+#
+# Connects over the LAN to the LXC's static IP as the `postgres` superuser using
+# the generated password (set once by the DB provisioner). Plaintext on the
+# trusted LAN (sslmode=disable). The provider only opens a connection when a
+# postgresql_* resource is read/created, so a first `-target` apply of just the
+# LXC works before PostgreSQL is reachable (see postgres.tf header for phases).
+# ---------------------------------------------------------------------------
+provider "postgresql" {
+  host            = var.postgres_ip
+  port            = 5432
+  username        = "postgres"
+  password        = random_password.postgres_superuser.result
+  sslmode         = "disable"
+  connect_timeout = 15
+  superuser       = false
+}

@@ -90,6 +90,7 @@ because they're below the DHCP start; keep the Talos static block below `.50` to
 | Proxmox host | .2 |
 | Pi-hole LXC (DNS) | .20 |
 | qBittorrent LXC | .30 |
+| PostgreSQL LXC (pg-01) | .12 |
 | **Talos API VIP** | **.29** |
 | **Control planes** | **.31 / .32 / .33** |
 | **Workers** | **.34–.39** |
@@ -335,6 +336,40 @@ non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
 - **Follow-ups:** decommission LXC 104 once satisfied (stopped = rollback);
   qBittorrent's Share Ratio Limiting is set to *Remove them* (pre-existing) —
   switch to *Pause them* so torrents aren't deleted before Radarr imports.
+
+## PostgreSQL LXC (pg-01, 2026-08-19)
+Shared homelab Postgres as a privileged Debian LXC (CT **111**, `.12`,
+`pg-01.int.home.17072021.xyz`), provisioned in `terraform/postgres.tf`. Runs
+outside the cluster so databases survive Talos rebuilds (same rationale as the
+fileserver).
+
+- **Data on ZFS.** PGDATA lives on a dedicated dataset `tank/postgres`
+  bind-mounted at **`/mnt/pgdata`** (non-shadowing — a mount over
+  `/var/lib/postgresql` would hide the apt cluster). PGDATA = `/mnt/pgdata/17/main`
+  via `pg_createcluster`. Independent ZFS snapshots; survives LXC rebuild.
+- **PostgreSQL 17** from the PGDG apt repo. `scram-sha-256`, `listen_addresses='*'`,
+  `pg_hba` restricted to `192.168.68.0/24` (LAN-only, plaintext on the trusted LAN).
+- **Declarative databases.** `var.postgres_databases = [{ name, namespaces }]`
+  drives, via the `cyrilgdn/postgresql` provider (544★, actively maintained): a
+  login role (owner == db, generated `random_password`), the database, and an
+  Opaque Secret **`postgres-<db>`** injected by the `hashicorp/kubernetes`
+  provider into every listed namespace. Default entry = DB `landingzone` →
+  ns `db-landing-zone`.
+- **Secret keys.** `POSTGRES_HOST/PORT/DB/USER/PASSWORD` + `DATABASE_URL`
+  (`postgresql://user:pass@pg-01.int.home.17072021.xyz:5432/<db>?sslmode=disable`,
+  host = internal FQDN, not the raw IP). Passwords are TF-generated so these
+  Secrets live in TF state, not git.
+- **Two root@pam host steps (like fileserver).** Bind mount + dataset create are
+  root@pam-only, so `output.postgres_host_mount_command` prints
+  `zfs create tank/postgres && pct set 111 -mp0 /tank/postgres,mp=/mnt/pgdata && pct reboot 111`.
+  Apply is **phased**: (1) `-target` the LXC, (2) run the host step, (3) flip
+  `postgres_data_mounted=true` and re-apply so PGDATA initialises on the dataset,
+  then roles/dbs/secrets reconcile.
+- **Safety.** `prevent_destroy=true` on `postgresql_database` — removing an array
+  entry never drops data; deletion is a deliberate manual act.
+- **Follow-ups:** backups (nightly `pg_dumpall` → fileserver + ZFS snapshots) are
+  intentionally out of scope for now; TLS on connections could be added later.
+
 
 ## Proposed repo layout
 ```

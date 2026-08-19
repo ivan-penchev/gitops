@@ -327,3 +327,153 @@ variable "fileserver_record_name" {
   type        = string
   default     = "fileserver.int.home"
 }
+
+# ===========================================================================
+# PostgreSQL LXC (pg-01) — shared homelab database server
+# ===========================================================================
+# A single privileged Debian LXC running PostgreSQL, provisioned like the
+# fileserver (API-token create + SSH provisioner; the data-dir bind mount is the
+# one root@pam-only host step). Databases + their k8s connection Secrets are
+# declared in `postgres_databases` and reconciled by the cyrilgdn/postgresql +
+# hashicorp/kubernetes providers.
+# ===========================================================================
+
+variable "postgres_enabled" {
+  description = "Create the PostgreSQL LXC + its databases/roles/secrets + Cloudflare record. Set false for cluster-only applies."
+  type        = bool
+  default     = true
+}
+
+variable "postgres_vm_id" {
+  description = "Proxmox CT ID for the PostgreSQL LXC."
+  type        = number
+  default     = 111
+}
+
+variable "postgres_hostname" {
+  description = "Hostname of the PostgreSQL container (also the internal DNS label)."
+  type        = string
+  default     = "pg-01"
+}
+
+variable "postgres_ip" {
+  description = "Static IPv4 address of the PostgreSQL LXC (no CIDR suffix)."
+  type        = string
+  default     = "192.168.68.12"
+}
+
+variable "postgres_cores" {
+  description = "vCPU cores for the PostgreSQL LXC."
+  type        = number
+  default     = 2
+}
+
+variable "postgres_memory" {
+  description = "RAM (MiB) for the PostgreSQL LXC."
+  type        = number
+  default     = 2048
+}
+
+variable "postgres_swap" {
+  description = "Swap (MiB) for the PostgreSQL LXC."
+  type        = number
+  default     = 512
+}
+
+variable "postgres_disk_size" {
+  description = "Root filesystem size (GiB) for the PostgreSQL LXC. Data lives on the bind-mounted ZFS dataset, not here."
+  type        = number
+  default     = 8
+}
+
+variable "postgres_template" {
+  description = "Proxmox CT template volume id (already present on the node)."
+  type        = string
+  default     = "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
+}
+
+variable "postgres_version" {
+  description = "PostgreSQL major version to install from the PGDG apt repo."
+  type        = string
+  default     = "17"
+}
+
+variable "postgres_host_data_path" {
+  description = "Host ZFS dataset bind-mounted into the container to hold PGDATA (created on the host: `zfs create tank/postgres`)."
+  type        = string
+  default     = "/tank/postgres"
+}
+
+variable "postgres_container_data_path" {
+  description = "Path inside the container where the data dataset is mounted. Deliberately NON-shadowing (not /var/lib/postgresql) so the apt cluster dir is never hidden; PGDATA is placed under here."
+  type        = string
+  default     = "/mnt/pgdata"
+}
+
+variable "postgres_data_mounted" {
+  description = <<-EOT
+    Flip to true AFTER you have run the one-time root@pam host step that creates
+    the ZFS dataset and bind-mounts it (printed by output.postgres_host_mount_command),
+    then re-apply. This gates the DB provisioner so PGDATA is initialised on the
+    dataset (survives LXC rebuild), never on the ephemeral rootfs.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "postgres_record_name" {
+  description = "Cloudflare DNS record name (relative to the zone) for the PostgreSQL LXC. DNS-only, LAN IP."
+  type        = string
+  default     = "pg-01.int.home"
+}
+
+variable "postgres_client_cidr" {
+  description = "CIDR allowed to connect to PostgreSQL (pg_hba scram-sha-256). LAN-only by default."
+  type        = string
+  default     = "192.168.68.0/24"
+}
+
+variable "postgres_root_password" {
+  description = "Optional root password for console/rescue access to the LXC (SSH is key-only). Empty = no password set."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "postgres_ssh_public_key_path" {
+  description = "Public key injected as the container's root authorized_key."
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "postgres_ssh_private_key_path" {
+  description = "Private key used to SSH into the container for provisioning."
+  type        = string
+  default     = "~/.ssh/id_rsa"
+}
+
+variable "postgres_create_namespaces" {
+  description = "If true, Terraform ensures every namespace referenced in postgres_databases exists (kubernetes_namespace_v1). Set false when the namespace is already Flux-managed to avoid double ownership."
+  type        = bool
+  default     = true
+}
+
+variable "postgres_databases" {
+  description = <<-EOT
+    Databases to provision. For each entry Terraform creates a login role
+    (owner == db name) with a generated password, the database, and an Opaque
+    Secret `postgres-<name>` in every listed namespace carrying discrete
+    connection keys plus a DATABASE_URL. Removing an entry does NOT drop the
+    database (prevent_destroy) — you delete data manually.
+  EOT
+  type = list(object({
+    name       = string
+    namespaces = list(string)
+  }))
+  default = [
+    {
+      name       = "landingzone"
+      namespaces = ["db-landing-zone"]
+    }
+  ]
+}

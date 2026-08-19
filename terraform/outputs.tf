@@ -80,3 +80,37 @@ output "fileserver_host_mount_command" {
   description = "REQUIRED one-time host command: attach /tank/media (mp0) + each child dataset (mp1…) as bind mounts + enable nesting (all root@pam-only on a privileged CT, so they can't be done via the API token)."
   value       = var.fileserver_enabled ? local.fileserver_mount_command : null
 }
+
+# ---------------------------------------------------------------------------
+# PostgreSQL LXC (pg-01)
+# ---------------------------------------------------------------------------
+output "postgres_ip" {
+  description = "Static IP of the PostgreSQL LXC."
+  value       = var.postgres_enabled ? var.postgres_ip : null
+}
+
+output "postgres_fqdn" {
+  description = "Internal DNS name (Cloudflare DNS-only) for PostgreSQL — use this as the connection host."
+  value       = var.postgres_enabled ? local.postgres_fqdn : null
+}
+
+output "postgres_host_mount_command" {
+  description = "REQUIRED one-time root@pam host step: create the ZFS data dataset + bind-mount it, then reboot (both root@pam-only on a privileged CT). Run this between phase 1 and phase 2 (see postgres.tf header)."
+  value       = var.postgres_enabled ? local.postgres_mount_command : null
+}
+
+output "postgres_superuser_password" {
+  description = "Generated `postgres` superuser password (for manual admin / psql)."
+  value       = var.postgres_enabled ? random_password.postgres_superuser.result : null
+  sensitive   = true
+}
+
+output "postgres_databases_provisioned" {
+  description = "Databases created and the namespaces each credential Secret was injected into."
+  value = var.postgres_enabled ? {
+    for db in var.postgres_databases : db.name => {
+      secret_name = "postgres-${db.name}"
+      namespaces  = db.namespaces
+    }
+  } : null
+}
