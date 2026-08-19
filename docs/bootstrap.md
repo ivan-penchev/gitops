@@ -36,6 +36,7 @@ export KUBECONFIG=$PWD/kubeconfig TALOSCONFIG=$PWD/talosconfig
 kubectl get nodes        # all Ready
 ```
 Skip the LXCs entirely with `fileserver_enabled=false` / `postgres_enabled=false`.
+The LXCs are independent of the cluster (no Terraform dependency); NFS-consuming pods (radarr, audiobookshelf, prowlarr) just stay `Pending` until Phase 2's export is up, then reconcile.
 
 ## Phase 2 — Fileserver LXC (CT 110, .11) *(1 host step)*
 ```bash
