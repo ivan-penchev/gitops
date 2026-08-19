@@ -226,7 +226,7 @@ resource "null_resource" "postgres_setup" {
       "pg_ctlcluster ${var.postgres_version} main start || systemctl restart postgresql@${var.postgres_version}-main || true",
       "systemctl enable postgresql >/dev/null 2>&1 || true",
       # Set the superuser password TF's provider will authenticate with.
-      "sudo -u postgres psql -v ON_ERROR_STOP=1 -c \"ALTER USER postgres WITH PASSWORD '${random_password.postgres_superuser.result}'\"",
+      "runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c \"ALTER USER postgres WITH PASSWORD '${random_password.postgres_superuser.result}'\"",
       "systemctl restart postgresql@${var.postgres_version}-main || pg_ctlcluster ${var.postgres_version} main restart || true",
       "echo 'PostgreSQL ${var.postgres_version} ready on ${var.postgres_ip}:5432 (data: ${local.postgres_data_dir})'",
     ]

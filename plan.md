@@ -337,7 +337,11 @@ non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
   qBittorrent's Share Ratio Limiting is set to *Remove them* (pre-existing) —
   switch to *Pause them* so torrents aren't deleted before Radarr imports.
 
-## PostgreSQL LXC (pg-01, 2026-08-19)
+## PostgreSQL LXC (pg-01, 2026-08-19) — LIVE
+Deployed & verified 2026-08-19: PostgreSQL 17.11 online, PGDATA on `/mnt/pgdata/17/main`
+(dataset `tank/postgres`), `landingzone` DB/role created, `postgres-landingzone`
+Secret injected into `db-landing-zone`, and an in-cluster pod connected end-to-end.
+
 Shared homelab Postgres as a privileged Debian LXC (CT **111**, `.12`,
 `pg-01.int.home.17072021.xyz`), provisioned in `terraform/postgres.tf`. Runs
 outside the cluster so databases survive Talos rebuilds (same rationale as the
