@@ -6,9 +6,6 @@
   ],
   "dependencyDashboard": false,
   "timezone": "Europe/Copenhagen",
-  "schedule": [
-    "* 0-6 * * 1"
-  ],
   "labels": [
     "renovate"
   ],
