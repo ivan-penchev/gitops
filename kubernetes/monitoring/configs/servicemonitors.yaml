@@ -65,3 +65,33 @@ spec:
   podMetricsEndpoints:
     - port: http-prom
       interval: 30s
+---
+# Wattbill: request rates, latency and upstream (Eloverblik/Energi Data
+# Service) call metrics on /metrics.
+#
+# This ServiceMonitor lives here, not beside the app in kubernetes/apps/wattbill,
+# because the apps Kustomization (kubernetes/clusters/homelab/apps.yaml) only
+# dependsOn infrastructure-configs, not monitoring-controllers, so on a first
+# apply the ServiceMonitor CRD is not guaranteed to exist yet when the apps
+# layer reconciles. monitoring-configs dependsOn monitoring-controllers, which
+# installs the Prometheus Operator CRDs, so putting it in this Kustomization
+# instead avoids that CRD-not-found race. It reaches across namespaces into
+# wattbill via namespaceSelector, the same pattern used above.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: wattbill
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: wattbill
+spec:
+  namespaceSelector:
+    matchNames:
+      - wattbill
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wattbill
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

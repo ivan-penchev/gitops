@@ -57,3 +57,14 @@ jobs:
           RENOVATE_REQUIRE_CONFIG: "required"
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
           RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || null }}
+          # ghcr.io/ivan-penchev/wattbill is a private package. Without
+          # credentials Renovate's docker datasource gets a 401/403 listing
+          # tags and can never see a new one to open a PR for. renovate.json
+          # cannot hold this itself: hostRules there would need the token
+          # committed in the clear, and Renovate's templating does not reach
+          # into Actions secrets from a repo config file. So it is set here
+          # instead, as a JSON-encoded RENOVATE_HOST_RULES env var built from
+          # secrets.GHCR_READ_TOKEN (same read:packages PAT as ghcr-pull in
+          # kubernetes/apps/wattbill), which only this workflow ever sees.
+          RENOVATE_HOST_RULES: >-
+            [{"matchHost":"ghcr.io","hostType":"docker","username":"ivan-penchev","password":"${{ secrets.GHCR_READ_TOKEN }}"}]

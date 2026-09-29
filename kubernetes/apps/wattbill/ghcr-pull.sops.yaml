@@ -1,0 +1,34 @@
+# Pull secret for the private ghcr.io/ivan-penchev/wattbill image. Without
+# this the kubelet gets a 401/403 from GHCR and the pod sits in
+# ImagePullBackOff forever, because the wattbill package is private.
+#
+# Built from a GHCR read-only PAT (scope: read:packages) stored outside this
+# repo at ~/.config/wattbill/ghcr-read-token on the machine that authored this
+# file, and never committed in the clear: this whole document is encrypted
+# with SOPS/age, and Flux decrypts it in-cluster with the age key seeded at
+# bootstrap (see kubernetes/clusters/homelab/apps.yaml `decryption:` and
+# .sops.yaml). Renovate does not touch this file; it is excluded in
+# renovate.json.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: ghcr-pull
+    namespace: wattbill
+type: kubernetes.io/dockerconfigjson
+stringData:
+    .dockerconfigjson: ENC[AES256_GCM,data:zELXDrlVJFpbmsDQaIyNY946u8sVeeYQq54rvUxbYza3feWQtxsOE6dDINjQ6N3BeHpqyqJEAtTU4m7tl9n2yUuouyelkwtsr4RVdzfQBkUGHqqgoh+qQarHdbUjUAGDD/3947NkIdPNF8AUO5lKac/ymwE/uP+cwl3msVqTQdztqYHJd3Y53woXqzwmRyi7UZ8es37AoxORAmsjIHl4iieXqCg0OGUYxtxj9tZhD6J0zezOB8fEvIZ3T/iS3FWX,iv:MfKYc0joAAEowKgPxTzDbzRzybnzXmUj2ieaNMS8KI4=,tag:LcKuO+CG1MGZH08OjRYP6A==,type:str]
+sops:
+    age:
+        - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBLMllVK3FGVVo4UmpETU81
+            K2M4ZkJqTGJVQnlWaUc2bEplWDRhRFYrTWlVCjFwVU1UV3dxMnJSVlNpREFRVVRn
+            YkNQcXBySUt6WDFxcVFwNXhoNU42L0EKLS0tIHErZmpZRmNLLzZ0TGVJQ3U0cWtX
+            Q0pZelpVdm9RemZwQTdYQ0YyN3JYMTAKw+vHmICtrA8RAaVsJk+IXglNNfq97YRn
+            FX5h/FECPdkKAcvPM1tkcR2w8+e0MLEJg/mdAREWvIa1Kso8KB4fkw==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-09-29T22:01:46Z"
+    mac: ENC[AES256_GCM,data:9eseNOHSU/kpuUtnmyaoYocyJOX6wrm/0hJKnXbcbEH9Vu7rdq+nzyRdBxTSJ3gmAob7f8G48J/z0f2RpKIfKGhzz3tulwMYXR6UdyxbrH1O3L10lZ8da/YbpOTUN/6+EXi1tMeK78HJoQfjaC2HkAD8pIZ5nICKo6A8zQNSbFM=,iv:bB38y9hWTrlnctHO80H35pwjZ8hh1s6RjrenoXCDAeg=,tag:jJ331jhiKxV7nDJGR53MIA==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

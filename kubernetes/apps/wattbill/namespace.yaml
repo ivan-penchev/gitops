@@ -1,0 +1,7 @@
+---
+# Wattbill gets its own namespace so its pull secret, deployment and ingress
+# are scoped away from every other app in the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wattbill

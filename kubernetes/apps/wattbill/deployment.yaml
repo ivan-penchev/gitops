@@ -1,0 +1,110 @@
+---
+# Wattbill computes an electricity bill by calling Eloverblik and Energi Data
+# Service on the user's behalf. It holds nothing on disk: the cache and the
+# rate limiter both live in process memory, so there is no PVC and a restart
+# just starts the warm-up over. One replica, because each pod warms its own
+# cache, and a second one would double the upstream calls for no gain.
+#
+# The image is private (ghcr.io/ivan-penchev/wattbill), so imagePullSecrets
+# points at ghcr-pull, a SOPS-encrypted dockerconfigjson secret next to this
+# file. The tag is pinned to a release semver rather than `latest`, matching
+# how the release workflow tags the image (docker/metadata-action strips the
+# `v` from the git tag), so a rollout is reproducible and Renovate can bump it
+# by opening a PR.
+#
+# Runs as distroless nonroot (uid/gid 65532, baked into the image) with a
+# read-only root filesystem: nothing this process does needs to write to disk,
+# so removing write access removes a whole class of exploit. All Linux
+# capabilities are dropped and privilege escalation is refused for the same
+# reason a stateless HTTP handler should have as little to lose as possible.
+#
+# /readyz answers 200 as soon as the server is serving and 503 while it shuts
+# down. It does not wait for the cache warm-up, which runs in the background
+# for several minutes. /healthz never looks at upstream state, so a slow
+# Eloverblik cannot get the pod killed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wattbill
+  namespace: wattbill
+  labels:
+    app.kubernetes.io/name: wattbill
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wattbill
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wattbill
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wattbill
+          image: ghcr.io/ivan-penchev/wattbill:0.1.2
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: WATTBILL_ADDR
+              value: ":8080"
+            - name: WATTBILL_ENV
+              value: production
+            - name: WATTBILL_LOG_FORMAT
+              value: json
+            # ingress-nginx is the only thing that can reach this pod, and it
+            # overwrites X-Forwarded-For on every request, so trusting the
+            # header here identifies real clients instead of the ingress pod.
+            - name: WATTBILL_TRUST_PROXY
+              value: "true"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wattbill
+  namespace: wattbill
+  labels:
+    app.kubernetes.io/name: wattbill
+spec:
+  selector:
+    app.kubernetes.io/name: wattbill
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
