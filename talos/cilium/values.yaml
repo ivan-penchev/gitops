@@ -29,3 +29,9 @@ l2announcements:
   enabled: true
 externalIPs:
   enabled: true
+# certgen CronJob creates the Hubble CA and server certs in-cluster, so no key
+# material lands in cilium.yaml.
+hubble:
+  tls:
+    auto:
+      method: cronJob

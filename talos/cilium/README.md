@@ -12,8 +12,9 @@ single source of Talos-specific values. Regenerate it with:
 ./render.sh <VERSION>
 ```
 
-The script keeps the existing `cilium-ca` and `hubble-server-certs` Secrets so a
-re-render doesn't rotate them. Talos never updates inline-manifest objects after
+Hubble TLS uses the certgen CronJob, which creates `cilium-ca` and
+`hubble-server-certs` in the cluster. The render holds no key material, and
+`render.sh` refuses to write one that does. Talos never updates inline-manifest objects after
 they exist, so a new render has to be applied to the cluster by hand. Follow
 [`docs/cilium-upgrade.md`](../../docs/cilium-upgrade.md).
 

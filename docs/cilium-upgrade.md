@@ -22,9 +22,10 @@ the next `upgrade-k8s` rolls Cilium back.
   `kubernetes/infrastructure/configs/cilium-lb.yaml`.
 - Check the target supports our Kubernetes version at
   `https://docs.cilium.io/en/v1.<minor>/network/kubernetes/requirements/`.
-- Render with `talos/cilium/render.sh`, not a bare `helm template`. Each render
-  generates new TLS keys for `cilium-ca` and `hubble-server-certs`. The script
-  keeps the existing Secrets so the upgrade doesn't rotate them.
+- Render with `talos/cilium/render.sh`, not a bare `helm template`. The script
+  fails if the render contains a Secret. Hubble TLS comes from the certgen
+  CronJob, and a Secret in the render would put a private key in this public
+  repo.
 - Apply with `--server-side --field-manager=talos`. Talos created the objects
   with server-side apply under the `talos` field manager. Reusing it means
   fields dropped from a newer chart get removed from the live objects. This is
@@ -153,3 +154,8 @@ for the version you're leaving first.
   `CiliumL2AnnouncementPolicy` stays on `v2alpha1` through 1.20.
 - 1.20 changes the default `envoy.xdsMode` to `ads`. It only affects Envoy L7
   features (L7 policy, Cilium ingress, Gateway API), which we don't use.
+- Since 2026-09-30 Hubble TLS uses `hubble.tls.auto.method: cronJob`. The old
+  renders committed `cilium-ca` with its private key, so that CA was deleted
+  and certgen issued a new one. The certgen Job name ends in a config hash, so
+  each hop creates a new Job instead of patching an immutable one. Old Jobs can
+  be deleted.
