@@ -25,7 +25,7 @@ if [[ -f cilium.yaml ]]; then
   # Drop rendered Secrets that we already have, then prepend the existing ones.
   KEEP="$keep" yq 'select(.kind != "Secret" or (.metadata.name as $n | strenv(KEEP) | split(",") | contains([$n]) | not))' \
     "$tmp/new.yaml" > "$tmp/rest.yaml"
-  { cat "$tmp/old-secrets.yaml"; echo "---"; cat "$tmp/rest.yaml"; } > cilium.yaml
+  yq ea 'select(. != null)' "$tmp/old-secrets.yaml" "$tmp/rest.yaml" > cilium.yaml
 else
   mv "$tmp/new.yaml" cilium.yaml
 fi

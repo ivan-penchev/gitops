@@ -1,4 +1,4 @@
-# Cilium (CNI) — bootstrapped via Talos inlineManifests
+# Cilium (CNI), bootstrapped via Talos inlineManifests
 
 Cilium is the cluster CNI. It is **owned here**, not by Flux: it must exist
 before Flux's own controllers can schedule (they are ordinary pods needing a

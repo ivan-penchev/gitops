@@ -29,6 +29,11 @@ the next `upgrade-k8s` rolls Cilium back.
   with server-side apply under the `talos` field manager. Reusing it means
   fields dropped from a newer chart get removed from the live objects. This is
   the same apply `talosctl upgrade-k8s` does.
+- Keep the `config.k8s.io/owning-inventory: talos-bootstrap-manifests-inventory`
+  annotation on every object. Talos records its bootstrap manifests in that
+  inventory, and `talosctl upgrade-k8s` won't update objects that lost it. The
+  render doesn't carry the annotation because Talos adds it, so the commands
+  below add it with `yq` before applying.
 
 List the available versions:
 
@@ -54,6 +59,7 @@ step 5 is clean.
 
 ```bash
 V=1.17.18
+INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-manifests-inventory"'
 ```
 
 1. Render.
@@ -62,10 +68,15 @@ V=1.17.18
    talos/cilium/render.sh $V
    ```
 
-2. Review what changes on the live cluster.
+2. Review what changes on the live cluster. Server-side diff can't dry-run
+   objects in a namespace that doesn't exist yet (1.17 adds `cilium-secrets`),
+   so create any new Namespaces first.
 
    ```bash
-   kubectl diff --server-side --field-manager=talos --force-conflicts -f talos/cilium/cilium.yaml
+   yq "select(.kind == \"Namespace\") | $INV" talos/cilium/cilium.yaml \
+     | kubectl apply --server-side --field-manager=talos --force-conflicts -f -
+   yq "$INV" talos/cilium/cilium.yaml \
+     | kubectl diff --server-side --field-manager=talos --force-conflicts -f -
    ```
 
 3. Pre-pull the new images with Cilium's pre-flight check, so agents don't sit
@@ -86,15 +97,18 @@ V=1.17.18
 4. Apply and wait for the rollout.
 
    ```bash
-   kubectl apply --server-side --field-manager=talos --force-conflicts -f talos/cilium/cilium.yaml
+   yq "$INV" talos/cilium/cilium.yaml \
+     | kubectl apply --server-side --field-manager=talos --force-conflicts -f -
    kubectl -n kube-system rollout status ds/cilium --timeout=10m
    kubectl -n kube-system rollout status ds/cilium-envoy --timeout=10m
    kubectl -n kube-system rollout status deploy/cilium-operator --timeout=10m
    ```
 
-5. Verify.
+5. Verify. The diff from step 2 should now print nothing.
 
    ```bash
+   yq "$INV" talos/cilium/cilium.yaml \
+     | kubectl diff --server-side --field-manager=talos --force-conflicts -f -
    kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg version
    kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg status --brief
    kubectl get svc -A --field-selector spec.type=LoadBalancer   # same EXTERNAL-IPs as before
@@ -134,9 +148,8 @@ for the version you're leaving first.
 
 ## Version notes
 
-- 1.19 deprecates `cilium.io/v2alpha1` for `CiliumLoadBalancerIPPool`. Once the
-  cluster runs 1.19, change the pool in
-  `kubernetes/infrastructure/configs/cilium-lb.yaml` to `cilium.io/v2`.
+- 1.19 deprecates `cilium.io/v2alpha1` for `CiliumLoadBalancerIPPool`. 1.18
+  already serves `v2`, and our pool moved to it during the 1.18 hop.
   `CiliumL2AnnouncementPolicy` stays on `v2alpha1` through 1.20.
 - 1.20 changes the default `envoy.xdsMode` to `ads`. It only affects Envoy L7
   features (L7 policy, Cilium ingress, Gateway API), which we don't use.
