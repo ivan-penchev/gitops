@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: check
+  namespace: check
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: check
+  template:
+    metadata:
+      labels:
+        app: check
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: check
+          image: hashicorp/http-echo:1.0.0
+          args:
+            - -listen=:5678
+            - -text=GitOps public tunnel check OK
+          ports:
+            - name: http
+              containerPort: 5678
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: check
+  namespace: check
+spec:
+  selector:
+    app: check
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Cloudflare terminates public TLS; the existing tunnel forwards HTTP to nginx.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: check-public
+  namespace: check
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: check.penchev.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: check
+                port:
+                  number: 80

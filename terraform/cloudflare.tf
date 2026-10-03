@@ -67,6 +67,15 @@ locals {
   })
 }
 
+# Azure remains authoritative for penchev.com. Look up its active Cloudflare
+# partial zone only to let the opt-in ExternalDNS release target that zone.
+# Terraform does not create or change blog, mail, or Azure DNS records.
+data "cloudflare_zone" "penchev" {
+  filter = {
+    name = "penchev.com"
+  }
+}
+
 # Terraform-owned namespace for cloudflared (removed from Flux namespaces.yaml).
 resource "kubernetes_namespace_v1" "cloudflared" {
   metadata {
@@ -100,9 +109,10 @@ resource "kubernetes_config_map_v1" "cluster_config_tf" {
   }
 
   data = {
-    cf_zone_id    = data.cloudflare_zone.main.id
-    cf_account_id = data.cloudflare_zone.main.account.id
-    tunnel_id     = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
+    cf_zone_id         = data.cloudflare_zone.main.id
+    cf_account_id      = data.cloudflare_zone.main.account.id
+    penchev_cf_zone_id = data.cloudflare_zone.penchev.id
+    tunnel_id          = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
   }
 
   depends_on = [flux_bootstrap_git.this]

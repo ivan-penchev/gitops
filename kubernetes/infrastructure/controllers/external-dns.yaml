@@ -83,6 +83,56 @@ spec:
       limits:
         memory: 64Mi
 ---
+# Opt-in public host in the penchev.com PARTIAL zone. Azure DNS stays
+# authoritative; this release only writes Cloudflare records for check.penchev.com.
+# The anchored regex is an allowlist, not a zone-wide suffix filter: neither
+# penchev.com nor www.penchev.com can match, even if an Ingress uses those hosts.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns-penchev
+  namespace: external-dns
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: external-dns
+      version: "1.21.1"
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: external-dns
+  values:
+    provider:
+      name: cloudflare
+    env:
+      - name: CF_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: cloudflare-api-token
+            key: api-token
+    sources:
+      - ingress
+    policy: sync
+    registry: txt
+    txtOwnerId: homelab-k8s-penchev
+    txtPrefix: extdns-penchev-
+    extraArgs:
+      # Regex filtering also applies to zone discovery; pin the partial zone
+      # separately so only the allowlisted host passes the record filter.
+      - --zone-id-filter=${penchev_cf_zone_id}
+      - --regex-domain-filter=^check[.]penchev[.]com$
+      - --default-targets=${tunnel_id}.cfargotunnel.com
+      - --force-default-targets
+      - --cloudflare-proxied
+    interval: 1m
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+---
 # Internal instance: *.int.home hosts -> grey A record to the ingress LB IP.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
