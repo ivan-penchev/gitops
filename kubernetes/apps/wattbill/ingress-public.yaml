@@ -6,7 +6,7 @@ metadata:
   name: wattbill-public
   namespace: wattbill
   annotations:
-    external-dns.kubernetes.io/target: wattbill.penchev.com.cdn.cloudflare.net
+    external-dns.alpha.kubernetes.io/target: wattbill.penchev.com.cdn.cloudflare.net
 spec:
   ingressClassName: nginx
   rules:
