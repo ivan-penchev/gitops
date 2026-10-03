@@ -83,10 +83,8 @@ spec:
       limits:
         memory: 64Mi
 ---
-# Opt-in public host in the penchev.com PARTIAL zone. Azure DNS stays
-# authoritative; this release only writes Cloudflare records for check.penchev.com.
-# The anchored regex is an allowlist, not a zone-wide suffix filter: neither
-# penchev.com nor www.penchev.com can match, even if an Ingress uses those hosts.
+# Public app subdomains in the penchev.com PARTIAL zone. Azure stays
+# authoritative; the apex and www are excluded from this release.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -118,10 +116,10 @@ spec:
     txtOwnerId: homelab-k8s-penchev
     txtPrefix: extdns-penchev-
     extraArgs:
-      # Regex filtering also applies to zone discovery; pin the partial zone
-      # separately so only the allowlisted host passes the record filter.
+      # Pin the partial zone by ID; only application subdomains pass the filter.
       - --zone-id-filter=${penchev_cf_zone_id}
-      - --regex-domain-filter=^check[.]penchev[.]com$
+      - --regex-domain-filter=^.+[.]penchev[.]com$
+      - --regex-domain-exclusion=^www[.]penchev[.]com$
       - --default-targets=${tunnel_id}.cfargotunnel.com
       - --force-default-targets
       - --cloudflare-proxied
@@ -133,10 +131,10 @@ spec:
       limits:
         memory: 64Mi
 ---
-# Azure DNS remains authoritative for this partial zone. This instance is
-# opt-in, restricted to the exact test hostname, and never touches the blog.
-# The app currently has zone-wide DNS Zone Contributor; keep the exact-host
-# filters in place until its Azure RBAC can be narrowed to the check record.
+# Azure DNS remains authoritative for this partial zone. Only app subdomains
+# are published; each public Ingress supplies its own partial-zone CNAME target.
+# The app currently has zone-wide DNS Zone Contributor; narrow Azure RBAC
+# where possible and keep apex/www excluded.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -162,11 +160,9 @@ spec:
     managedRecordTypes:
       - CNAME
     extraArgs:
-      - --annotation-filter=gitops.penchev.com/azure-dns=true
       - --zone-name-filter=penchev.com
-      - --regex-domain-filter=^check[.]penchev[.]com$
-      - --default-targets=check.penchev.com.cdn.cloudflare.net
-      - --force-default-targets
+      - --regex-domain-filter=^.+[.]penchev[.]com$
+      - --regex-domain-exclusion=^www[.]penchev[.]com$
       - --azure-config-file=/etc/kubernetes/azure.json
     extraVolumes:
       - name: azure-config
