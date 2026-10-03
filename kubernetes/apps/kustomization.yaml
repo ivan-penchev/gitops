@@ -3,7 +3,6 @@ kind: Kustomization
 # Workloads. Each app lives in its own subdirectory.
 resources:
   - audiobookshelf
-  - check
   - prowlarr
   - radarr
   - wattbill

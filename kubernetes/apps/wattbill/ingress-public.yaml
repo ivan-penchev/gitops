@@ -1,0 +1,22 @@
+---
+# Public TLS terminates at Cloudflare; the tunnel forwards HTTP to ingress-nginx.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wattbill-public
+  namespace: wattbill
+  annotations:
+    external-dns.alpha.kubernetes.io/target: wattbill.penchev.com.cdn.cloudflare.net
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: wattbill.penchev.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wattbill
+                port:
+                  number: 8080
