@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: external-dns-penchev-azure
+    namespace: external-dns
+type: Opaque
+stringData:
+    azure.json: ENC[AES256_GCM,data:0NY62YE6xZzvazAQWq3mMg8b2HdfWsF/RKPUaw+8PcOKkDTiyhyIZiIIwxNDmjCkCFSvLJ8T+hD8fFy0NCQrBMiZqp54WiXR6TyliMxlYUTIL2Z+ik7RoX8qzEoDkuo6ms7xvgjcAUkNy14UaY6asx9IH2gv10VhoeiI2LFpVleJis1KNUcudpwfN+9zBb23hgt37LssjAIqt06aK5gmG6k971dDoOkazyYsWMZHEEOmVN1kDjOFqmVTVgWQtC8sLZq7XdYhEJlwm5wFwaMmFR5UjDBxqEQahYn8RecQkPXtVNMgZGJAoa3pvH+hwUcVKsEGhDe11w==,iv:C41N4iQPEipS6UkyL+J3F/p9RflrKgPFngqGpg4qeNo=,tag:INRmjh5QTas+iBbMLZ/nPA==,type:str]
+sops:
+    age:
+        - recipient: age1dwvrsd7g7mnc80cgjwnxygyf8j5gwxffr45mxqvuf60kmm6vtpvqm4lkwa
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGK1ZXUUpMQ0hSSERwbmFG
+            S1FpSXU5TnY1Y2xZR1JlYy9ZMzJhL0hTblVBCnRIWmZQNTdSMFVmd21GQjB1TFM0
+            ejY1cDc1aVU2VlVhMTd0aWVURnl6dWMKLS0tIHI1TU95d1hCVW4vMUlKdzEweEJl
+            L0xoYlozamlOSXJGNUdkTjVxMnZpV2cKcrWrByCgWoPfl6r5QvGTM/ONsUgtt68w
+            TjVVu8+YjrLQwfXaSmFtwdSiLYQdiCCfuIvWggZsRxOOpVU/nnwApQ==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-10-03T10:16:20Z"
+    mac: ENC[AES256_GCM,data:jCi7hU3g+f/mtfSb2yMrIIcPsYZZ4TzB4pTp3msV+VmLS4FzzMhXzOZ72Bi+xK0F063K7kF0zpZNF6/Iev52NATAD8fC+rH7Sr13rqZGkmjJKzuqlWisjJi2oUNjqfKapULFAc+njb56DlT55JjiNPilfg/MY26KkFDQBt0jvtw=,iv:lFMpyXRAGvezsezRDlHsavkzZhalB5RI7QIr9KZBpv0=,tag:PG1QQY82Yvs6ILVBljwV3g==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

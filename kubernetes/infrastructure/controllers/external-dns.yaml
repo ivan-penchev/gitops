@@ -133,6 +133,57 @@ spec:
       limits:
         memory: 64Mi
 ---
+# Azure DNS remains authoritative for this partial zone. This instance is
+# opt-in, restricted to the exact test hostname, and never touches the blog.
+# The app currently has zone-wide DNS Zone Contributor; keep the exact-host
+# filters in place until its Azure RBAC can be narrowed to the check record.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-dns-penchev-azure
+  namespace: external-dns
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: external-dns
+      version: "1.21.1"
+      sourceRef:
+        kind: HelmRepository
+        name: external-dns
+        namespace: external-dns
+  values:
+    provider:
+      name: azure
+    sources:
+      - ingress
+    policy: upsert-only
+    registry: noop
+    managedRecordTypes:
+      - CNAME
+    extraArgs:
+      - --annotation-filter=gitops.penchev.com/azure-dns=true
+      - --zone-name-filter=penchev.com
+      - --regex-domain-filter=^check[.]penchev[.]com$
+      - --default-targets=check.penchev.com.cdn.cloudflare.net
+      - --force-default-targets
+      - --azure-config-file=/etc/kubernetes/azure.json
+    extraVolumes:
+      - name: azure-config
+        secret:
+          secretName: external-dns-penchev-azure
+    extraVolumeMounts:
+      - name: azure-config
+        mountPath: /etc/kubernetes
+        readOnly: true
+    interval: 1m
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+---
 # Internal instance: *.int.home hosts -> grey A record to the ingress LB IP.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

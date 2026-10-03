@@ -63,6 +63,8 @@ kind: Ingress
 metadata:
   name: check-public
   namespace: check
+  annotations:
+    gitops.penchev.com/azure-dns: "true"
 spec:
   ingressClassName: nginx
   rules:

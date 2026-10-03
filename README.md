@@ -72,30 +72,42 @@ existing `17072021.xyz` public and internal ExternalDNS releases are unchanged.
 The anchored hostname allowlist and distinct TXT registry owner/prefix ensure
 this release cannot manage the blog's `penchev.com` or `www.penchev.com` records.
 
-To activate the test hostname:
+Cloudflare ExternalDNS has created the proxied `check.penchev.com` CNAME to
+`<tunnel-id>.cfargotunnel.com`. A **separate Azure ExternalDNS release** creates
+the authoritative Azure CNAME to `check.penchev.com.cdn.cloudflare.net`. It
+uses only the annotated test Ingress,
+an exact hostname regex, the `penchev.com` Azure zone-name filter, CNAME-only
+record management, and `upsert-only` with no TXT registry. It cannot delete
+records when the Ingress disappears; remove the CNAME deliberately if retiring
+the test. The app currently has **DNS Zone Contributor on the whole zone**;
+that permission is broader than these filters and could allow unintended
+changes if they are misconfigured. Narrow it to **Reader** on `rg-prod` and
+**DNS Zone Contributor** only on `penchev.com/CNAME/check` as soon as practical.
+Record-set-scoped access [is supported by Azure DNS](https://learn.microsoft.com/azure/dns/dns-protect-zones-recordsets#record-set-level-azure-rbac).
+Use the *enterprise application/service principal* object ID
+`3522d76e-0fef-4c1c-9bb2-908ecaad67a0`, not the app-registration object
+ID; verify record-set-scoped creation before removing the current role.
 
-1. Run `terraform apply` from `terraform/` with the existing credentials; it
-   resolves the partial zone ID into `cluster-config-tf`. Review the plan first.
-   This change does not migrate DNS or update the Azure zone.
-2. After Flux reconciles, verify the **in-cluster** Cloudflare token has
-   Zone:Read and DNS:Edit on `penchev.com` and that ExternalDNS created the
-   proxied `check.penchev.com` CNAME to `<tunnel-id>.cfargotunnel.com`.
-   Access to list a zone alone does not prove DNS-edit permission.
-3. At the **authoritative Azure DNS zone**, create **only** a CNAME for
-   `check.penchev.com` targeting `check.penchev.com.cdn.cloudflare.net`.
-   Verify the target and TLS at Cloudflare before exposing more hosts; this
-   repository does not automate or perform that Azure DNS change. Do not
-   change the registrar nameservers, apex blog alias, `www` blog CNAME, or mail.
-4. Verify `https://check.penchev.com/` returns
-   `GitOps public tunnel check OK`. If it does not, inspect the Cloudflare
-   record, Azure CNAME, and tunnel/Ingress health before adding apps.
+The SOPS-encrypted `azure-dns.sops.yaml` Secret supplies `azure.json` to the
+release in the `external-dns` namespace. It is listed alongside the release
+in the controllers Kustomization. Never commit a plaintext copy of the client
+secret; rotate any copy disclosed outside the encrypted Secret.
+
+After Flux reconciles, check the Azure ExternalDNS logs for a successful
+CNAME upsert and query authoritative Azure nameservers for
+`check.penchev.com CNAME check.penchev.com.cdn.cloudflare.net`.
+Verify `https://check.penchev.com/` returns `GitOps public tunnel check OK`.
+Do not change the registrar nameservers, apex blog alias, `www` blog CNAME, or
+mail records. The live `cluster-config-tf` already contains the Cloudflare
+partial-zone ID, but Terraform state does not; review any Terraform plan for
+unrelated Flux bootstrap changes before applying it.
 
 For another public app, first review its authentication and data exposure.
-Add its Ingress and explicitly add its **exact hostname** to the anchored
-`--regex-domain-filter` allowlist in `external-dns-penchev`; then repeat the
-Cloudflare record verification and authoritative Azure CNAME step. Do not
-replace the allowlist with a zone-wide suffix filter: that could include the
-blog's apex or `www`.
+Add its Ingress and explicitly add its **exact hostname** to both anchored
+`--regex-domain-filter` allowlists and the Azure annotation filter opt-in.
+Also adjust Azure target selection for that hostname (the current forced
+`--default-targets` is test-only) and grant only its intended CNAME record-set
+permission. Do not replace the allowlists with a zone-wide suffix filter.
 
 ## Security reminders
 

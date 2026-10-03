@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespaces.yaml
   - cloudflare.sops.yaml
+  - azure-dns.sops.yaml
   - cert-manager.yaml
   - proxmox-csi.yaml
   - csi-driver-nfs.yaml
