@@ -31,23 +31,11 @@ resource "kubernetes_namespace_v1" "flux_system" {
   depends_on = [talos_cluster_kubeconfig.this]
 }
 
-resource "kubernetes_secret_v1" "flux_git" {
-  metadata {
-    name      = "flux-system"
-    namespace = kubernetes_namespace_v1.flux_system.metadata[0].name
-  }
-
-  data = {
-    identity       = file(pathexpand(var.flux_git_private_key_path))
-    "identity.pub" = format("%s\n", join(" ", slice(regexall("\\S+", file(pathexpand("${var.flux_git_private_key_path}.pub"))), 0, 2)))
-    known_hosts    = file("${path.module}/github_known_hosts")
-  }
-
-  type                           = "Opaque"
-  wait_for_service_account_token = false
+removed {
+  from = kubernetes_secret_v1.flux_git
 
   lifecycle {
-    prevent_destroy = true
+    destroy = false
   }
 }
 
@@ -66,7 +54,7 @@ module "flux_operator_bootstrap" {
   }
 
   depends_on = [
-    kubernetes_secret_v1.flux_git,
+    kubernetes_namespace_v1.flux_system,
     kubernetes_secret_v1.sops_age,
     kubernetes_config_map_v1.cluster_config_tf,
   ]

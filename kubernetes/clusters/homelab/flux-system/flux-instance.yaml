@@ -20,10 +20,9 @@ spec:
   sync:
     kind: GitRepository
     name: flux-system
-    url: ssh://git@github.com/ivan-penchev/gitops.git
+    url: https://github.com/ivan-penchev/gitops.git
     ref: refs/heads/main
     path: ./kubernetes/clusters/homelab
-    pullSecret: flux-system
     interval: 1m
   kustomize:
     patches:

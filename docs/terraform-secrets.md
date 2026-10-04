@@ -70,15 +70,12 @@ If you rotate the Cloudflare token, also update
 
 ## Flux bootstrap credentials
 
-Terraform maintains the `flux-system` SSH Secret from
-`flux_git_private_key_path` and its adjacent `.pub` file. GitHub's public host
-key is pinned in `terraform/github_known_hosts`; verify replacements against
-GitHub's published SSH keys before changing it. The key needs repository read
-access. Bootstrap no longer pushes generated files to Git.
+Flux reads this public repository over HTTPS without Git credentials.
+Bootstrap does not push generated files to Git.
 
-The `sops-age` Secret comes from `sops_age_key_file`. Keep both private keys
-outside Git and preserve them when migrating Flux. Terraform state contains
-these secrets, so encrypt backups and restrict access to plan files.
+The `sops-age` Secret comes from `sops_age_key_file`. Keep the age private key
+outside Git and preserve it when migrating Flux. Terraform state contains
+secrets, so encrypt backups and restrict access to plan files.
 
 ## Safety
 

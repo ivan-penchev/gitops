@@ -15,8 +15,8 @@ kubernetes/   # Flux-managed cluster state (infrastructure + apps)
 ```
 
 This repo (`github.com/ivan-penchev/gitops`) **is** the GitOps source: after
-bootstrap, Flux syncs `kubernetes/clusters/homelab` from it over SSH
-(`git@github.com`, key `~/.ssh/id_rsa`). The FluxInstance in
+bootstrap, Flux syncs `kubernetes/clusters/homelab` over public HTTPS without
+Git credentials. The FluxInstance in
 `kubernetes/clusters/homelab/flux-system` owns the controller configuration.
 Flux manages the operator Helm release from the same directory. Terraform
 bootstraps these resources but does not overwrite them after Git adopts them.

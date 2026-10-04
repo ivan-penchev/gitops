@@ -19,7 +19,7 @@ boundary only: `terraform apply`. Everything else is Git-driven.
 | Cilium+Flux bootstrap | Cilium via Talos `inlineManifests` (helm-templated); Flux via TF `flux` provider same apply; Flux adopts Cilium HelmRelease | Hands-off, single source of truth |
 | Secrets in Git | SOPS + age; TF seeds `sops-age` secret at bootstrap | Simple, no extra infra |
 | Repo | **This repo IS the monorepo** — `github.com/ivan-penchev/gitops` holding `/terraform` + `/kubernetes` + `/talos` | Single change surface; Flux self-manages the same repo |
-| Flux ↔ Git auth | **SSH deploy** — `ssh://git@github.com/ivan-penchev/gitops.git`, key `~/.ssh/id_rsa` (verified GitHub access) | No PAT to rotate; Mac SSH already trusts the profile |
+| Flux ↔ Git auth | Public HTTPS at `https://github.com/ivan-penchev/gitops.git` | Public repository reads need no Git credentials |
 | CSI / PV storage | Proxmox CSI plugin → ZFS zvols on `tank` | Single-host native; revisit Longhorn on 2nd host |
 | Internet exposure | Cloudflare Tunnel (`cloudflared` in-cluster) + Cloudflare DNS | No public IP/CGNAT/DDNS needed; hides home IP |
 | Ingress split | Internal ingress class (LAN) + public ingress class (via Tunnel) | Control what's public by class, not per-service firewall |

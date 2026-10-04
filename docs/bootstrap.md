@@ -25,7 +25,7 @@ sops exec-env secrets.sops.env 'cd terraform && terraform <cmd>'
 - Tools on PATH: `terraform >= 1.11`, `talosctl`, `kubectl`, `flux`, `helm`, `sops`, `age`.
 - `age.key` (SOPS private key) present; `SOPS_AGE_KEY_FILE` exported.
 - Credentials in `secrets.sops.env` (see [terraform-secrets.md](./terraform-secrets.md)).
-- `~/.ssh/id_rsa[.pub]` (Flux→GitHub + LXC root key).
+- `~/.ssh/id_rsa[.pub]` for LXC provisioning. Flux does not use an SSH key.
 - `terraform/terraform.tfvars` filled in (versions, Flux URL, SOPS pubkey, per-LXC gates).
 
 ## Phase 1 — Cluster *(no manual step)*
@@ -35,12 +35,12 @@ sops exec-env secrets.sops.env 'cd terraform && terraform init && terraform appl
 export KUBECONFIG=$PWD/kubeconfig TALOSCONFIG=$PWD/talosconfig
 kubectl get nodes        # all Ready
 ```
-Terraform creates the `flux-system` namespace, Git SSH secret, SOPS secret,
-and `cluster-config-tf` ConfigMap before running the operator bootstrap module.
+Terraform creates the `flux-system` namespace, SOPS secret, and
+`cluster-config-tf` ConfigMap before running the operator bootstrap module.
 The module installs `flux-operator` and creates the FluxInstance from Git's
 manifests. Once Flux adopts them, Git controls their versions and configuration.
-`cluster-config` remains Git-managed. Set `flux_git_url` to the URL in
-`flux-instance.yaml`; the matching SSH public key must have read access.
+`cluster-config` remains Git-managed. Set `flux_git_url` to the public HTTPS URL
+in `flux-instance.yaml`. Flux reads the repository without credentials.
 
 Check the handoff:
 
@@ -95,15 +95,19 @@ confirm no test run or `gitops-watchdog` Job is active in `arc-runners`. Back up
 Terraform state and the `flux-system` resources with age encryption before
 changing ownership.
 
-Import the existing namespace and SSH secret rather than recreating them:
+Import the existing namespace rather than recreating it:
 
 ```bash
 sops exec-env secrets.sops.env 'cd terraform && terraform import kubernetes_namespace_v1.flux_system flux-system'
-sops exec-env secrets.sops.env 'cd terraform && terraform import kubernetes_secret_v1.flux_git flux-system/flux-system'
 ```
 
-The `removed` block releases `flux_bootstrap_git.this` from state without
-deleting Flux or its Git files. Do not destroy that resource. Review a targeted
+The `removed` blocks release the old bootstrap resource and any previously
+imported Git SSH Secret from state without deleting them. This preserves SSH
+access until the source switches to HTTPS. After the GitRepository is Ready
+with the HTTPS URL and no `secretRef`, delete only the unused `flux-system`
+Secret in the `flux-system` namespace. Keep the `sops-age` Secret.
+
+Do not destroy `flux_bootstrap_git.this`. Review a targeted
 plan for `module.flux_operator_bootstrap` and `flux_bootstrap_git.this`; it must
 not replace credentials or include unrelated infrastructure changes.
 
