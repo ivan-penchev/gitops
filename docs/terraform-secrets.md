@@ -68,6 +68,15 @@ sops secrets.sops.env          # edit PROXMOX_VE_API_TOKEN / CLOUDFLARE_API_TOKE
 If you rotate the Cloudflare token, also update
 `kubernetes/infrastructure/controllers/cloudflare.sops.yaml` (the in-cluster copy).
 
+## Flux bootstrap credentials
+
+Flux reads this public repository over HTTPS without Git credentials.
+Bootstrap does not push generated files to Git.
+
+The `sops-age` Secret comes from `sops_age_key_file`. Keep the age private key
+outside Git and preserve it when migrating Flux. Terraform state contains
+secrets, so encrypt backups and restrict access to plan files.
+
 ## Safety
 
 - **Never** commit a plaintext `.env` — `.gitignore` ignores `*.env` and only

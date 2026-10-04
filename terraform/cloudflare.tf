@@ -115,5 +115,5 @@ resource "kubernetes_config_map_v1" "cluster_config_tf" {
     tunnel_id          = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
   }
 
-  depends_on = [flux_bootstrap_git.this]
+  depends_on = [kubernetes_namespace_v1.flux_system]
 }

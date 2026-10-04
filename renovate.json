@@ -32,6 +32,20 @@
       "^\\.github/workflows/.+\\.ya?ml$"
     ]
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^kubernetes/clusters/homelab/flux-system/flux-instance\\.yaml$/"
+      ],
+      "matchStrings": [
+        "distribution:\\s+version: \\\"(?<currentValue>[^\\\"]+)\\\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "fluxcd/flux2",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
+  ],
   "packageRules": [
     {
       "description": "One dependency per PR (no grouping) so the live health-test isolates a single change and a red result pinpoints the culprit.",

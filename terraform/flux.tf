@@ -1,13 +1,63 @@
-# ---------------------------------------------------------------------------
-# Flux bootstrap (GitOps). Installs Flux into the Talos cluster and points it at
-# this same monorepo (path = var.flux_path) over SSH. Flux then self-manages.
-# ---------------------------------------------------------------------------
-resource "flux_bootstrap_git" "this" {
-  path = var.flux_path
+removed {
+  from = flux_bootstrap_git.this
 
-  # Flux reaches the cluster via the provider's kubernetes block, which is wired
-  # to the Talos kubeconfig — so this can only touch the new cluster.
+  lifecycle {
+    destroy = false
+  }
+}
+
+locals {
+  flux_manifest_path    = "${path.module}/../${var.flux_path}/flux-system"
+  flux_instance         = yamldecode(file("${local.flux_manifest_path}/flux-instance.yaml"))
+  flux_operator_source  = yamldecode(file("${local.flux_manifest_path}/flux-operator-source.yaml"))
+  flux_operator_release = yamldecode(file("${local.flux_manifest_path}/flux-operator.yaml"))
+}
+
+resource "kubernetes_namespace_v1" "flux_system" {
+  metadata {
+    name = "flux-system"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [metadata[0].labels, metadata[0].annotations]
+
+    precondition {
+      condition     = local.flux_instance.spec.sync.url == var.flux_git_url
+      error_message = "flux_git_url must match spec.sync.url in flux-instance.yaml."
+    }
+  }
+
   depends_on = [talos_cluster_kubeconfig.this]
+}
+
+removed {
+  from = kubernetes_secret_v1.flux_git
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+module "flux_operator_bootstrap" {
+  source  = "controlplaneio-fluxcd/flux-operator-bootstrap/kubernetes"
+  version = "0.9.0"
+
+  revision = 1
+  gitops_resources = {
+    instance_yaml = file("${local.flux_manifest_path}/flux-instance.yaml")
+    operator_chart = {
+      repository  = trimprefix(local.flux_operator_source.spec.url, "oci://")
+      version     = local.flux_operator_source.spec.ref.tag
+      values_yaml = yamlencode(local.flux_operator_release.spec.values)
+    }
+  }
+
+  depends_on = [
+    kubernetes_namespace_v1.flux_system,
+    kubernetes_secret_v1.sops_age,
+    kubernetes_config_map_v1.cluster_config_tf,
+  ]
 }
 
 # sops-age secret so Flux can decrypt SOPS-encrypted manifests in Git.
@@ -26,5 +76,5 @@ resource "kubernetes_secret_v1" "sops_age" {
 
   type = "Opaque"
 
-  depends_on = [flux_bootstrap_git.this]
+  depends_on = [kubernetes_namespace_v1.flux_system]
 }

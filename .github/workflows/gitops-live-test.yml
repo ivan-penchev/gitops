@@ -1,30 +1,7 @@
-# Destructive, live pre-merge health-test for Renovate PRs.
-#
-# WHAT IT DOES (mechanism "A" from the design):
-#   1. SUSPENDS the root flux-system Kustomization (it renders gotk-sync.yaml and
-#      would otherwise re-apply `ref.branch: main`, reverting our repoint within
-#      seconds — the trivial-pass bug), then repoints the flux-system
-#      GitRepository from `main` to the PR's HEAD branch, so the ENTIRE cluster's
-#      desired state becomes `main + this one Renovate bump`.
-#   2. Waits until the stored artifact revision actually reflects the PR branch,
-#      then reconciles the child Kustomization layers and uses Flux's own
-#      `wait: true` Ready condition as the verdict.
-#   3. Always repoints back to `main`, resumes the root Kustomization, and
-#      reconciles, restoring production.
-#
-# WHY IT RUNS HERE: the job runs on the in-cluster ARC runner `gha-homelab-arc`
-# as the `ci-deployer` ServiceAccount, so kubectl/flux auto-detect the
-# in-cluster config. The API is never exposed off-LAN.
-#
-# BLAST RADIUS (accepted, "B for everything"): every Renovate PR briefly flips
-# ALL of prod to an unmerged SHA and cycles whatever changed. A broken infra
-# bump can momentarily disrupt prod until it is reverted.
-#
-# DEAD-MAN'S-SWITCH: before repointing, we launch an in-cluster watchdog Job
-# (runs independently of this runner) that force-resets the GitRepository ref
-# to `main` AND resumes the root flux-system Kustomization after a hard timeout.
-# So even if a bad bump kills THIS runner (e.g. an ARC/CNI/ingress break), the
-# cluster self-heals back to main.
+# This changes live workloads. The root stays suspended during the PR test.
+# Pause FluxInstance reconciliation too, or the operator can undo that suspension
+# and restore its own source ref. Both pauses must be acknowledged before switching.
+# The independent watchdog uses the same recovery commands as the runner.
 name: gitops-live-test
 
 on:
@@ -43,17 +20,31 @@ permissions:
 jobs:
   live-test:
     # Only Renovate's PRs drive the automated live test.
-    if: startsWith(github.head_ref, 'renovate/')
+    if: startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: gha-homelab-arc
     timeout-minutes: 25
     env:
       HEAD_BRANCH: ${{ github.head_ref }}
-      # Watchdog hard cap (seconds). Must exceed the expected reconcile window
-      # (source + 3 layers, each up to a few minutes) but bound how long prod
-      # can be stranded on a PR SHA if this runner dies. 20 minutes.
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # Recovery starts after 20 minutes, even if the runner disappears.
       WATCHDOG_SECONDS: "1200"
       WATCHDOG_IMAGE: "registry.k8s.io/kubectl:v1.33.0"
     steps:
+      - name: Reject changes the suspended root cannot test
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+            if (files.some(f => [f.filename, f.previous_filename].some(
+              p => p?.startsWith('kubernetes/clusters/homelab/')))) {
+              core.setFailed('Root and FluxInstance changes need a separate migration/controller test. The live test keeps the root and FluxInstance suspended.');
+            }
+
       - name: Install flux + kubectl
         run: |
           set -euo pipefail
@@ -66,72 +57,217 @@ jobs:
           flux version --client
           kubectl version --client
 
-      - name: Sanity — confirm in-cluster access and current ref
+      - name: Prepare shared switch and recovery commands
         run: |
           set -euo pipefail
-          kubectl -n flux-system get gitrepository flux-system \
-            -o jsonpath='{.spec.ref.branch}{"\n"}'
+          cat > gitops-live-control.sh <<'SCRIPT'
+          #!/bin/sh
+          set -eu
+          instance=fluxinstance.fluxcd.controlplane.io/flux
+          source=gitrepository.source.toolkit.fluxcd.io/flux-system
+          root=kustomization.kustomize.toolkit.fluxcd.io/flux-system
+          layers="infrastructure-controllers infrastructure-configs apps"
+          k() { kubectl --request-timeout=30s -n flux-system "$@"; }
+          field() { k get "$1" -o "jsonpath=$2"; }
+          ready() {
+            k wait "$1" --for=condition=Ready --timeout=3m
+            test "$(field "$1" '{.metadata.generation}')" = "$(field "$1" '{.status.observedGeneration}')"
+          }
+          handled() {
+            k wait "$1" --for="jsonpath={.status.lastHandledReconcileAt}=$2" --timeout=3m
+          }
+          reconcile() {
+            k annotate "$1" "reconcile.fluxcd.io/requestedAt=$2" --overwrite
+            handled "$1" "$2"
+            ready "$1"
+          }
+          pause_instance() {
+            if [ "$MODE" = operator ]; then
+              k patch "$instance" --type=merge -p "{\"metadata\":{\"annotations\":{\"fluxcd.controlplane.io/reconcile\":\"disabled\",\"reconcile.fluxcd.io/requestedAt\":\"$1\"}}}"
+              # The disabled reconciliation acknowledges this request after any
+              # older reconcile finishes. Ready alone can describe an older run.
+              handled "$instance" "$1"
+            fi
+          }
+          suspend_root() {
+            k patch "$root" --type=merge -p "{\"spec\":{\"suspend\":true},\"metadata\":{\"annotations\":{\"reconcile.fluxcd.io/requestedAt\":\"$1\"}}}"
+            handled "$root" "$1"
+          }
+          set_source() {
+            # Replace the whole ref. A leftover name, tag or commit takes precedence.
+            if [ "$MODE" = operator ]; then
+              ref="{\"name\":\"refs/heads/$1\"}"
+            else
+              ref="{\"branch\":\"$1\"}"
+            fi
+            k patch "$source" --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/ref\",\"value\":${ref}}]"
+          }
+          assert_ref() {
+            if [ "$MODE" = operator ]; then
+              test "$(field "$source" '{.spec.ref.name}')" = "refs/heads/$1"
+            else
+              test "$(field "$source" '{.spec.ref.branch}')" = "$1"
+            fi
+          }
+          assert_pr() {
+            ready "$source"
+            test "$(field "$root" '{.spec.suspend}')" = true
+            test "$(field "$source" '{.status.artifact.revision}')" = "${HEAD_BRANCH}@sha1:${HEAD_SHA}"
+            assert_ref "$HEAD_BRANCH"
+            if [ "$MODE" = operator ]; then
+              test "$(field "$instance" '{.spec.sync.ref}')" = "refs/heads/${HEAD_BRANCH}"
+              test "$(field "$instance" '{.metadata.annotations.fluxcd\.controlplane\.io/reconcile}')" = disabled
+            fi
+          }
+          restore() {
+            token="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-restore-$(date +%s)"
+            pause_instance "${token}-pause"
+            suspend_root "${token}-root"
+            if [ "$MODE" = operator ]; then
+              k patch "$instance" --type=merge -p '{"spec":{"sync":{"ref":"refs/heads/main"}}}'
+            fi
+            set_source main
+            reconcile "$source" "${token}-source"
+            main_revision="$(field "$source" '{.status.artifact.revision}')"
+            case "$main_revision" in main@sha1:*) ;; *) return 1 ;; esac
+            # Never resume the root while the stored artifact still contains PR YAML.
+            if [ "$MODE" = operator ]; then
+              k patch "$instance" --type=merge -p "{\"metadata\":{\"annotations\":{\"fluxcd.controlplane.io/reconcile\":${ORIGINAL_RECONCILE},\"reconcile.fluxcd.io/requestedAt\":\"${token}-enable\"}}}"
+              handled "$instance" "${token}-enable"
+              k wait "$instance" --for=condition=Ready --timeout=3m
+            fi
+            k patch "$root" --type=merge -p '{"spec":{"suspend":false}}'
+            reconcile "$root" "${token}-root-main"
+            test "$(field "$root" '{.status.lastAppliedRevision}')" = "$main_revision"
+            for layer in $layers; do
+              resource="kustomization.kustomize.toolkit.fluxcd.io/${layer}"
+              reconcile "$resource" "${token}-${layer}"
+              test "$(field "$resource" '{.status.lastAppliedRevision}')" = "$main_revision"
+            done
+            assert_ref main
+            test "$(field "$source" '{.status.artifact.revision}')" = "$main_revision"
+            test "$(field "$root" '{.spec.suspend}')" != true
+            if [ "$MODE" = operator ]; then
+              test "$(field "$instance" '{.spec.sync.ref}')" = refs/heads/main
+              test "$(field "$instance" '{.metadata.annotations.fluxcd\.controlplane\.io/reconcile}')" != disabled
+            fi
+          }
+          case "$1" in
+            switch)
+              pause_instance "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-pause"
+              suspend_root "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-root"
+              if [ "$MODE" = operator ]; then
+                k patch "$instance" --type=merge -p "{\"spec\":{\"sync\":{\"ref\":\"refs/heads/${HEAD_BRANCH}\"}}}"
+              fi
+              set_source "$HEAD_BRANCH"
+              ;;
+            assert-pr) assert_pr ;;
+            restore) restore ;;
+            watchdog)
+              remaining=$((WATCHDOG_DEADLINE - $(date +%s)))
+              if [ "$remaining" -gt 0 ]; then sleep "$remaining"; fi
+              # Retry transient API/controller failures independently of the runner.
+              # Keep restore outside an if/until condition so set -e still works.
+              set +e
+              while :; do
+                (set -e; restore)
+                result=$?
+                [ "$result" -eq 0 ] && exit 0
+                echo "Recovery failed; retrying in 15 seconds"
+                sleep 15
+              done
+              ;;
+          esac
+          SCRIPT
+
+      - name: Require an idle cluster on main
+        run: |
+          set -euo pipefail
+          test -z "$(kubectl -n arc-runners get jobs -l app.kubernetes.io/name=gitops-watchdog -o name)"
+          kubectl -n flux-system get gitrepository flux-system -o json > live-source.json
+          kubectl -n flux-system get kustomization flux-system -o json > live-root.json
+          # Empty discovery means legacy. Forbidden, transport and discovery errors fail.
+          resources="$(kubectl api-resources --api-group=fluxcd.controlplane.io -o name)"
+          printf '{}\n' > live-instance.json
+          if grep -qx 'fluxinstances.fluxcd.controlplane.io' <<< "$resources"; then
+            kubectl -n flux-system get fluxinstance flux --ignore-not-found -o json > live-instance.json
+            test -s live-instance.json || printf '{}\n' > live-instance.json
+          fi
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          source = json.loads(Path('live-source.json').read_text())
+          root = json.loads(Path('live-root.json').read_text())
+          instance = json.loads(Path('live-instance.json').read_text())
+          assert re.fullmatch(r'[0-9a-f]{40}', os.environ['HEAD_SHA'])
+          assert re.fullmatch(r'renovate/[A-Za-z0-9._/-]+', os.environ['HEAD_BRANCH'])
+          allowed_refs = [{'branch': 'main'}]
+          if instance:
+              allowed_refs += [{'name': 'refs/heads/main'}, {'branch': 'main', 'name': 'refs/heads/main'}]
+          assert source['spec']['ref'] in allowed_refs, 'Source must start on main without other ref selectors'
+          assert not source['spec'].get('suspend', False)
+          assert not root['spec'].get('suspend', False), 'Root is already suspended'
+          mode, annotation = 'legacy', None
+          if instance:
+              mode = 'operator'
+              sync = instance['spec']['sync']
+              assert sync['kind'] == 'GitRepository' and sync['ref'] == 'refs/heads/main'
+              assert sync.get('name', 'flux-system') == 'flux-system'
+              annotation = instance['metadata'].get('annotations', {}).get('fluxcd.controlplane.io/reconcile')
+              assert annotation in (None, 'enabled'), 'FluxInstance is already paused or has an unknown reconcile setting'
+              assert any(c['type'] == 'Ready' and c['status'] == 'True' for c in instance['status']['conditions'])
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'MODE={mode}\nORIGINAL_RECONCILE={json.dumps(annotation)}\n')
+              env.write(f'WATCHDOG_JOB=gitops-watchdog-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}\n')
+          PY
           flux get kustomizations
 
-      - name: Launch watchdog (dead-man's-switch)
+      - name: Arm independent recovery before changing Flux
+        id: watchdog
         run: |
           set -euo pipefail
-          cat <<EOF | kubectl apply -f -
-          apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: gitops-watchdog-${GITHUB_RUN_ID}
-            namespace: arc-runners
-            labels:
-              app.kubernetes.io/name: gitops-watchdog
-          spec:
-            backoffLimit: 0
-            ttlSecondsAfterFinished: 300
-            activeDeadlineSeconds: $((WATCHDOG_SECONDS + 300))
-            template:
-              spec:
-                serviceAccountName: ci-deployer
-                restartPolicy: Never
-                securityContext:
-                  runAsNonRoot: true
-                  runAsUser: 65532
-                  seccompProfile:
-                    type: RuntimeDefault
-                containers:
-                  - name: watchdog
-                    image: ${WATCHDOG_IMAGE}
-                    securityContext:
-                      allowPrivilegeEscalation: false
-                      capabilities:
-                        drop: ["ALL"]
-                    command: ["/bin/sh", "-c"]
-                    args:
-                      - |
-                        echo "watchdog armed: in ${WATCHDOG_SECONDS}s (unless deleted) will reset ref to main AND resume the flux-system Kustomization"
-                        sleep ${WATCHDOG_SECONDS}
-                        echo "watchdog firing: runner presumed dead — restoring main"
-                        kubectl -n flux-system patch gitrepository flux-system \
-                          --type=merge -p '{"spec":{"ref":{"branch":"main"}}}'
-                        kubectl -n flux-system patch kustomization flux-system \
-                          --type=merge -p '{"spec":{"suspend":false}}'
-          EOF
+          python3 - <<'PY' | kubectl create -f -
+          import json, os, time
+          from pathlib import Path
+          env = [{'name': key, 'value': os.environ[key]} for key in
+                 ('MODE', 'ORIGINAL_RECONCILE', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')]
+          env.append({'name': 'WATCHDOG_DEADLINE',
+                      'value': str(int(time.time()) + int(os.environ['WATCHDOG_SECONDS']))})
+          job = {
+              'apiVersion': 'batch/v1', 'kind': 'Job',
+              'metadata': {'name': os.environ['WATCHDOG_JOB'], 'namespace': 'arc-runners',
+                           'labels': {'app.kubernetes.io/name': 'gitops-watchdog'}},
+              'spec': {'backoffLimit': 6, 'ttlSecondsAfterFinished': 300,
+                       'activeDeadlineSeconds': int(os.environ['WATCHDOG_SECONDS']) + 7200,
+                       'template': {'spec': {
+                           'serviceAccountName': 'ci-deployer', 'restartPolicy': 'Never',
+                           'securityContext': {'runAsNonRoot': True, 'runAsUser': 65532,
+                                               'seccompProfile': {'type': 'RuntimeDefault'}},
+                           'containers': [{
+                               'name': 'watchdog', 'image': os.environ['WATCHDOG_IMAGE'], 'env': env,
+                               'securityContext': {'allowPrivilegeEscalation': False,
+                                                   'capabilities': {'drop': ['ALL']}},
+                               'command': ['/bin/sh', '-c'],
+                               'args': [Path('gitops-live-control.sh').read_text(), 'recovery', 'watchdog'],
+                           }],
+                       }}},
+          }
+          print(json.dumps(job))
+          PY
+          # Record creation before checking readiness, so cleanup also runs if the pod fails.
+          echo 'armed=true' >> "$GITHUB_OUTPUT"
+          for _ in $(seq 1 30); do
+            if [ "$(kubectl -n arc-runners get pods -l "job-name=${WATCHDOG_JOB}" \
+              -o jsonpath='{.items[*].status.containerStatuses[0].ready}')" = true ]; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo '::error::Watchdog did not start; refusing to change Flux'
+          exit 1
 
-      # The flux-system (root) Kustomization RENDERS gotk-sync.yaml, i.e. it owns
-      # the GitRepository and continuously re-applies `ref.branch: main`. If we
-      # don't suspend it, it reverts our repoint within seconds and the test
-      # silently runs against main. Suspend it so the repoint sticks; the child
-      # Kustomizations (which we health-check) still reconcile from the source.
-      - name: Suspend the root flux-system Kustomization
-        run: |
-          set -euo pipefail
-          flux suspend kustomization flux-system
-
-      - name: Repoint cluster at the PR branch
-        run: |
-          set -euo pipefail
-          echo "Repointing flux-system GitRepository -> ${HEAD_BRANCH}"
-          kubectl -n flux-system patch gitrepository flux-system \
-            --type=merge -p "{\"spec\":{\"ref\":{\"branch\":\"${HEAD_BRANCH}\"}}}"
+      - name: Pause the operator and root, then switch to the PR
+        run: sh gitops-live-control.sh switch
 
       - name: Reconcile + health verdict
         id: verdict
@@ -139,31 +275,34 @@ jobs:
           set +e
           FAIL=0
           echo "::group::reconcile source + wait for the PR branch artifact"
-          flux reconcile source git flux-system --timeout=3m
-          # Guard against the trivial-pass trap: only proceed once the stored
-          # artifact revision actually reflects the PR branch, not main.
+          flux reconcile source git flux-system --timeout=3m || FAIL=1
+          # Check the immutable PR head, not just a branch name that can move.
           SWITCHED=0
           for _ in $(seq 1 20); do
             REV="$(kubectl -n flux-system get gitrepository flux-system \
               -o jsonpath='{.status.artifact.revision}' 2>/dev/null)"
             echo "artifact revision: ${REV}"
             case "${REV}" in
-              "${HEAD_BRANCH}@"*) SWITCHED=1; break ;;
+              "${HEAD_BRANCH}@sha1:${HEAD_SHA}") SWITCHED=1; break ;;
             esac
             flux reconcile source git flux-system --timeout=60s
             sleep 3
           done
           echo "::endgroup::"
           if [ "${SWITCHED}" -ne 1 ]; then
-            echo "::error::source never switched to ${HEAD_BRANCH} — cannot health-test"
+            echo "::error::Source never reached the expected PR SHA; cannot health-test"
             FAIL=1
           else
             for k in infrastructure-controllers infrastructure-configs apps; do
+              sh gitops-live-control.sh assert-pr || { FAIL=1; break; }
               echo "::group::reconcile kustomization ${k}"
               flux reconcile kustomization "${k}" --timeout=6m
               rc=$?
               echo "::endgroup::"
               [ "${rc}" -ne 0 ] && FAIL=1
+              APPLIED="$(kubectl -n flux-system get kustomization "${k}" -o jsonpath='{.status.lastAppliedRevision}')"
+              [ "$APPLIED" = "${HEAD_BRANCH}@sha1:${HEAD_SHA}" ] || FAIL=1
+              sh gitops-live-control.sh assert-pr || FAIL=1
             done
           fi
           echo "verdict_fail=${FAIL}" >> "${GITHUB_OUTPUT}"
@@ -171,22 +310,18 @@ jobs:
             echo "Tested source revision: \`$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')\`"; \
             echo; echo '```'; flux get kustomizations 2>&1; echo '```'; } > flux-status.md
           if [ "${FAIL}" -ne 0 ]; then
-            echo "::error::Live health-test FAILED — see reconcile logs above"
+            echo "::error::Live health-test failed; see reconcile logs above"
           fi
 
-      - name: Revert cluster to main (always)
-        if: always()
+      - name: Restore main and confirm recovery
+        id: restore
+        if: always() && steps.watchdog.outputs.armed == 'true'
         run: |
-          set +e
-          echo "Reverting flux-system GitRepository -> main and resuming the root Kustomization"
-          kubectl -n flux-system patch gitrepository flux-system \
-            --type=merge -p '{"spec":{"ref":{"branch":"main"}}}'
-          flux resume kustomization flux-system --timeout=3m
-          flux reconcile source git flux-system --timeout=3m
-          for k in infrastructure-controllers infrastructure-configs apps; do
-            flux reconcile kustomization "${k}" --timeout=6m
-          done
-          kubectl -n arc-runners delete job "gitops-watchdog-${GITHUB_RUN_ID}" --ignore-not-found
+          set -euo pipefail
+          sh gitops-live-control.sh restore
+          # Leave the watchdog armed on any recovery failure.
+          kubectl -n arc-runners delete job "$WATCHDOG_JOB" --ignore-not-found --wait=true
+          echo 'restored=true' >> "$GITHUB_OUTPUT"
 
       - name: Comment verdict on PR (always)
         if: always()
@@ -195,13 +330,16 @@ jobs:
           script: |
             const fs = require('fs');
             const fail = '${{ steps.verdict.outputs.verdict_fail }}';
+            const restored = '${{ steps.restore.outputs.restored }}' === 'true';
             let body = fs.existsSync('flux-status.md')
               ? fs.readFileSync('flux-status.md', 'utf8')
-              : '### Flux live health-test\n\n(no status captured — the test aborted before reconcile)';
-            const verdict = fail === '0'
-              ? '\n\n✅ **PASS** — cluster reconciled the PR SHA and all Kustomizations reached Ready. Safe to merge.'
-              : '\n\n❌ **FAIL** — a Kustomization did not become Ready (or the test aborted). Do NOT merge.';
-            body += verdict + '\n\n<sub>Cluster was reverted to `main` after the test.</sub>';
+              : '### Flux live health-test\n\nNo status captured. The test aborted before reconciliation.';
+            const verdict = fail === '0' && restored
+              ? '\n\nPASS. The child Kustomizations reached Ready at the PR head SHA. The root and FluxInstance stayed suspended during the test.'
+              : '\n\nFAIL. Testing or restoration did not complete. Do not merge based on this run.';
+            body += verdict + (restored
+              ? '\n\nRecovery to `main` was verified.'
+              : '\n\nRecovery is unconfirmed. Check the workflow and any remaining watchdog Job.');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -213,3 +351,4 @@ jobs:
         if: always()
         run: |
           test "${{ steps.verdict.outputs.verdict_fail }}" = "0"
+          test "${{ steps.restore.outputs.restored }}" = "true"

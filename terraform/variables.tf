@@ -151,18 +151,12 @@ variable "workers" {
 }
 
 # ---------------------------------------------------------------------------
-# Flux / GitOps (monorepo: this same repo, synced over SSH)
+# Flux syncs this public repository over HTTPS.
 # ---------------------------------------------------------------------------
 variable "flux_git_url" {
-  description = "SSH Git URL Flux syncs from (the monorepo itself)."
+  description = "Public HTTPS Git URL Flux syncs from. Must match the FluxInstance sync URL."
   type        = string
-  default     = "ssh://git@github.com/ivan-penchev/gitops.git"
-}
-
-variable "flux_git_private_key_path" {
-  description = "Path to the SSH private key with push access to the gitops repo."
-  type        = string
-  default     = "~/.ssh/id_rsa"
+  default     = "https://github.com/ivan-penchev/gitops.git"
 }
 
 variable "flux_path" {
