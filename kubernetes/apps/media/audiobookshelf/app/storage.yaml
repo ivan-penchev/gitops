@@ -56,6 +56,9 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: audiobookshelf-media-nfs
+  annotations:
+    # Preserve binder/migration-owned claimRef fields during Flux adoption.
+    kustomize.toolkit.fluxcd.io/ssa: Merge
 spec:
   capacity:
     storage: 1Ti          # nominal; NFS ignores the quota

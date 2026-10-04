@@ -4,9 +4,6 @@ metadata:
   name: audiobookshelf
   namespace: flux-system
 spec:
-  # Remove only after the existing data volumes are bound in media.
-  # See docs/app-namespace-migration.md.
-  suspend: true
   dependsOn:
     - name: infrastructure-configs
   interval: 10m
