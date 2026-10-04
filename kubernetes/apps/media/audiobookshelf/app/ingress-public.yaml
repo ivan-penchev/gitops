@@ -4,14 +4,14 @@
 # proxied CNAME to the cluster tunnel (same pattern as whoami). No tls block:
 # TLS terminates at the Cloudflare edge; tunnel -> origin is plain HTTP.
 #
-# NOTE: this file is intentionally NOT in kustomization.yaml until the ABS
-# backup has been restored, so an uninitialized (open-signup) ABS is never
-# exposed publicly. Add it to kustomization.yaml resources to go live.
+# This file is included in kustomization.yaml. Keep the app's Flux Kustomization
+# suspended until existing data and authentication have been verified privately.
+# See docs/app-namespace-migration.md before resuming it.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: audiobookshelf-public
-  namespace: audiobookshelf
+  namespace: media
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"

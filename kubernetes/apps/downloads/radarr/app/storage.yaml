@@ -14,7 +14,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: radarr-config
-  namespace: radarr
+  namespace: downloads
 spec:
   accessModes:
     - ReadWriteOnce
@@ -54,7 +54,7 @@ spec:
     - hard
     - noatime
   claimRef:
-    namespace: radarr
+    namespace: downloads
     name: radarr-movies-nfs
   csi:
     driver: nfs.csi.k8s.io
@@ -67,7 +67,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: radarr-movies-nfs
-  namespace: radarr
+  namespace: downloads
 spec:
   accessModes:
     - ReadWriteMany
@@ -93,7 +93,7 @@ spec:
     - hard
     - noatime
   claimRef:
-    namespace: radarr
+    namespace: downloads
     name: radarr-downloads-nfs
   csi:
     driver: nfs.csi.k8s.io
@@ -106,7 +106,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: radarr-downloads-nfs
-  namespace: radarr
+  namespace: downloads
 spec:
   accessModes:
     - ReadWriteMany

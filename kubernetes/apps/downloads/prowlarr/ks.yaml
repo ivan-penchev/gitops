@@ -1,11 +1,12 @@
----
-# Layer 3: workloads. Reconciled only after infrastructure is healthy.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: apps
+  name: prowlarr
   namespace: flux-system
 spec:
+  # Remove only after the existing data volumes are bound in downloads.
+  # See docs/app-namespace-migration.md.
+  suspend: true
   dependsOn:
     - name: infrastructure-configs
   interval: 10m
@@ -14,9 +15,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./kubernetes/apps
-  # Restore pruning after ownership transfer. See docs/app-namespace-migration.md.
-  prune: false
+  path: ./kubernetes/apps/downloads/prowlarr/app
+  targetNamespace: downloads
+  prune: true
   wait: true
   decryption:
     provider: sops
