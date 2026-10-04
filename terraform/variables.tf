@@ -160,7 +160,7 @@ variable "flux_git_url" {
 }
 
 variable "flux_git_private_key_path" {
-  description = "Path to the SSH private key with push access to the gitops repo."
+  description = "SSH private key with read access to the GitOps repo. Its .pub file must exist alongside it."
   type        = string
   default     = "~/.ssh/id_rsa"
 }

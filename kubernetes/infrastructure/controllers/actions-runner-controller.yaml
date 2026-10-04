@@ -276,9 +276,7 @@ rules:
     resources: ["resourceclaims", "resourceclaims/status", "resourceclaimtemplates"]
     verbs: ["get", "list", "watch"]
 ---
-# Explicit Flux-reconcile role. Redundant with the flux rules already in
-# arc-ci-edit-nosecrets, but kept as documentation + resilience if that role is
-# ever narrowed. Covers `flux reconcile` (annotate/patch the Flux objects).
+# Reconcile toolkit resources. FluxInstance access is namespace-scoped below.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -314,6 +312,32 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: arc-ci-flux-reconcile
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: arc-runners
+---
+# The runner and watchdog can pause and restore only the homelab FluxInstance.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: arc-ci-flux-instance
+  namespace: flux-system
+rules:
+  - apiGroups: ["fluxcd.controlplane.io"]
+    resources: ["fluxinstances"]
+    resourceNames: ["flux"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: arc-ci-flux-instance
+  namespace: flux-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: arc-ci-flux-instance
 subjects:
   - kind: ServiceAccount
     name: ci-deployer

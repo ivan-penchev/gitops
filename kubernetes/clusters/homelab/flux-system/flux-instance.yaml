@@ -1,0 +1,37 @@
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+spec:
+  distribution:
+    version: "2.9.6"
+    registry: ghcr.io/fluxcd
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+  cluster:
+    type: kubernetes
+    multitenant: false
+    networkPolicy: true
+    domain: cluster.local
+  sync:
+    kind: GitRepository
+    name: flux-system
+    url: ssh://git@github.com/ivan-penchev/gitops.git
+    ref: refs/heads/main
+    path: ./kubernetes/clusters/homelab
+    pullSecret: flux-system
+    interval: 1m
+  kustomize:
+    patches:
+      - target:
+          group: kustomize.toolkit.fluxcd.io
+          kind: Kustomization
+          name: flux-system
+        patch: |
+          - op: replace
+            path: /spec/interval
+            value: 10m

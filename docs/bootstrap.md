@@ -22,7 +22,7 @@ sops exec-env secrets.sops.env 'cd terraform && terraform <cmd>'
 | 4 | More databases | `terraform apply` | no |
 
 ## Phase 0 — Prereqs (local)
-- Tools on PATH: `terraform >= 1.10`, `talosctl`, `kubectl`, `flux`, `helm`, `sops`, `age`.
+- Tools on PATH: `terraform >= 1.11`, `talosctl`, `kubectl`, `flux`, `helm`, `sops`, `age`.
 - `age.key` (SOPS private key) present; `SOPS_AGE_KEY_FILE` exported.
 - Credentials in `secrets.sops.env` (see [terraform-secrets.md](./terraform-secrets.md)).
 - `~/.ssh/id_rsa[.pub]` (Flux→GitHub + LXC root key).
@@ -35,6 +35,22 @@ sops exec-env secrets.sops.env 'cd terraform && terraform init && terraform appl
 export KUBECONFIG=$PWD/kubeconfig TALOSCONFIG=$PWD/talosconfig
 kubectl get nodes        # all Ready
 ```
+Terraform creates the `flux-system` namespace, Git SSH secret, SOPS secret,
+and `cluster-config-tf` ConfigMap before running the operator bootstrap module.
+The module installs `flux-operator` and creates the FluxInstance from Git's
+manifests. Once Flux adopts them, Git controls their versions and configuration.
+`cluster-config` remains Git-managed. Set `flux_git_url` to the URL in
+`flux-instance.yaml`; the matching SSH public key must have read access.
+
+Check the handoff:
+
+```bash
+kubectl -n flux-system wait fluxinstance/flux --for=condition=Ready --timeout=10m
+flux get sources all
+flux get kustomizations
+flux get helmreleases -A
+```
+
 Skip the LXCs entirely with `fileserver_enabled=false` / `postgres_enabled=false`.
 The LXCs are independent of the cluster (no Terraform dependency); NFS-consuming pods (radarr, audiobookshelf, prowlarr) just stay `Pending` until Phase 2's export is up, then reconcile.
 
@@ -71,6 +87,48 @@ postgres_databases = [
 Terraform makes the role, database, and a `postgres-<db>` secret
 (`POSTGRES_HOST/PORT/DB/USER/PASSWORD` + `DATABASE_URL`) in each namespace.
 Removing an entry does **not** drop the DB (`prevent_destroy`).
+
+## Migrate an existing Flux installation
+
+Use the repository kubeconfig throughout. Pause scheduled branch tests and
+confirm no test run or `gitops-watchdog` Job is active in `arc-runners`. Back up
+Terraform state and the `flux-system` resources with age encryption before
+changing ownership.
+
+Import the existing namespace and SSH secret rather than recreating them:
+
+```bash
+sops exec-env secrets.sops.env 'cd terraform && terraform import kubernetes_namespace_v1.flux_system flux-system'
+sops exec-env secrets.sops.env 'cd terraform && terraform import kubernetes_secret_v1.flux_git flux-system/flux-system'
+```
+
+The `removed` block releases `flux_bootstrap_git.this` from state without
+deleting Flux or its Git files. Do not destroy that resource. Review a targeted
+plan for `module.flux_operator_bootstrap` and `flux_bootstrap_git.this`; it must
+not replace credentials or include unrelated infrastructure changes.
+
+Suspend the root Kustomization before adoption. Use a distinct field manager
+so the operator's cleanup of old bootstrap managers does not remove the pause:
+
+```bash
+kubectl -n flux-system patch kustomization flux-system --type=merge \
+  --field-manager=flux-migration --patch '{"spec":{"suspend":true}}'
+```
+
+Apply the reviewed bootstrap plan. Verify the FluxInstance is Ready, controller
+images are unchanged, and the operator owns every former root inventory object
+being removed from Git. `flux trace kustomization flux-system` must no longer
+report the root as managed by a Flux Kustomization. Only then merge removal of
+the old installation manifests and resume the root. Check every Kustomization,
+every HelmRelease, and public HTTPS before restoring scheduled tests.
+
+If adoption fails before merging, leave the root suspended while diagnosing.
+Disable FluxInstance reconciliation and suspend the operator HelmRelease before
+scaling its deployment to zero. Restore the previous installation manifests
+from the pre-migration Git revision, then reconcile the old root. Do not delete
+the FluxInstance, namespace, CRDs, or secrets as a rollback shortcut. Recover
+Terraform ownership separately from the encrypted state backup; inspect state
+changes before restoring it.
 
 ## Why the manual steps
 On PVE 9, bind mounts, privileged feature flags and raw `lxc.*` keys are

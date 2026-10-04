@@ -9,14 +9,17 @@ For standing a fresh host up step-by-step, see [`docs/bootstrap.md`](./docs/boot
 ## Layout
 
 ```
-terraform/    # Proxmox VMs + Talos bootstrap + Flux bootstrap (bpg/proxmox, siderolabs/talos, fluxcd/flux)
+terraform/    # Proxmox VMs, Talos and one-time Flux Operator bootstrap
 talos/        # Talos machineconfig patches (control-plane / worker)
 kubernetes/   # Flux-managed cluster state (infrastructure + apps)
 ```
 
 This repo (`github.com/ivan-penchev/gitops`) **is** the GitOps source: after
 bootstrap, Flux syncs `kubernetes/clusters/homelab` from it over SSH
-(`git@github.com`, key `~/.ssh/id_rsa`) and self-manages.
+(`git@github.com`, key `~/.ssh/id_rsa`). The FluxInstance in
+`kubernetes/clusters/homelab/flux-system` owns the controller configuration.
+Flux manages the operator Helm release from the same directory. Terraform
+bootstraps these resources but does not overwrite them after Git adopts them.
 
 ## Cluster at a glance
 
@@ -31,12 +34,12 @@ bootstrap, Flux syncs `kubernetes/clusters/homelab` from it over SSH
 
 ## Prerequisites (local)
 
-`terraform`, `talosctl`, `kubectl`, `flux`, `helm`, `sops`, `age` — all present on this machine.
+Terraform >= 1.11, `talosctl`, `kubectl`, `flux`, `helm`, `sops`, and `age`.
 
 ## ⚠️ kubeconfig safety
 
 This repo **never** touches your existing kube contexts (AKS clusters, etc.).
-Terraform's Kubernetes/Flux providers are wired to the Talos API endpoint via the
+Terraform's Kubernetes and Helm providers are wired to the Talos API endpoint via the
 `talos` data sources — not `~/.kube/config`. The generated kubeconfig/talosconfig are
 written to gitignored files in this repo. Always target them explicitly:
 

@@ -1,9 +1,6 @@
 terraform {
-  # >= 1.10: cross-type `moved` blocks (cloudflare v4->v5 renames migrate state
-  # via the provider's MoveState upgrader) need >= 1.8, and the state is now
-  # written by TF 1.10.x (older CLIs refuse newer state). The plugin-framework
-  # cloudflare v5 provider also requires a modern Terraform.
-  required_version = ">= 1.10"
+  # The operator bootstrap module uses write-only secret arguments.
+  required_version = ">= 1.11"
 
   required_providers {
     proxmox = {
@@ -14,13 +11,13 @@ terraform {
       source  = "siderolabs/talos"
       version = ">= 0.7"
     }
-    flux = {
-      source  = "fluxcd/flux"
-      version = ">= 1.4"
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = ">= 2.30"
+      version = "~> 3.0"
     }
     local = {
       source  = "hashicorp/local"
