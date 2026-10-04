@@ -72,6 +72,14 @@ jobs:
           ready() {
             k wait "$1" --for=condition=Ready --timeout=3m
             test "$(field "$1" '{.metadata.generation}')" = "$(field "$1" '{.status.observedGeneration}')"
+            test "$(field "$1" '{.metadata.generation}')" = "$(field "$1" '{.status.conditions[?(@.type=="Ready")].observedGeneration}')"
+          }
+          revision_prefix() {
+            if [ "$MODE" = operator ]; then
+              printf 'refs/heads/%s@sha1:' "$1"
+            else
+              printf '%s@sha1:' "$1"
+            fi
           }
           handled() {
             k wait "$1" --for="jsonpath={.status.lastHandledReconcileAt}=$2" --timeout=3m
@@ -80,6 +88,55 @@ jobs:
             k annotate "$1" "reconcile.fluxcd.io/requestedAt=$2" --overwrite
             handled "$1" "$2"
             ready "$1"
+          }
+          app_children() {
+            k get kustomizations.kustomize.toolkit.fluxcd.io \
+              -l 'kustomize.toolkit.fluxcd.io/name=apps,kustomize.toolkit.fluxcd.io/namespace=flux-system' -o name
+          }
+          reconcile_layer() {
+            layer_resource="kustomization.kustomize.toolkit.fluxcd.io/$1"
+            layer_token="$2"
+            layer_revision="$3"
+            if [ "$1" = apps ]; then
+              # Request children while apps waits for their health. Waiting for apps
+              # first can block the very reconciles that would make it Ready.
+              k annotate "$layer_resource" "reconcile.fluxcd.io/requestedAt=$layer_token" --overwrite
+              attempts=0
+              while [ "$attempts" -lt 120 ]; do
+                children="$(app_children)"
+                for child in $children; do
+                  if [ "$(field "$child" '{.spec.suspend}')" = true ]; then
+                    echo "Refusing to reconcile suspended child: $child" >&2
+                    return 1
+                  fi
+                  child_token="${layer_token}-$(field "$child" '{.metadata.generation}')"
+                  if [ "$(field "$child" '{.metadata.annotations.reconcile\.fluxcd\.io/requestedAt}')" != "$child_token" ]; then
+                    k annotate "$child" "reconcile.fluxcd.io/requestedAt=$child_token" --overwrite
+                  fi
+                done
+                [ "$(field "$layer_resource" '{.status.lastHandledReconcileAt}')" = "$layer_token" ] && break
+                attempts=$((attempts + 1))
+                sleep 3
+              done
+              test "$attempts" -lt 120
+              ready "$layer_resource"
+              test "$(field "$layer_resource" '{.status.lastAppliedRevision}')" = "$layer_revision"
+              # Discover again after apps finishes applying and pruning. Old child
+              # Ready conditions must not stand in for this revision's verdict.
+              children="$(app_children)"
+              for child in $children; do
+                test "$(field "$child" '{.spec.sourceRef.kind}')" = GitRepository
+                test "$(field "$child" '{.spec.sourceRef.name}')" = flux-system
+                child_source_namespace="$(field "$child" '{.spec.sourceRef.namespace}')"
+                test -z "$child_source_namespace" || test "$child_source_namespace" = flux-system
+                test "$(field "$child" '{.spec.suspend}')" != true
+                reconcile "$child" "${layer_token}-verify"
+                test "$(field "$child" '{.status.lastAppliedRevision}')" = "$layer_revision"
+              done
+            else
+              reconcile "$layer_resource" "$layer_token"
+              test "$(field "$layer_resource" '{.status.lastAppliedRevision}')" = "$layer_revision"
+            fi
           }
           pause_instance() {
             if [ "$MODE" = operator ]; then
@@ -112,7 +169,7 @@ jobs:
           assert_pr() {
             ready "$source"
             test "$(field "$root" '{.spec.suspend}')" = true
-            test "$(field "$source" '{.status.artifact.revision}')" = "${HEAD_BRANCH}@sha1:${HEAD_SHA}"
+            test "$(field "$source" '{.status.artifact.revision}')" = "$(revision_prefix "$HEAD_BRANCH")${HEAD_SHA}"
             assert_ref "$HEAD_BRANCH"
             if [ "$MODE" = operator ]; then
               test "$(field "$instance" '{.spec.sync.ref}')" = "refs/heads/${HEAD_BRANCH}"
@@ -129,7 +186,7 @@ jobs:
             set_source main
             reconcile "$source" "${token}-source"
             main_revision="$(field "$source" '{.status.artifact.revision}')"
-            case "$main_revision" in main@sha1:*) ;; *) return 1 ;; esac
+            case "$main_revision" in "$(revision_prefix main)"*) ;; *) return 1 ;; esac
             # Never resume the root while the stored artifact still contains PR YAML.
             if [ "$MODE" = operator ]; then
               k patch "$instance" --type=merge -p "{\"metadata\":{\"annotations\":{\"fluxcd.controlplane.io/reconcile\":${ORIGINAL_RECONCILE},\"reconcile.fluxcd.io/requestedAt\":\"${token}-enable\"}}}"
@@ -140,9 +197,7 @@ jobs:
             reconcile "$root" "${token}-root-main"
             test "$(field "$root" '{.status.lastAppliedRevision}')" = "$main_revision"
             for layer in $layers; do
-              resource="kustomization.kustomize.toolkit.fluxcd.io/${layer}"
-              reconcile "$resource" "${token}-${layer}"
-              test "$(field "$resource" '{.status.lastAppliedRevision}')" = "$main_revision"
+              reconcile_layer "$layer" "${token}-${layer}" "$main_revision"
             done
             assert_ref main
             test "$(field "$source" '{.status.artifact.revision}')" = "$main_revision"
@@ -161,7 +216,13 @@ jobs:
               fi
               set_source "$HEAD_BRANCH"
               ;;
+            revision) printf '%s%s\n' "$(revision_prefix "$HEAD_BRANCH")" "$HEAD_SHA" ;;
             assert-pr) assert_pr ;;
+            reconcile-layer)
+              assert_pr
+              reconcile_layer "$2" "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-pr-$2-$(date +%s)" "$(revision_prefix "$HEAD_BRANCH")${HEAD_SHA}"
+              assert_pr
+              ;;
             restore) restore ;;
             watchdog)
               remaining=$((WATCHDOG_DEADLINE - $(date +%s)))
@@ -278,12 +339,13 @@ jobs:
           flux reconcile source git flux-system --timeout=3m || FAIL=1
           # Check the immutable PR head, not just a branch name that can move.
           SWITCHED=0
+          EXPECTED_REVISION="$(sh gitops-live-control.sh revision)"
           for _ in $(seq 1 20); do
             REV="$(kubectl -n flux-system get gitrepository flux-system \
               -o jsonpath='{.status.artifact.revision}' 2>/dev/null)"
             echo "artifact revision: ${REV}"
             case "${REV}" in
-              "${HEAD_BRANCH}@sha1:${HEAD_SHA}") SWITCHED=1; break ;;
+              "$EXPECTED_REVISION") SWITCHED=1; break ;;
             esac
             flux reconcile source git flux-system --timeout=60s
             sleep 3
@@ -296,12 +358,10 @@ jobs:
             for k in infrastructure-controllers infrastructure-configs apps; do
               sh gitops-live-control.sh assert-pr || { FAIL=1; break; }
               echo "::group::reconcile kustomization ${k}"
-              flux reconcile kustomization "${k}" --timeout=6m
+              sh gitops-live-control.sh reconcile-layer "$k"
               rc=$?
               echo "::endgroup::"
               [ "${rc}" -ne 0 ] && FAIL=1
-              APPLIED="$(kubectl -n flux-system get kustomization "${k}" -o jsonpath='{.status.lastAppliedRevision}')"
-              [ "$APPLIED" = "${HEAD_BRANCH}@sha1:${HEAD_SHA}" ] || FAIL=1
               sh gitops-live-control.sh assert-pr || FAIL=1
             done
           fi

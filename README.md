@@ -21,6 +21,23 @@ Git credentials. The FluxInstance in
 Flux manages the operator Helm release from the same directory. Terraform
 bootstraps these resources but does not overwrite them after Git adopts them.
 
+## Application layout
+
+Prowlarr and Radarr share `downloads`. Audiobookshelf uses `media`.
+Each has a Flux `ks.yaml` in `kubernetes/apps/<namespace>/<app>/`, with its
+workloads under `app/`. FlareSolverr stays with Prowlarr. Wattbill keeps its
+existing folder, namespace, and direct reconciliation by `apps`.
+
+The per-app Flux objects live in `flux-system` so they can use the existing
+SOPS key and substitution ConfigMaps. Their `targetNamespace` selects the
+workload namespace. They wait for infrastructure and check their own workloads;
+Radarr does not depend on Prowlarr. The parent `apps` checks child readiness.
+
+**The namespace move is staged, not deployed.** New app reconcilers are suspended
+and parent pruning is disabled. Do not merge or point Flux at this revision
+until the live safeguards in [the migration runbook](docs/app-namespace-migration.md)
+are in place. The runbook covers volume rebinding and restoring normal reconciliation.
+
 ## Cluster at a glance
 
 | Role | ×N | vCPU | RAM | Disk | VMID | IP |

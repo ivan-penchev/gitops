@@ -15,14 +15,28 @@ Actions. Files matching `*.sops.yaml` are ignored.
 in-cluster ARC runner `gha-homelab-arc` with ServiceAccount `ci-deployer`.
 The Kubernetes API does not need to be exposed outside the cluster network.
 
-**The root Kustomization is deliberately suspended during testing.** Only
-`infrastructure-controllers`, `infrastructure-configs`, and `apps` are explicitly
-reconciled against the PR. Changes under `kubernetes/clusters/homelab/` are rejected,
+**The root Kustomization is deliberately suspended during testing.** The workflow
+explicitly reconciles `infrastructure-controllers`, `infrastructure-configs`,
+`apps`, and the direct Flux Kustomizations owned by `apps` in `flux-system` against
+the PR. Changes under `kubernetes/clusters/homelab/` are rejected,
 including renamed files moved out of that directory. Those manifests need a
 separate root/controller migration test. In particular, this workflow cannot
 validate a FluxInstance, Flux Operator, or Flux controller upgrade while their
 owning root is suspended. A workflow-only update also does not prove workload
 behavior changed.
+
+Child discovery selects both Flux ownership labels:
+`kustomize.toolkit.fluxcd.io/name=apps` and
+`kustomize.toolkit.fluxcd.io/namespace=flux-system`. This covers the per-app
+`prowlarr`, `radarr`, and `audiobookshelf` Kustomizations without hard-coding their
+names. It does not recurse into grandchildren or discover Kustomizations outside
+`flux-system`. Wattbill remains a direct resource of `apps`, not a separately
+reconciled Flux Kustomization.
+
+The workflow fails on a suspended child. It never unsuspends or skips one, in
+both the PR verdict and recovery. The staged namespace migration therefore cannot
+pass this test while its children have `spec.suspend: true`. This workflow is not
+a substitute for the approved data migration and per-app activation steps.
 
 ## Branch switching
 
@@ -45,10 +59,22 @@ behavior changed.
    `name: refs/heads/<branch>`; legacy mode uses `branch: <branch>`. Replacing the
    whole ref removes any higher-precedence selector left behind by migration.
 6. Reconcile the source and require its artifact revision to equal
-   `<branch>@sha1:<pull-request-head-sha>`. Reconcile the three child layers with
-   six-minute health timeouts. Each must be Ready and have applied that exact
-   revision. Check the source and both pauses around each layer so a branch
-   movement or unexpected resume cannot produce a passing result against `main`.
+   `refs/heads/<branch>@sha1:<pull-request-head-sha>` in operator mode, or
+   `<branch>@sha1:<pull-request-head-sha>` in legacy mode. The SHA must match the
+   immutable PR head, not just the current tip of its branch.
+7. Reconcile the three layers in order. While `apps` reconciles, discover its
+   children and request their reconciliation before waiting for `apps` to finish.
+   This avoids blocking child requests behind the parent's health wait. Discover
+   again after `apps` completes, then explicitly reconcile and check every child.
+   Parent Ready alone can reflect children that are still Ready at an old revision.
+8. Require each layer and discovered child to acknowledge its reconciliation
+   request, report Ready for its current generation, and have applied the exact
+   PR revision. Both `status.observedGeneration` and the Ready condition's
+   `observedGeneration` must match `metadata.generation`. Discovered children must
+   use GitRepository `flux-system` in `flux-system`, with an omitted source
+   namespace also allowed. Check the source and both pauses around each layer so
+   branch movement or an unexpected resume cannot produce a passing result
+   against `main`.
 
 The pause annotation is documented in the
 [FluxInstance API](https://fluxoperator.dev/docs/crd/fluxinstance/).
@@ -67,12 +93,16 @@ The runner's `always()` cleanup and the watchdog use the same commands:
 1. Pause and drain the operator, then suspend and drain the root.
 2. Restore the instance sync ref and GitRepository selector to `main`.
 3. Reconcile the source and verify a `main` artifact **before** enabling the
-   operator or resuming the root. This avoids applying cached PR YAML on resume.
+   operator or resuming the root. Its revision must start with
+   `refs/heads/main@sha1:` in operator mode or `main@sha1:` in legacy mode.
+   This avoids applying cached PR YAML on resume.
 4. Restore the instance's original reconcile annotation, either absent or
    `enabled`, and wait for its acknowledged, Ready reconciliation.
-5. Resume and reconcile the root, then reconcile the three children. Require
-   all four to have applied the verified main revision and recheck the source
-   and instance refs.
+5. Resume and reconcile the root, then reconcile the three layers and the
+   discovered children of `apps`. Use the same child discovery, reconciliation,
+   suspension, and current-generation Ready checks as the PR verdict. Require
+   the root, layers, and children to have applied the exact verified main revision,
+   then recheck the source and instance refs.
 6. Delete the watchdog only after successful recovery. A recovery error keeps
    it armed, fails the workflow, and is reported as unconfirmed in the PR comment.
 
@@ -99,6 +129,22 @@ A broken infrastructure update can disrupt production before recovery completes.
 The root and operator stay paused, but their existing controllers keep running.
 Review the PR and recovery result before merging by hand; a green run is not a
 blanket approval of changes outside the tested child layers.
+
+## Offline workflow checks
+
+Run the focused regression tests from the repository root:
+
+```bash
+python3 -B .github/tests/test_gitops_live_test.py
+```
+
+These tests use Python's standard library and local `sh` and `bash`. They extract
+and syntax-check the workflow's shell and Python scripts, then exercise the shared
+shell functions with mocked Kubernetes calls. Coverage includes operator and
+legacy revision formats, immutable PR SHA checks, children discovered after the
+parent starts applying, stale Ready generations and revisions, suspended children,
+and the shared recovery path. They do not contact a cluster or prove live
+controller behavior.
 
 ## One-time manual setup
 
