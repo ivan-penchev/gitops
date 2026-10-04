@@ -7,6 +7,7 @@ name: gitops-live-test
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
 
 # Serialize: only ONE live test may hold the cluster on a PR SHA at a time.
 concurrency:
@@ -19,8 +20,11 @@ permissions:
 
 jobs:
   live-test:
-    # Only Renovate's PRs drive the automated live test.
-    if: startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
+    # Other same-repository PRs require an explicit, manually applied label.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.head_ref, 'renovate/') || contains(github.event.pull_request.labels.*.name, 'gitops-live-test')) &&
+      (github.event.action != 'labeled' || github.event.label.name == 'gitops-live-test')
     runs-on: gha-homelab-arc
     timeout-minutes: 25
     env:
@@ -30,10 +34,24 @@ jobs:
       WATCHDOG_SECONDS: "1200"
       WATCHDOG_IMAGE: "registry.k8s.io/kubectl:v1.33.0"
     steps:
-      - name: Reject changes the suspended root cannot test
+      - name: Authorize PR and reject changes the suspended root cannot test
         uses: actions/github-script@v9
         with:
           script: |
+            const {data: pr} = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            const eventPR = context.payload.pull_request;
+            const optedIn = pr.head.ref.startsWith('renovate/') ||
+              pr.labels.some(label => label.name === 'gitops-live-test');
+            if (pr.state !== 'open' || pr.base.ref !== 'main' ||
+                pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
+                pr.head.sha !== eventPR.head.sha || pr.head.ref !== eventPR.head.ref || !optedIn) {
+              core.setFailed('PR must still be open, target main, and match this same-repository head. Non-Renovate PRs must retain the gitops-live-test label.');
+              return;
+            }
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -261,7 +279,8 @@ jobs:
           root = json.loads(Path('live-root.json').read_text())
           instance = json.loads(Path('live-instance.json').read_text())
           assert re.fullmatch(r'[0-9a-f]{40}', os.environ['HEAD_SHA'])
-          assert re.fullmatch(r'renovate/[A-Za-z0-9._/-]+', os.environ['HEAD_BRANCH'])
+          assert re.fullmatch(r'[A-Za-z0-9._/-]+', os.environ['HEAD_BRANCH'])
+          assert os.environ['HEAD_BRANCH'] != 'main', 'Refusing to test main as a PR branch'
           allowed_refs = [{'branch': 'main'}]
           if instance:
               allowed_refs += [{'name': 'refs/heads/main'}, {'branch': 'main', 'name': 'refs/heads/main'}]

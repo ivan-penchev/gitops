@@ -3,10 +3,14 @@
 Run with python3 -B .github/tests/test_gitops_live_test.py.
 """
 
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 
 
@@ -140,6 +144,91 @@ class LiveTestWorkflow(unittest.TestCase):
                                  f"{prefix}main@sha1:{SHA}",
                                  f"{'refs/heads/' if mode == 'legacy' else ''}renovate/example@sha1:{SHA}"):
                     self.assertNotEqual(self.shell("assert_pr", MODE=mode, ARTIFACT=artifact).returncode, 0)
+
+    def authorize(self, branch="feature/wattbill", labels=(), files=(), **overrides):
+        script = textwrap.dedent(TEXT.split("          script: |\n", 1)[1].split("\n      - name:", 1)[0])
+        pr = {"state": "open", "base": {"ref": "main"},
+              "head": {"ref": branch, "sha": SHA, "repo": {"full_name": "owner/repo"}},
+              "labels": [{"name": label} for label in labels]}
+        pr.update(overrides)
+        data = {"script": script, "pr": pr, "files": files,
+                "context": {"repo": {"owner": "owner", "repo": "repo"},
+                            "issue": {"number": 42},
+                            "payload": {"pull_request": {"head": {"ref": branch, "sha": SHA}}}}}
+        harness = """
+        const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+        const failures = [];
+        let listedFiles = false;
+        const github = {
+          rest: {pulls: {get: async () => ({data: input.pr}), listFiles: () => {}}},
+          paginate: async () => { listedFiles = true; return input.files; },
+        };
+        const core = {setFailed: message => failures.push(message)};
+        const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+        new AsyncFunction('github', 'context', 'core', input.script)(github, input.context, core)
+          .then(() => console.log(JSON.stringify({failures, listedFiles})))
+          .catch(error => { console.error(error); process.exitCode = 1; });
+        """
+        result = subprocess.run(["node", "-e", harness], input=json.dumps(data),
+                                text=True, capture_output=True, timeout=10)
+        self.assert_success(result)
+        return json.loads(result.stdout)
+
+    def test_renovate_and_explicit_opt_in_are_authorized(self):
+        for branch, labels in (("renovate/example", ()), ("feature/wattbill", ("gitops-live-test",))):
+            with self.subTest(branch=branch):
+                result = self.authorize(branch=branch, labels=labels)
+                self.assertEqual(result["failures"], [])
+                self.assertTrue(result["listedFiles"])
+
+    def test_missing_opt_in_forks_and_stale_runs_fail_before_listing_files(self):
+        invalid = [
+            {}, {"labels": ("unrelated",)}, {"labels": ("GitOps-live-test",)},
+            {"state": "closed"}, {"base": {"ref": "other"}},
+            {"head": {"ref": "feature/wattbill", "sha": SHA, "repo": {"full_name": "fork/repo"}}},
+            {"head": {"ref": "feature/wattbill", "sha": SHA, "repo": None}},
+            {"head": {"ref": "feature/wattbill", "sha": "b" * 40, "repo": {"full_name": "owner/repo"}}},
+            {"head": {"ref": "feature/other", "sha": SHA, "repo": {"full_name": "owner/repo"}}},
+        ]
+        for index, overrides in enumerate(invalid):
+            with self.subTest(overrides=overrides):
+                args = {"labels": ("gitops-live-test",)} if index >= 3 else {}
+                args.update(overrides)
+                result = self.authorize(**args)
+                self.assertTrue(result["failures"])
+                self.assertFalse(result["listedFiles"])
+
+    def test_opt_in_does_not_bypass_root_change_rejection(self):
+        for files in ([{"filename": "kubernetes/clusters/homelab/flux-instance.yaml"}],
+                      [{"filename": "elsewhere.yaml", "previous_filename": "kubernetes/clusters/homelab/old.yaml"}]):
+            with self.subTest(files=files):
+                self.assertTrue(self.authorize(labels=("gitops-live-test",), files=files)["failures"])
+
+    def test_preflight_accepts_safe_non_renovate_branches(self):
+        step = textwrap.dedent(TEXT.split("      - name: Require an idle cluster on main\n", 1)[1]
+                              .split("\n      - name:", 1)[0])
+        script = re.search(r"<<'PY'\n(.*?)\n *PY", step, re.S).group(1)
+        script = textwrap.dedent(script)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "live-source.json").write_text(json.dumps({"spec": {"ref": {"branch": "main"}}}))
+            (root / "live-root.json").write_text(json.dumps({"spec": {}}))
+            (root / "live-instance.json").write_text("{}")
+            for branch, accepted in (("renovate/example", True), ("feature/wattbill-hardening", True),
+                                     ("main", False), ('feature/"unsafe', False),
+                                     ("feature/$(id)", False), ("feature/line\nbreak", False), ("", False)):
+                with self.subTest(branch=branch):
+                    env = dict(os.environ, HEAD_BRANCH=branch, HEAD_SHA=SHA, GITHUB_RUN_ID="42",
+                               GITHUB_RUN_ATTEMPT="1", GITHUB_ENV=str(root / "env"))
+                    result = subprocess.run([sys.executable, "-c", script], env=env, cwd=root,
+                                            text=True, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+    def test_opted_in_branch_uses_the_same_revision_checks(self):
+        for mode in ("operator", "legacy"):
+            with self.subTest(mode=mode):
+                self.assert_success(self.shell("assert_pr", MODE=mode,
+                                               HEAD_BRANCH="feature/wattbill", BRANCH="feature/wattbill"))
 
     def test_children_requested_before_parent_wait_and_verified_after(self):
         result = self.shell('reconcile_layer apps test "$expected"')

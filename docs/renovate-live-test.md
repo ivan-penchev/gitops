@@ -1,6 +1,6 @@
 # Renovate live health tests
 
-The live test applies a Renovate PR to the homelab cluster and checks the child
+The live test applies a Renovate or explicitly opted-in PR to the homelab cluster and checks the child
 Flux Kustomizations. It changes running workloads, not a preview environment.
 A passing result requires both a successful PR test and verified recovery to `main`.
 
@@ -10,10 +10,21 @@ Renovate runs weekly or on demand through `.github/workflows/renovate.yml`.
 Its managers update Flux chart/OCI references, Kubernetes images, and GitHub
 Actions. Files matching `*.sops.yaml` are ignored.
 
-`.github/workflows/gitops-live-test.yml` accepts only same-repository
-`renovate/*` PRs targeting `main`. Runs share a concurrency group and use the
-in-cluster ARC runner `gha-homelab-arc` with ServiceAccount `ci-deployer`.
-The Kubernetes API does not need to be exposed outside the cluster network.
+`.github/workflows/gitops-live-test.yml` accepts same-repository PRs targeting
+`main`: `renovate/*` branches run automatically; other branches require a
+maintainer to apply the `gitops-live-test` label. Fork PRs are never eligible.
+Runs share a concurrency group and use the in-cluster ARC runner
+`gha-homelab-arc` with ServiceAccount `ci-deployer`. The Kubernetes API does not
+need to be exposed outside the cluster network.
+
+Adding `gitops-live-test` starts the test. Leaving it on the PR also opts in
+subsequent pushes and reopen events; remove it to stop future non-Renovate runs.
+An unrelated label does not start a run. Before cluster access, the workflow
+re-reads the PR and rejects closed PRs, changed heads or bases, forks, and removed
+opt-ins. Removing the label does not cancel an already running test or its
+recovery. Review the manifests **and workflow code** before applying the label:
+this grants the PR workflow access to a privileged live-cluster runner, not a
+sandbox. Do not cancel recovery or merge until main restoration is confirmed.
 
 **The root Kustomization is deliberately suspended during testing.** The workflow
 explicitly reconciles `infrastructure-controllers`, `infrastructure-configs`,
@@ -138,9 +149,10 @@ Run the focused regression tests from the repository root:
 python3 -B .github/tests/test_gitops_live_test.py
 ```
 
-These tests use Python's standard library and local `sh` and `bash`. They extract
-and syntax-check the workflow's shell and Python scripts, then exercise the shared
-shell functions with mocked Kubernetes calls. Coverage includes operator and
+These tests use Python's standard library and local `sh`, `bash`, and Node.js.
+They execute the PR authorization script with mocked GitHub responses, check safe
+branch inputs, syntax-check the embedded scripts, and exercise the shared shell
+functions with mocked Kubernetes calls. Coverage includes operator and
 legacy revision formats, immutable PR SHA checks, children discovered after the
 parent starts applying, stale Ready generations and revisions, suspended children,
 and the shared recovery path. They do not contact a cluster or prove live

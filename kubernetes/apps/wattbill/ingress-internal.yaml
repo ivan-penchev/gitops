@@ -1,9 +1,7 @@
 ---
-# INTERNAL only: LAN client -> DNS (*.int.home -> ingress LB) -> ingress-nginx
-# -> Wattbill. HTTPS via the ingress-nginx default int-home wildcard cert, so
-# no tls block is needed here. Wattbill holds people's own Eloverblik tokens
-# for the length of one request and has no login of its own, so it stays off
-# the public internet and is reached only from inside the LAN.
+# LAN route: client -> DNS (*.int.home -> ingress LB) -> ingress-nginx -> Wattbill.
+# HTTPS uses ingress-nginx's default int-home wildcard cert. This hostname is
+# internal; ingress-public.yaml separately exposes the app without a login gate.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
