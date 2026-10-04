@@ -33,8 +33,11 @@ the PR. Changes under `kubernetes/clusters/homelab/` are rejected,
 including renamed files moved out of that directory. Those manifests need a
 separate root/controller migration test. In particular, this workflow cannot
 validate a FluxInstance, Flux Operator, or Flux controller upgrade while their
-owning root is suspended. A workflow-only update also does not prove workload
-behavior changed.
+owning root is suspended. Use the separate [disposable Flux upgrade
+test](flux-upgrade-test.md) for version-only Operator/Flux comparisons on
+GitHub-hosted kind clusters; it does not relax this live test's root-change
+rejection or authorize a production rollout. A workflow-only update also does
+not prove workload behavior changed.
 
 Child discovery selects both Flux ownership labels:
 `kustomize.toolkit.fluxcd.io/name=apps` and

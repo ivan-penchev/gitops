@@ -1,0 +1,101 @@
+name: flux-upgrade-test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - kubernetes/clusters/homelab/flux-system/**
+      - .github/workflows/flux-upgrade-test.yml
+      - .github/scripts/flux-upgrade/**
+      - .github/tests/test_flux_upgrade.py
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Baseline Git ref or commit SHA (candidate is the selected workflow SHA)
+        type: string
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flux-upgrade-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    name: Flux upgrade (${{ matrix.scenario }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [operator, flux, combined]
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+    steps:
+      - name: Check out immutable candidate
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Check out baseline
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha || inputs.baseline_ref }}
+          path: baseline
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install harness dependencies
+        run: python -m pip install --disable-pip-version-check -r candidate/.github/scripts/flux-upgrade/requirements.txt
+
+      - name: Run offline regression tests
+        run: python3 -B candidate/.github/tests/test_flux_upgrade.py
+
+      - name: Install pinned cluster tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .flux-upgrade-tools/bin
+          cd .flux-upgrade-tools
+          fetch() {
+            curl --fail --silent --show-error --location --retry 3 \
+              --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"
+          }
+          # SHA-256 values published with these official upstream releases.
+          fetch https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 kind
+          echo 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  kind' | sha256sum --check --strict
+          fetch https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl kubectl
+          echo '8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a  kubectl' | sha256sum --check --strict
+          fetch https://get.helm.sh/helm-v3.20.0-linux-amd64.tar.gz helm.tar.gz
+          echo 'dbb4c8fc8e19d159d1a63dda8db655f9ffa4aac1b9a6b188b34a40957119b286  helm.tar.gz' | sha256sum --check --strict
+          tar -xzf helm.tar.gz linux-amd64/helm
+          install -m 0755 kind kubectl linux-amd64/helm bin/
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Test isolated upgrade and reconciliation
+        run: >-
+          python candidate/.github/scripts/flux-upgrade/run.py
+          --base baseline
+          --candidate candidate
+          --scenario "$SCENARIO"
+          --artifacts "$RUNNER_TEMP/flux-upgrade-$SCENARIO"
+
+      - name: Upload nonsecret diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flux-upgrade-${{ matrix.scenario }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flux-upgrade-${{ matrix.scenario }}/
+          retention-days: 7
+          if-no-files-found: warn
