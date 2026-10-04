@@ -80,11 +80,14 @@ claimRef namespaces change. Keep `/media/movies`, `/downloads` and
 `/mnt/audiobooks` unchanged inside the containers. A Retain policy is not a
 backup and does not prevent application writes from deleting files.
 
-The new block PVC manifests deliberately do not hardcode current PV UUIDs.
-Before starting a child, create its PVCs with explicit `spec.volumeName` from
-the verified inventory. Otherwise `proxmox-tank` can provision empty disks.
-That binding remains on the live PVC when Flux adopts it. Do not use replace,
-force recreation or a delete/recreate cycle to resolve immutable-field errors.
+The four block PVC manifests explicitly pin `spec.volumeName` to the verified
+original PVs. Keep these bindings in Git: when Flux adopts a client-side-applied
+claim, it can inherit ownership of `volumeName`; omitting that field from Git
+then attempts an invalid immutable-field removal. Explicit pins also prevent
+accidental provisioning of empty replacement disks. Before starting a child,
+verify each pin against the live PV identity and original inventory. Do not use
+replace, force recreation or a delete/recreate cycle to resolve immutable-field
+errors.
 
 Read-only preflight commands, always from the repository root:
 
@@ -189,8 +192,8 @@ reviewed against the fresh inventory, not copied from the table without checks.
    and their contents are not moved. Stop if the state backup restore has not
    been tested. Remove backup/test pods and ensure original volumes are unmounted
    and detached before rebinding.
-5. Create only the new PVCs from the storage manifests, adding explicit
-   `volumeName` for each block claim. Do not apply the whole storage file yet:
+5. Create only the new PVCs from the storage manifests, verifying their explicit
+   `volumeName` pins against the inventory. Do not apply the whole storage file yet:
    it also contains existing static PVs whose claimRef still belongs to the old
    namespace. Check class, capacity, access modes and volume mode against the
    original PVCs. While the old claims still exist, the new ones should remain
@@ -217,7 +220,9 @@ reviewed against the fresh inventory, not copied from the table without checks.
     downloads and imports; Audiobookshelf users, libraries, playback progress
     and metadata. Keep the old Deployments at zero. Do not run two copies
     against the same state, even though a PVC reports ReadWriteOnce.
-11. After those checks, temporarily resume only this child while its parent
+11. Before release, server-side dry-run the pinned PVC manifests using the
+    `kustomize-controller` field manager. Require unchanged claim UIDs and specs.
+    After those checks, temporarily resume only this child while its parent
     remains suspended. Reconcile it at the exact reviewed source revision.
     It adopts the prepared PVCs, PVs and workloads, and creates the Ingresses.
     Audiobookshelf's public Ingress is in its recipe, so this is the public
