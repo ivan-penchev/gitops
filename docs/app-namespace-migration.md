@@ -2,7 +2,18 @@
 
 ## Status and scope
 
-Execution was approved on 2026-10-04. No workloads have moved namespaces yet.
+Execution was approved on 2026-10-04. Prowlarr and FlareSolverr now run in
+`downloads` alongside Radarr; Audiobookshelf runs in `media`. All three child
+Kustomizations are Ready, and all seven claims use their original retained PVs.
+Mounted state matched the verified cold backups before startup. Private app
+checks passed; ingress HTTPS and authentication passed using direct endpoints,
+and Audiobookshelf's public WebSocket upgrade passed through Cloudflare.
+
+ExternalDNS recreated records after the ingress namespace changes. Authoritative
+DNS is correct, but recursive resolvers can retain NXDOMAIN for the zone's
+30-minute negative TTL. Do not treat direct-endpoint tests as proof that cached
+DNS or Prowlarr's configured Radarr connection has recovered; recheck both before
+ending maintenance.
 The user confirmed cold ZFS snapshots of all four application-state volumes
 with tag `namespace-migration-20261004`, created at 16:36 Proxmox host time.
 Encrypted cold archives of all four state volumes were restored to disposable
@@ -13,16 +24,16 @@ images under deny-ingress/egress policies, without shared media mounts. Private
 checks confirmed initialization, authentication and the expected Arr data counts.
 Native snapshot rollback itself has not been exercised.
 
-All seven existing PVs now have `Retain` protection and live `apps` pruning is
-disabled. The live-test and Renovate workflows remain disabled, FluxInstance
-reconciliation and the root and `apps` Kustomizations are paused, and the four
-affected Deployments are stopped. Wattbill remains running. Do not resume
-reconciliation until the maintenance procedure has completed or been rolled back.
+All seven existing PVs retain `Retain` protection and live `apps` pruning remains
+disabled. The live-test and Renovate workflows remain disabled; FluxInstance,
+root and parent reconciliation remain paused pending finalization. The migrated
+children are active. Old Deployments remain at zero for rollback. Wattbill's
+specification, generation and availability are unchanged.
 
-Do not merge this change or point the live source at it before completing the
-live reconciliation safeguards below. A Git change to `apps.spec.prune` alone
-cannot protect existing workloads: the source can reach `apps` before the root
-has applied the new prune setting.
+This finalization revision enables the children and parent pruning in Git and
+persists the NFS `Merge` protection verified live. Merge it before restoring the
+paused parent, root and operator using the finalization procedure below. The
+remaining sections also preserve the original migration and rollback procedure.
 
 | App | Old namespace | New namespace | New workload path |
 | --- | --- | --- | --- |
@@ -41,12 +52,14 @@ recipes create Namespaces and child Flux objects, not workloads. Do not add a
 category-wide Kustomize `namespace:` transformer, which would relocate those
 Flux objects and break access to their configuration.
 
-The review revision contains two temporary settings:
+The initial staging revision used two temporary settings, removed in this
+finalization revision:
 
-- Each new child has `suspend: true`. Do not remove it until its PVCs are bound
-  to the original volumes and the app has passed private verification.
-- Parent `apps` has `prune: false`. Restore it only after the parent has dropped
-  the old resources from its inventory and each child owns its new resources.
+- Each new child had `suspend: true` until its PVCs were bound to the original
+  volumes and the app passed private verification.
+- Parent `apps` had `prune: false` while dropping the old resources from its
+  inventory and transferring ownership to the children. Its live pruning stays
+  disabled until the final inventory checks.
 
 Parent `wait: true` remains the steady-state readiness policy. While children
 are suspended or unready, parent readiness is not a migration success signal.
@@ -88,6 +101,20 @@ accidental provisioning of empty replacement disks. Before starting a child,
 verify each pin against the live PV identity and original inventory. Do not use
 replace, force recreation or a delete/recreate cycle to resolve immutable-field
 errors.
+
+All three static NFS PVs use `kustomize.toolkit.fluxcd.io/ssa: Merge`. Preserve
+this annotation in Git and apply it live before their first adoption after a
+manual rebind. Flux's default metadata cleanup transfers `kubectl`-owned fields
+to its own field manager, including a manually patched `claimRef.uid`. Applying
+Git's namespace/name-only reference then removes that UID, making a bound claim
+report `Lost` even though the NFS data still exists. `Merge` skips this cleanup
+and preserves fields absent from Git while continuing to reconcile declared
+fields. A plain server-side dry-run does not simulate Flux's metadata cleanup.
+
+This occurred during Radarr adoption. The child was suspended and its Deployment
+stopped; the original claim UIDs were restored with resourceVersion and PV
+identity guards. Both NFS claims returned to Bound without recreation. With
+`Merge` applied, two actual Flux reconciliations preserved the bindings.
 
 Read-only preflight commands, always from the repository root:
 
@@ -220,9 +247,12 @@ reviewed against the fresh inventory, not copied from the table without checks.
     downloads and imports; Audiobookshelf users, libraries, playback progress
     and metadata. Keep the old Deployments at zero. Do not run two copies
     against the same state, even though a PVC reports ReadWriteOnce.
-11. Before release, server-side dry-run the pinned PVC manifests using the
-    `kustomize-controller` field manager. Require unchanged claim UIDs and specs.
-    After those checks, temporarily resume only this child while its parent
+11. Before release, require `kustomize.toolkit.fluxcd.io/ssa: Merge` on each
+    static PV in both Git and the live object. Server-side dry-run the pinned
+    PVC and static PV manifests using the `kustomize-controller` field manager.
+    Require unchanged object UIDs and specs, including every `claimRef.uid`.
+    The dry-run alone does not cover Flux's metadata cleanup; inspect bindings
+    after actual reconciliation too. After those checks, resume only this child while its parent
     remains suspended. Reconcile it at the exact reviewed source revision.
     It adopts the prepared PVCs, PVs and workloads, and creates the Ingresses.
     Audiobookshelf's public Ingress is in its recipe, so this is the public
@@ -239,10 +269,10 @@ classes, capacity, access modes, volume identities and mount paths unchanged.
 
 ## Finish and restore automation
 
-After all three apps pass their checks, prepare and approve a follow-up commit
-that removes the three `suspend: true` settings and their migration comments,
-restores `apps.prune: true`, and updates the README's staged-status paragraph.
-Do not resume the parent while Git still says the verified children are suspended.
+This revision removes the three `suspend: true` settings and their migration
+comments, restores `apps.prune: true`, and persists static-PV `Merge` protection.
+Approve and merge it after the application and DNS checks pass. Do not resume
+the parent while its source still says the verified children are suspended.
 
 Reconcile the source to the approved final SHA. With the root still paused,
 restore live parent `wait: true` and let `apps` reconcile. Require parent and

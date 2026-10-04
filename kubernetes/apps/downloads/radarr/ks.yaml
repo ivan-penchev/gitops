@@ -4,9 +4,6 @@ metadata:
   name: radarr
   namespace: flux-system
 spec:
-  # Remove only after the existing data volumes are bound in downloads.
-  # See docs/app-namespace-migration.md.
-  suspend: true
   dependsOn:
     - name: infrastructure-configs
   interval: 10m

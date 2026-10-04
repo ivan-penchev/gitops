@@ -33,10 +33,11 @@ SOPS key and substitution ConfigMaps. Their `targetNamespace` selects the
 workload namespace. They wait for infrastructure and check their own workloads;
 Radarr does not depend on Prowlarr. The parent `apps` checks child readiness.
 
-**The namespace move is staged, not deployed.** New app reconcilers are suspended
-and parent pruning is disabled. Do not merge or point Flux at this revision
-until the live safeguards in [the migration runbook](docs/app-namespace-migration.md)
-are in place. The runbook covers volume rebinding and restoring normal reconciliation.
+The apps now run in their target namespaces using their original retained volumes.
+Child reconcilers are enabled and parent pruning is enabled in Git. Restoring the
+paused live parent, root, operator and workflows remains a controlled final step
+in [the migration runbook](docs/app-namespace-migration.md). Keep the old namespaces
+and stopped workloads for rollback; a Git revert alone does not move their data back.
 
 ## Cluster at a glance
 
