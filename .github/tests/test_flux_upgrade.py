@@ -102,6 +102,24 @@ class PlanTests(ScratchTest):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 upgrade.version(value)
 
+    def test_candidate_grouped_change_has_one_exact_pair_stage(self):
+        stages = upgrade.plan(self.base, self.candidate, "candidate")
+        self.assertEqual(stages, [("baseline", BASE), ("candidate", TARGET)])
+        self.assertIsNot(stages[0][1], stages[1][1])
+
+    def test_candidate_single_version_changes(self):
+        for component in BASE:
+            target = dict(BASE, **{component: TARGET[component]})
+            write_config(self.candidate, config(target))
+            with self.subTest(component=component):
+                self.assertEqual(upgrade.plan(self.base, self.candidate, "candidate"),
+                                 [("baseline", BASE), ("candidate", target)])
+
+    def test_unknown_scenario_rejected(self):
+        for scenario in ("invalid", "", "Candidate"):
+            with self.subTest(scenario=scenario), self.assertRaises(ValueError):
+                upgrade.plan(self.base, self.candidate, scenario)
+
     def test_combined_orders_operator_before_flux_and_copies_stages(self):
         stages = upgrade.plan(self.base, self.candidate, "combined")
         self.assertEqual(stages, [
@@ -120,7 +138,7 @@ class PlanTests(ScratchTest):
 
     def test_unchanged_pair_is_baseline_smoke_for_every_scenario(self):
         write_config(self.candidate, config())
-        for scenario in ("operator", "flux", "combined"):
+        for scenario in ("candidate", "operator", "flux", "combined"):
             with self.subTest(scenario=scenario):
                 self.assertEqual(upgrade.plan(self.base, self.candidate, scenario), [("baseline", BASE)])
 
@@ -129,12 +147,25 @@ class PlanTests(ScratchTest):
         self.assertEqual([stage for stage, _ in upgrade.plan(self.base, self.candidate, "combined")], ["baseline", "flux"])
         self.assertEqual(upgrade.plan(self.base, self.candidate, "operator"), [("baseline", BASE)])
 
-    def test_downgrades_rejected_even_when_other_scenario_selected(self):
-        for component, value in (("operator", "0.60.9"), ("flux", "2.9.5")):
-            write_config(self.candidate, config(dict(BASE, **{component: value})))
-            for scenario in ("operator", "flux", "combined"):
-                with self.subTest(component=component, scenario=scenario), self.assertRaisesRegex(ValueError, "Downgrades"):
+    def test_operator_downgrades_rejected_for_every_scenario(self):
+        for flux in ("2.9.5", BASE["flux"], TARGET["flux"]):
+            write_config(self.candidate, config({"operator": "0.60.9", "flux": flux}))
+            for scenario in ("candidate", "operator", "flux", "combined"):
+                with self.subTest(flux=flux, scenario=scenario), self.assertRaises(ValueError):
                     upgrade.plan(self.base, self.candidate, scenario)
+
+    def test_flux_downgrade_allowed_only_with_fixed_operator(self):
+        target = dict(BASE, flux="2.9.5")
+        write_config(self.candidate, config(target))
+        for scenario, stage in (("candidate", "candidate"), ("flux", "flux"), ("combined", "flux")):
+            with self.subTest(scenario=scenario):
+                self.assertEqual(upgrade.plan(self.base, self.candidate, scenario),
+                                 [("baseline", BASE), (stage, target)])
+        self.assertEqual(upgrade.plan(self.base, self.candidate, "operator"), [("baseline", BASE)])
+        write_config(self.candidate, config(dict(target, operator=TARGET["operator"])))
+        for scenario in ("candidate", "operator", "flux", "combined"):
+            with self.subTest(scenario=scenario), self.assertRaisesRegex(ValueError, "Flux downgrades require an unchanged Operator"):
+                upgrade.plan(self.base, self.candidate, scenario)
 
     def test_source_selectors_and_nonpublic_sources_rejected(self):
         for ref in ({"semver": "0.61.x"}, {"tag": "0.61.0", "digest": "sha256:" + "a" * 64}, {"tag": "latest"}):
@@ -196,7 +227,7 @@ class PlanTests(ScratchTest):
                 if operation != "deleted":
                     paths[1].write_bytes(b"new\x00\xff\n")
                 try:
-                    for scenario in ("operator", "flux", "combined"):
+                    for scenario in ("candidate", "operator", "flux", "combined"):
                         with self.subTest(filename=filename, operation=operation, scenario=scenario):
                             with self.assertRaisesRegex(ValueError, "Other Flux installation file changes"):
                                 upgrade.plan(self.base, self.candidate, scenario)
@@ -686,14 +717,18 @@ class VersionVerificationTests(ScratchTest):
 
 
 class MainTests(ScratchTest):
-    def invoke(self, lab, stages=None):
+    def invoke(self, lab, stages=None, scenario=None):
         stages = stages or [("baseline", BASE)]
-        args = ["run.py", "--base", "unused-base", "--candidate", "unused-candidate", "--scenario", "combined", "--artifacts", str(self.artifacts)]
+        args = ["run.py", "--base", "unused-base", "--candidate", "unused-candidate", "--artifacts", str(self.artifacts)]
+        if scenario is not None:
+            args.extend(["--scenario", scenario])
         def scratch(**kwargs):
             return REAL_TEMPORARY_DIRECTORY(dir=self.work, **kwargs)
-        with patch.object(sys, "argv", args), patch.object(upgrade, "plan", return_value=stages), patch.object(upgrade, "Lab", return_value=lab), patch.object(upgrade.tempfile, "TemporaryDirectory", side_effect=scratch), patch.object(upgrade.signal, "signal") as signals, redirect_stdout(io.StringIO()):
+        with patch.object(sys, "argv", args), patch.object(upgrade, "plan", return_value=stages) as planner, patch.object(upgrade, "Lab", return_value=lab), patch.object(upgrade.tempfile, "TemporaryDirectory", side_effect=scratch), patch.object(upgrade.signal, "signal") as signals, redirect_stdout(io.StringIO()) as output:
             self.signals = signals
+            self.planner = planner
             upgrade.main()
+            self.stdout = output.getvalue()
 
     def fake_lab(self):
         lab = Mock()
@@ -719,9 +754,24 @@ class MainTests(ScratchTest):
     def test_upgrade_summary_retains_ordered_stage_results(self):
         lab = self.fake_lab()
         stages = [("baseline", BASE), ("operator", dict(BASE, operator=TARGET["operator"])), ("flux", TARGET)]
-        self.invoke(lab, stages)
-        self.assertEqual(self.report()["mode"], "upgrade")
+        self.invoke(lab, stages, scenario="combined")
+        self.assertEqual(self.report()["mode"], "transition")
         self.assertEqual([result["stage"] for result in self.report()["results"]], ["baseline", "operator", "flux"])
+
+    def test_candidate_is_cli_default_and_runs_exact_pair_without_intermediate(self):
+        for scenario in (None, "candidate"):
+            lab = self.fake_lab()
+            stages = [("baseline", BASE), ("candidate", TARGET)]
+            with self.subTest(scenario=scenario):
+                self.invoke(lab, stages, scenario=scenario)
+                self.planner.assert_called_once_with(Path("unused-base"), Path("unused-candidate"), "candidate")
+                self.assertEqual([call.args for call in lab.exercise.call_args_list], stages)
+                report = self.report()
+                self.assertEqual(report["scenario"], "candidate")
+                self.assertEqual(report["mode"], "transition")
+                self.assertTrue(report["passed"])
+                self.assertEqual([result["stage"] for result in report["results"]], ["baseline", "candidate"])
+                self.assertTrue(self.stdout.endswith("Disposable transition test passed; cluster and fixture removed.\n"))
 
     def test_start_and_exercise_failures_still_diagnose_cleanup_report(self):
         for method in ("start", "exercise"):
@@ -862,6 +912,26 @@ class GitHTTPTests(ScratchTest):
             for directory in ("objects", "refs", "objects", "refs")
         ])
 
+    def test_grouped_candidate_plan_publishes_both_versions_in_one_commit(self):
+        baseline, candidate = self.work / "baseline", self.work / "candidate"
+        write_config(baseline, config(BASE))
+        write_config(candidate, config(TARGET))
+        stages = upgrade.plan(baseline, candidate, "candidate")
+        self.assertEqual(stages, [("baseline", BASE), ("candidate", TARGET)])
+        revisions = []
+        for label, versions in stages:
+            revision, _ = self.lab_instance.publish(versions, label, False)
+            revisions.append(revision.split("sha1:")[1])
+        self.assertEqual(self.git("-C", str(self.repo), "rev-list", "--count", "HEAD"), "2")
+        self.assertEqual(self.git("-C", str(self.repo), "rev-parse", "HEAD^"), revisions[0])
+        self.assertIn(revisions[1], self.git("ls-remote", self.url, "refs/heads/main"))
+        for revision, expected in zip(revisions, (BASE, TARGET)):
+            docs = list(yaml.safe_load_all(self.git("-C", str(self.repo), "show", revision + ":clusters/test/resources.yaml")))
+            instance = next(doc for doc in docs if doc["kind"] == "FluxInstance")
+            source = next(doc for doc in docs if doc["kind"] == "OCIRepository")
+            self.assertEqual(instance["spec"]["distribution"]["version"], expected["flux"])
+            self.assertEqual(source["spec"]["ref"]["tag"], expected["operator"])
+
     def test_healthz_is_local_and_ready(self):
         with urlopen(self.url.removesuffix("/repo.git") + "/healthz", timeout=5) as response:
             self.assertEqual(response.status, 200)
@@ -890,19 +960,22 @@ class WorkflowTests(unittest.TestCase):
 
     def test_triggers_are_unprivileged_and_root_scoped(self):
         self.assertEqual(set(self.workflow["on"]), {"pull_request", "workflow_dispatch"})
-        self.assertEqual(self.workflow["on"]["pull_request"]["branches"], ["main"])
+        self.assertNotIn("branches", self.workflow["on"]["pull_request"])
+        self.assertNotIn("branches-ignore", self.workflow["on"]["pull_request"])
         self.assertEqual(set(self.workflow["on"]["pull_request"]["paths"]), {
             "kubernetes/clusters/homelab/flux-system/**", ".github/workflows/flux-upgrade-test.yml",
             ".github/scripts/flux-upgrade/**", ".github/tests/test_flux_upgrade.py",
         })
         self.assertEqual(self.workflow["on"]["workflow_dispatch"]["inputs"]["baseline_ref"]["default"], "main")
 
-    def test_hosted_readonly_independent_matrix(self):
+    def test_hosted_readonly_single_stable_required_job(self):
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
         self.assertEqual(self.job["runs-on"], "ubuntu-24.04")
         self.assertEqual(self.job["timeout-minutes"], "40")
-        self.assertEqual(self.job["strategy"]["fail-fast"], "false")
-        self.assertEqual(self.job["strategy"]["matrix"]["scenario"], ["operator", "flux", "combined"])
+        self.assertEqual(list(self.workflow["jobs"]), ["upgrade"])
+        self.assertEqual(self.job["name"], "Flux version transition")
+        self.assertNotIn("strategy", self.job)
+        self.assertNotIn("SCENARIO", self.job.get("env", {}))
         self.assertNotIn("if", self.job)
         self.assertNotIn("environment", self.job)
         self.assertNotIn("permissions", self.job)
@@ -926,6 +999,9 @@ class WorkflowTests(unittest.TestCase):
         integration = next(i for i, text in enumerate(commands) if "flux-upgrade/run.py" in text)
         self.assertLess(offline, integration)
         self.assertIn("python3 -B", commands[offline])
+        self.assertIn("--scenario candidate", commands[integration])
+        self.assertIn('--artifacts "$RUNNER_TEMP/flux-transition"', commands[integration])
+        self.assertNotIn("$SCENARIO", commands[integration])
         for command in commands:
             REAL_RUN(["bash", "-n"], input=command, text=True, check=True, capture_output=True)
 
@@ -934,7 +1010,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(uploads), 1)
         upload = uploads[0]
         self.assertEqual(upload["if"], "always()")
-        self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/flux-upgrade-${{ matrix.scenario }}/")
+        self.assertEqual(upload["with"]["path"], "${{ runner.temp }}/flux-transition/")
+        self.assertEqual(upload["with"]["name"], "flux-transition-${{ github.run_attempt }}")
         self.assertEqual(upload["with"]["retention-days"], "7")
         self.assertNotIn("include-hidden-files", upload["with"])
 

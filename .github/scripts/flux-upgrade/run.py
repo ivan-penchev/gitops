@@ -1,4 +1,4 @@
-"""Exercise version-only Flux upgrades in a disposable, credential-free kind cluster."""
+"""Exercise version-only Flux transitions in a disposable, credential-free kind cluster."""
 
 import argparse
 from copy import deepcopy
@@ -66,6 +66,8 @@ def read_config(root):
 
 
 def plan(base, candidate, scenario):
+    if scenario not in ("candidate", "operator", "flux", "combined"):
+        raise ValueError(f"Unknown scenario: {scenario}")
     old, baseline = read_config(base)
     new, target = read_config(candidate)
 
@@ -81,10 +83,15 @@ def plan(base, candidate, scenario):
     normalized["source"]["spec"]["ref"]["tag"] = baseline["operator"]
     if normalized != old:
         raise ValueError("Only Operator chart tag and Flux distribution version changes are covered; other changes are not tested")
-    for key in baseline:
-        if version(target[key]) < version(baseline[key]):
-            raise ValueError(f"Downgrades are not covered: {key}")
+    if version(target["operator"]) < version(baseline["operator"]):
+        raise ValueError("Operator downgrades are not covered")
+    if version(target["flux"]) < version(baseline["flux"]) and target["operator"] != baseline["operator"]:
+        raise ValueError("Flux downgrades require an unchanged Operator")
     stages = [("baseline", dict(baseline))]
+    if scenario == "candidate":
+        if target != baseline:
+            stages.append(("candidate", dict(target)))
+        return stages
     current = dict(baseline)
     for key in ("operator", "flux"):
         if scenario in (key, "combined") and target[key] != current[key]:
@@ -397,13 +404,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
-    parser.add_argument("--scenario", choices=("operator", "flux", "combined"), required=True)
+    parser.add_argument("--scenario", choices=("candidate", "operator", "flux", "combined"), default="candidate")
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--node-image", default=NODE)
     args = parser.parse_args()
     stages = plan(args.base, args.candidate, args.scenario)
     args.artifacts.mkdir(parents=True, exist_ok=True)
-    report = {"scenario": args.scenario, "mode": "upgrade" if len(stages) > 1 else "baseline-smoke",
+    report = {"scenario": args.scenario, "mode": "transition" if len(stages) > 1 else "baseline-smoke",
               "plan": stages, "results": [], "passed": False, "node_image": args.node_image}
     print(json.dumps(report, indent=2), flush=True)
 
@@ -442,7 +449,7 @@ def main():
                     raise
                 finally:
                     (args.artifacts / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
-    print("Disposable upgrade test passed; cluster and fixture removed.", flush=True)
+    print("Disposable transition test passed; cluster and fixture removed.", flush=True)
 
 
 if __name__ == "__main__":

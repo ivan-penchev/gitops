@@ -1,4 +1,4 @@
-# Disposable Flux upgrade tests
+# Disposable Flux version transition test
 
 `.github/workflows/flux-upgrade-test.yml` tests Flux Operator and Flux distribution
 version changes on disposable kind clusters. It uses **GitHub-hosted
@@ -47,28 +47,39 @@ or a production runner to this workflow.
 
 ## Scenario plan
 
-All three matrix jobs run independently, with `fail-fast: false` and a 40-minute
-job timeout. Each starts a **fresh baseline** Operator and Flux pair:
+CI runs one stable check, **Flux version transition**, with a 40-minute job
+timeout. The `candidate` scenario (also the CLI default) starts a **fresh baseline**
+Operator and Flux pair, then publishes the exact candidate pair together in one
+generated Git commit. There is no forced Operator-first intermediate stage, even
+when both versions change. This exercises actual same-commit candidate-pair
+reconciliation, not every possible controller timing or the homelab's state.
+
+There is no version-change filter: unchanged pairs still run to exercise setup
+and reconciliation. An unchanged pair is a **baseline smoke test, not a version
+transition**. Changed runs report mode `transition`; unchanged runs report
+`baseline-smoke`.
+
+Optional CLI diagnostics remain available but are not required CI jobs:
 
 | Scenario | Target Operator | Target Flux | Transition |
 | --- | --- | --- | --- |
 | `operator` | Candidate | Baseline | Upgrade the Operator, hold Flux fixed |
-| `flux` | Baseline | Candidate | Upgrade Flux, hold the Operator fixed |
-| `combined` | Candidate | Candidate | Upgrade the Operator first, then Flux |
+| `flux` | Baseline | Candidate | Change Flux, hold the Operator fixed |
+| `combined` | Candidate | Candidate | Upgrade the Operator first, then change Flux |
 
-There is no version-change filter: unchanged pairs still run to exercise setup
-and reconciliation. An unchanged pair is a **smoke test, not a real upgrade**.
-If only one version changes, some scenarios intentionally overlap. The combined
-order models the safer operator-first rollout; it does **not** prove arbitrary
-simultaneous production reconciliation of both changes is safe.
+An independent `flux` diagnostic can fail because the old Operator does not
+bundle the target distribution, even when the grouped candidate pair succeeds.
+That unsupported intermediate pair must not block a grouped PR: the required
+check tests the actual candidate pair, not a hypothetical split upgrade.
+Neither candidate nor combined success guarantees production ordering or all
+reconciliation interleavings.
 
-The `flux` scenario deliberately keeps the baseline Operator and must fail if it
-cannot supply the target bundled Flux distribution. If a grouped upgrade fails
-for this reason, split the changes: merge the Operator upgrade first, then rebase
-and retest the Flux bump against that new baseline. A successful `combined` run
-alone proves neither compatibility with the old Operator nor production rollout
-ordering; keep all three matrix scenarios required rather than bypassing this
-compatibility check.
+Operator downgrades are always rejected. A Flux downgrade is allowed only when
+the Operator is unchanged; mixing a Flux downgrade with an Operator change is
+rejected. A downgrade PR from Flux `2.9.6` to `2.9.5` at Operator `0.61.0` changes
+only `spec.distribution.version` in `flux-instance.yaml`. This is an explicit,
+reviewed version transition, not an automatic post-upgrade rollback test or an
+Operator downgrade.
 
 Helm CLI bootstraps the baseline Operator once. A real Flux `OCIRepository` and
 `HelmRelease` then take over Operator self-management, including chart upgrades;
@@ -118,12 +129,18 @@ only, not external notification delivery.
 
 ## Running the workflow
 
-PRs targeting `main` trigger the workflow when they change:
+PRs targeting any branch, including stacked PRs, trigger the workflow when they change:
 
 - `kubernetes/clusters/homelab/flux-system/**`
 - `.github/workflows/flux-upgrade-test.yml`
 - `.github/scripts/flux-upgrade/**`
 - `.github/tests/test_flux_upgrade.py`
+
+For a stacked manifest-only PR, use the pipeline/harness PR's head branch as its
+base. The check compares that PR's actual immutable base/head SHAs. After the
+first PR merges, retarget the stacked PR to `main` and rerun CI against its new
+base before merging. Configure **Flux version transition** as the required check;
+the optional diagnostic scenarios are not merge gates.
 
 For a manual comparison, open **Actions → flux-upgrade-test → Run workflow**.
 Select the candidate branch/ref and supply `baseline_ref` (default `main`). The
@@ -143,8 +160,8 @@ The harness invocation is:
 python candidate/.github/scripts/flux-upgrade/run.py \
   --base baseline \
   --candidate candidate \
-  --scenario "$SCENARIO" \
-  --artifacts "$RUNNER_TEMP/flux-upgrade-$SCENARIO"
+  --scenario candidate \
+  --artifacts "$RUNNER_TEMP/flux-transition"
 ```
 
 The default node image is
@@ -162,8 +179,8 @@ prevent process cleanup; destruction of the disposable hosted runner is the
 remaining isolation boundary. New commits may cancel older runs in the same
 workflow concurrency group without affecting production.
 
-The `always()` artifact step retains each scenario's explicit diagnostics
-directory for seven days, including `summary.json`, nonsecret resource JSON,
+The `always()` artifact step retains only the explicit `flux-transition`
+diagnostics directory for seven days, including `summary.json`, nonsecret resource JSON,
 controller logs, and fixture-server logs. **Kubeconfigs, credential files, full repositories, and fixture
 working directories must never enter that directory.** Upload does not sweep the
 workspace or runner temporary directory. Failures before harness startup may

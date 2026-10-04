@@ -2,7 +2,6 @@ name: flux-upgrade-test
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - kubernetes/clusters/homelab/flux-system/**
       - .github/workflows/flux-upgrade-test.yml
@@ -25,15 +24,9 @@ concurrency:
 
 jobs:
   upgrade:
-    name: Flux upgrade (${{ matrix.scenario }})
+    name: Flux version transition
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: [operator, flux, combined]
-    env:
-      SCENARIO: ${{ matrix.scenario }}
     steps:
       - name: Check out immutable candidate
         uses: actions/checkout@v7
@@ -83,19 +76,19 @@ jobs:
           install -m 0755 kind kubectl linux-amd64/helm bin/
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
-      - name: Test isolated upgrade and reconciliation
+      - name: Test isolated candidate transition and reconciliation
         run: >-
           python candidate/.github/scripts/flux-upgrade/run.py
           --base baseline
           --candidate candidate
-          --scenario "$SCENARIO"
-          --artifacts "$RUNNER_TEMP/flux-upgrade-$SCENARIO"
+          --scenario candidate
+          --artifacts "$RUNNER_TEMP/flux-transition"
 
       - name: Upload nonsecret diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: flux-upgrade-${{ matrix.scenario }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/flux-upgrade-${{ matrix.scenario }}/
+          name: flux-transition-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flux-transition/
           retention-days: 7
           if-no-files-found: warn
