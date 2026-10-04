@@ -32,7 +32,8 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       # Recovery starts after 20 minutes, even if the runner disappears.
       WATCHDOG_SECONDS: "1200"
-      WATCHDOG_IMAGE: "registry.k8s.io/kubectl:v1.33.0"
+      # Alpine-based: includes /bin/sh, core utilities and kubectl 1.36.
+      WATCHDOG_IMAGE: "ghcr.io/fluxcd/flux-cli:v2.9.6"
     steps:
       - name: Authorize PR and reject changes the suspended root cannot test
         uses: actions/github-script@v9
@@ -85,6 +86,35 @@ jobs:
           source=gitrepository.source.toolkit.fluxcd.io/flux-system
           root=kustomization.kustomize.toolkit.fluxcd.io/flux-system
           layers="infrastructure-controllers infrastructure-configs apps"
+          configure_cluster() {
+            # Explicit config avoids kubectl's in-cluster fallback changing when
+            # flags such as --request-timeout override the default REST config.
+            test -r /var/run/secrets/kubernetes.io/serviceaccount/token
+            test -r /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            KUBECONFIG="$(mktemp)"
+            export KUBECONFIG
+            cat > "$KUBECONFIG" <<'CONFIG'
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: homelab
+              cluster:
+                server: https://kubernetes.default.svc
+                certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          users:
+            - name: ci-deployer
+              user:
+                tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          contexts:
+            - name: homelab
+              context:
+                cluster: homelab
+                user: ci-deployer
+                namespace: flux-system
+          current-context: homelab
+          CONFIG
+            printf 'KUBECONFIG=%s\n' "$KUBECONFIG"
+          }
           k() { kubectl --request-timeout=30s -n flux-system "$@"; }
           field() { k get "$1" -o "jsonpath=$2"; }
           ready() {
@@ -226,6 +256,7 @@ jobs:
             fi
           }
           case "$1" in
+            kubeconfig) configure_cluster ;;
             switch)
               pause_instance "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-pause"
               suspend_root "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-root"
@@ -243,6 +274,9 @@ jobs:
               ;;
             restore) restore ;;
             watchdog)
+              configure_cluster >/dev/null
+              k get "$source" -o name >/dev/null
+              touch /tmp/gitops-watchdog-ready
               remaining=$((WATCHDOG_DEADLINE - $(date +%s)))
               if [ "$remaining" -gt 0 ]; then sleep "$remaining"; fi
               # Retry transient API/controller failures independently of the runner.
@@ -258,6 +292,7 @@ jobs:
               ;;
           esac
           SCRIPT
+          sh gitops-live-control.sh kubeconfig >> "$GITHUB_ENV"
 
       - name: Require an idle cluster on main
         run: |
@@ -329,6 +364,9 @@ jobs:
                                                    'capabilities': {'drop': ['ALL']}},
                                'command': ['/bin/sh', '-c'],
                                'args': [Path('gitops-live-control.sh').read_text(), 'recovery', 'watchdog'],
+                               'readinessProbe': {'exec': {'command': [
+                                   '/bin/sh', '-c', 'test -f /tmp/gitops-watchdog-ready']},
+                                   'periodSeconds': 2, 'timeoutSeconds': 1},
                            }],
                        }}},
           }

@@ -131,6 +131,78 @@ class LiveTestWorkflow(unittest.TestCase):
             for python in re.findall(r"<<'PY'[^\n]*\n(.*?)\nPY", script, re.S):
                 compile(python, str(WORKFLOW), "exec")
 
+    def test_explicit_cluster_config_survives_nested_shells_without_copying_tokens(self):
+        for shell in ("sh", "bash"):
+            with self.subTest(shell=shell), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "token").write_text("sensitive-test-token")
+                (root / "ca.crt").write_text("test-ca")
+                functions = FUNCTIONS.replace("/var/run/secrets/kubernetes.io/serviceaccount", directory)
+                result = subprocess.run(
+                    [shell, "-c", functions + '\nconfigure_cluster\nsh -c \'test -r "$KUBECONFIG"\''],
+                    env=dict(os.environ, TMPDIR=directory), text=True, capture_output=True,
+                )
+                self.assert_success(result)
+                config = Path(result.stdout.strip().removeprefix("KUBECONFIG=")).read_text()
+                self.assertIn("server: https://kubernetes.default.svc", config)
+                self.assertIn(f"tokenFile: {directory}/token", config)
+                self.assertIn(f"certificate-authority: {directory}/ca.crt", config)
+                self.assertNotIn("sensitive-test-token", config + result.stdout + result.stderr)
+                self.assertIn('sh gitops-live-control.sh kubeconfig >> "$GITHUB_ENV"', TEXT)
+
+    def test_missing_service_account_files_fail_before_config_creation(self):
+        for missing in ("token", "ca.crt"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / ({"token", "ca.crt"} - {missing}).pop()).touch()
+                script = CONTROL.replace("/var/run/secrets/kubernetes.io/serviceaccount", directory)
+                result = subprocess.run(["sh", "-s", "kubeconfig"], input=script,
+                                        env=dict(os.environ, TMPDIR=directory),
+                                        text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(len(list(root.iterdir())), 1)
+
+    def test_watchdog_readiness_requires_successful_api_access(self):
+        for permitted in ("yes", "no"):
+            with self.subTest(permitted=permitted), tempfile.TemporaryDirectory() as directory:
+                marker = Path(directory) / "ready"
+                script = CONTROL.replace("/tmp/gitops-watchdog-ready", str(marker))
+                mocks = '''
+configure_cluster() { :; }
+k() { test "$ALLOW_API" = yes; }
+sleep() { exit 0; }
+'''
+                script = script.replace('\ncase "$1" in\n', mocks + '\ncase "$1" in\n')
+                result = subprocess.run(["sh", "-s", "watchdog"], input=script,
+                                        env=dict(os.environ, ALLOW_API=permitted,
+                                                 WATCHDOG_DEADLINE="4102444800"),
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode == 0, permitted == "yes", result.stderr)
+                self.assertEqual(marker.exists(), permitted == "yes")
+
+    def test_generated_watchdog_uses_shell_runtime_and_readiness_probe(self):
+        code = textwrap.dedent(TEXT.split("python3 - <<'PY' | kubectl create -f -\n", 1)[1]
+                               .split("          PY\n", 1)[0])
+        image = re.search(r'WATCHDOG_IMAGE: "([^"]+)"', TEXT).group(1)
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "gitops-live-control.sh").write_text(CONTROL)
+            env = dict(os.environ, MODE="operator", ORIGINAL_RECONCILE="null", GITHUB_RUN_ID="42",
+                       GITHUB_RUN_ATTEMPT="1", WATCHDOG_SECONDS="1200", WATCHDOG_JOB="test",
+                       WATCHDOG_IMAGE=image)
+            result = subprocess.run([sys.executable, "-c", code], env=env, cwd=directory,
+                                    text=True, capture_output=True)
+            self.assert_success(result)
+            spec = json.loads(result.stdout)["spec"]["template"]["spec"]
+            container = spec["containers"][0]
+            self.assertTrue(container["image"].startswith("ghcr.io/fluxcd/flux-cli:"))
+            self.assertEqual(container["command"], ["/bin/sh", "-c"])
+            self.assertEqual(container["args"], [CONTROL, "recovery", "watchdog"])
+            self.assertEqual(container["readinessProbe"]["exec"]["command"],
+                             ["/bin/sh", "-c", "test -f /tmp/gitops-watchdog-ready"])
+            self.assertTrue(spec["securityContext"]["runAsNonRoot"])
+            self.assertEqual(spec["serviceAccountName"], "ci-deployer")
+
     def test_revision_command_and_assertion(self):
         for mode, prefix in (("operator", "refs/heads/"), ("legacy", "")):
             with self.subTest(mode=mode):

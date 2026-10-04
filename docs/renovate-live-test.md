@@ -57,8 +57,10 @@ a substitute for the approved data migration and per-app activation steps.
    to own `flux-system` and select `refs/heads/main`. The instance must be Ready
    and not already paused. Without this instance, use the legacy source/root path.
 3. Create `gitops-watchdog-<run_id>-<attempt>` in `arc-runners` and wait for its
-   container to run before changing Flux. It carries its own recovery script and
-   does not depend on the runner filesystem.
+   readiness probe to pass before changing Flux. Readiness requires successful
+   Kubernetes API access with the recovery client's configuration, not just a
+   running container. It carries its own recovery script and does not depend on
+   the runner filesystem.
 4. In operator mode, atomically set
    `fluxcd.controlplane.io/reconcile: disabled` and a fresh
    `reconcile.fluxcd.io/requestedAt`. Wait until the instance's
@@ -98,6 +100,22 @@ A pause acknowledgment timeout aborts the switch rather than assuming the
 controllers have stopped.
 
 ## Recovery and watchdog
+
+Both clients use an explicit, temporary kubeconfig referencing the projected
+`ci-deployer` token file and CA; tokens are not copied into it or printed. The
+runner exports its path through `GITHUB_ENV`, so nested `sh` processes inherit it.
+The watchdog creates its own config inside its Pod. This preserves token rotation
+and TLS verification while avoiding kubectl's default-config fallback: adding
+`--request-timeout` alone was observed to bypass automatic in-cluster credentials
+and connect to `localhost:8080` instead.
+
+The watchdog uses `ghcr.io/fluxcd/flux-cli:v2.9.6`, whose Alpine-based image includes
+`/bin/sh`, `date`, `sleep`, and kubectl 1.36 (matching the cluster's minor version).
+The previous `registry.k8s.io/kubectl` image had no shell and could not run recovery.
+When changing this image or authentication, smoke-test the generated Job as its
+non-root user with `ci-deployer`, confirm API-backed readiness, and delete the
+smoke-test Job **before its recovery deadline**. Offline tests cannot prove image
+contents or real service-account access.
 
 The runner's `always()` cleanup and the watchdog use the same commands:
 
@@ -155,8 +173,9 @@ branch inputs, syntax-check the embedded scripts, and exercise the shared shell
 functions with mocked Kubernetes calls. Coverage includes operator and
 legacy revision formats, immutable PR SHA checks, children discovered after the
 parent starts applying, stale Ready generations and revisions, suspended children,
-and the shared recovery path. They do not contact a cluster or prove live
-controller behavior.
+and the shared recovery path. They also check credential-file references, nested
+shell configuration inheritance, missing-credential failures, and the watchdog's
+API-readiness gate. They do not contact a cluster or prove live controller behavior.
 
 ## One-time manual setup
 
