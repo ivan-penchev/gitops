@@ -3,10 +3,14 @@
 Run with python3 -B .github/tests/test_gitops_live_test.py.
 """
 
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 
 
@@ -127,6 +131,78 @@ class LiveTestWorkflow(unittest.TestCase):
             for python in re.findall(r"<<'PY'[^\n]*\n(.*?)\nPY", script, re.S):
                 compile(python, str(WORKFLOW), "exec")
 
+    def test_explicit_cluster_config_survives_nested_shells_without_copying_tokens(self):
+        for shell in ("sh", "bash"):
+            with self.subTest(shell=shell), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "token").write_text("sensitive-test-token")
+                (root / "ca.crt").write_text("test-ca")
+                functions = FUNCTIONS.replace("/var/run/secrets/kubernetes.io/serviceaccount", directory)
+                result = subprocess.run(
+                    [shell, "-c", functions + '\nconfigure_cluster\nsh -c \'test -r "$KUBECONFIG"\''],
+                    env=dict(os.environ, TMPDIR=directory), text=True, capture_output=True,
+                )
+                self.assert_success(result)
+                config = Path(result.stdout.strip().removeprefix("KUBECONFIG=")).read_text()
+                self.assertIn("server: https://kubernetes.default.svc", config)
+                self.assertIn(f"tokenFile: {directory}/token", config)
+                self.assertIn(f"certificate-authority: {directory}/ca.crt", config)
+                self.assertNotIn("sensitive-test-token", config + result.stdout + result.stderr)
+                self.assertIn('sh gitops-live-control.sh kubeconfig >> "$GITHUB_ENV"', TEXT)
+
+    def test_missing_service_account_files_fail_before_config_creation(self):
+        for missing in ("token", "ca.crt"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / ({"token", "ca.crt"} - {missing}).pop()).touch()
+                script = CONTROL.replace("/var/run/secrets/kubernetes.io/serviceaccount", directory)
+                result = subprocess.run(["sh", "-s", "kubeconfig"], input=script,
+                                        env=dict(os.environ, TMPDIR=directory),
+                                        text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(len(list(root.iterdir())), 1)
+
+    def test_watchdog_readiness_requires_successful_api_access(self):
+        for permitted in ("yes", "no"):
+            with self.subTest(permitted=permitted), tempfile.TemporaryDirectory() as directory:
+                marker = Path(directory) / "ready"
+                script = CONTROL.replace("/tmp/gitops-watchdog-ready", str(marker))
+                mocks = '''
+configure_cluster() { :; }
+k() { test "$ALLOW_API" = yes; }
+sleep() { exit 0; }
+'''
+                script = script.replace('\ncase "$1" in\n', mocks + '\ncase "$1" in\n')
+                result = subprocess.run(["sh", "-s", "watchdog"], input=script,
+                                        env=dict(os.environ, ALLOW_API=permitted,
+                                                 WATCHDOG_DEADLINE="4102444800"),
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode == 0, permitted == "yes", result.stderr)
+                self.assertEqual(marker.exists(), permitted == "yes")
+
+    def test_generated_watchdog_uses_shell_runtime_and_readiness_probe(self):
+        code = textwrap.dedent(TEXT.split("python3 - <<'PY' | kubectl create -f -\n", 1)[1]
+                               .split("          PY\n", 1)[0])
+        image = re.search(r'WATCHDOG_IMAGE: "([^"]+)"', TEXT).group(1)
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "gitops-live-control.sh").write_text(CONTROL)
+            env = dict(os.environ, MODE="operator", ORIGINAL_RECONCILE="null", GITHUB_RUN_ID="42",
+                       GITHUB_RUN_ATTEMPT="1", WATCHDOG_SECONDS="1200", WATCHDOG_JOB="test",
+                       WATCHDOG_IMAGE=image)
+            result = subprocess.run([sys.executable, "-c", code], env=env, cwd=directory,
+                                    text=True, capture_output=True)
+            self.assert_success(result)
+            spec = json.loads(result.stdout)["spec"]["template"]["spec"]
+            container = spec["containers"][0]
+            self.assertTrue(container["image"].startswith("ghcr.io/fluxcd/flux-cli:"))
+            self.assertEqual(container["command"], ["/bin/sh", "-c"])
+            self.assertEqual(container["args"], [CONTROL, "recovery", "watchdog"])
+            self.assertEqual(container["readinessProbe"]["exec"]["command"],
+                             ["/bin/sh", "-c", "test -f /tmp/gitops-watchdog-ready"])
+            self.assertTrue(spec["securityContext"]["runAsNonRoot"])
+            self.assertEqual(spec["serviceAccountName"], "ci-deployer")
+
     def test_revision_command_and_assertion(self):
         for mode, prefix in (("operator", "refs/heads/"), ("legacy", "")):
             with self.subTest(mode=mode):
@@ -140,6 +216,91 @@ class LiveTestWorkflow(unittest.TestCase):
                                  f"{prefix}main@sha1:{SHA}",
                                  f"{'refs/heads/' if mode == 'legacy' else ''}renovate/example@sha1:{SHA}"):
                     self.assertNotEqual(self.shell("assert_pr", MODE=mode, ARTIFACT=artifact).returncode, 0)
+
+    def authorize(self, branch="feature/wattbill", labels=(), files=(), **overrides):
+        script = textwrap.dedent(TEXT.split("          script: |\n", 1)[1].split("\n      - name:", 1)[0])
+        pr = {"state": "open", "base": {"ref": "main"},
+              "head": {"ref": branch, "sha": SHA, "repo": {"full_name": "owner/repo"}},
+              "labels": [{"name": label} for label in labels]}
+        pr.update(overrides)
+        data = {"script": script, "pr": pr, "files": files,
+                "context": {"repo": {"owner": "owner", "repo": "repo"},
+                            "issue": {"number": 42},
+                            "payload": {"pull_request": {"head": {"ref": branch, "sha": SHA}}}}}
+        harness = """
+        const input = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+        const failures = [];
+        let listedFiles = false;
+        const github = {
+          rest: {pulls: {get: async () => ({data: input.pr}), listFiles: () => {}}},
+          paginate: async () => { listedFiles = true; return input.files; },
+        };
+        const core = {setFailed: message => failures.push(message)};
+        const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+        new AsyncFunction('github', 'context', 'core', input.script)(github, input.context, core)
+          .then(() => console.log(JSON.stringify({failures, listedFiles})))
+          .catch(error => { console.error(error); process.exitCode = 1; });
+        """
+        result = subprocess.run(["node", "-e", harness], input=json.dumps(data),
+                                text=True, capture_output=True, timeout=10)
+        self.assert_success(result)
+        return json.loads(result.stdout)
+
+    def test_renovate_and_explicit_opt_in_are_authorized(self):
+        for branch, labels in (("renovate/example", ()), ("feature/wattbill", ("gitops-live-test",))):
+            with self.subTest(branch=branch):
+                result = self.authorize(branch=branch, labels=labels)
+                self.assertEqual(result["failures"], [])
+                self.assertTrue(result["listedFiles"])
+
+    def test_missing_opt_in_forks_and_stale_runs_fail_before_listing_files(self):
+        invalid = [
+            {}, {"labels": ("unrelated",)}, {"labels": ("GitOps-live-test",)},
+            {"state": "closed"}, {"base": {"ref": "other"}},
+            {"head": {"ref": "feature/wattbill", "sha": SHA, "repo": {"full_name": "fork/repo"}}},
+            {"head": {"ref": "feature/wattbill", "sha": SHA, "repo": None}},
+            {"head": {"ref": "feature/wattbill", "sha": "b" * 40, "repo": {"full_name": "owner/repo"}}},
+            {"head": {"ref": "feature/other", "sha": SHA, "repo": {"full_name": "owner/repo"}}},
+        ]
+        for index, overrides in enumerate(invalid):
+            with self.subTest(overrides=overrides):
+                args = {"labels": ("gitops-live-test",)} if index >= 3 else {}
+                args.update(overrides)
+                result = self.authorize(**args)
+                self.assertTrue(result["failures"])
+                self.assertFalse(result["listedFiles"])
+
+    def test_opt_in_does_not_bypass_root_change_rejection(self):
+        for files in ([{"filename": "kubernetes/clusters/homelab/flux-instance.yaml"}],
+                      [{"filename": "elsewhere.yaml", "previous_filename": "kubernetes/clusters/homelab/old.yaml"}]):
+            with self.subTest(files=files):
+                self.assertTrue(self.authorize(labels=("gitops-live-test",), files=files)["failures"])
+
+    def test_preflight_accepts_safe_non_renovate_branches(self):
+        step = textwrap.dedent(TEXT.split("      - name: Require an idle cluster on main\n", 1)[1]
+                              .split("\n      - name:", 1)[0])
+        script = re.search(r"<<'PY'\n(.*?)\n *PY", step, re.S).group(1)
+        script = textwrap.dedent(script)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "live-source.json").write_text(json.dumps({"spec": {"ref": {"branch": "main"}}}))
+            (root / "live-root.json").write_text(json.dumps({"spec": {}}))
+            (root / "live-instance.json").write_text("{}")
+            for branch, accepted in (("renovate/example", True), ("feature/wattbill-hardening", True),
+                                     ("main", False), ('feature/"unsafe', False),
+                                     ("feature/$(id)", False), ("feature/line\nbreak", False), ("", False)):
+                with self.subTest(branch=branch):
+                    env = dict(os.environ, HEAD_BRANCH=branch, HEAD_SHA=SHA, GITHUB_RUN_ID="42",
+                               GITHUB_RUN_ATTEMPT="1", GITHUB_ENV=str(root / "env"))
+                    result = subprocess.run([sys.executable, "-c", script], env=env, cwd=root,
+                                            text=True, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+
+    def test_opted_in_branch_uses_the_same_revision_checks(self):
+        for mode in ("operator", "legacy"):
+            with self.subTest(mode=mode):
+                self.assert_success(self.shell("assert_pr", MODE=mode,
+                                               HEAD_BRANCH="feature/wattbill", BRANCH="feature/wattbill"))
 
     def test_children_requested_before_parent_wait_and_verified_after(self):
         result = self.shell('reconcile_layer apps test "$expected"')

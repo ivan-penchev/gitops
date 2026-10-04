@@ -9,11 +9,14 @@ Mounted state matched the verified cold backups before startup. Private app
 checks passed; ingress HTTPS and authentication passed using direct endpoints,
 and Audiobookshelf's public WebSocket upgrade passed through Cloudflare.
 
-ExternalDNS recreated records after the ingress namespace changes. Authoritative
-DNS is correct, but recursive resolvers can retain NXDOMAIN for the zone's
-30-minute negative TTL. Do not treat direct-endpoint tests as proof that cached
-DNS or Prowlarr's configured Radarr connection has recovered; recheck both before
-ending maintenance.
+ExternalDNS recreated records after the ingress namespace changes. Pi-hole
+retained NXDOMAIN answers until its DNS cache was cleared. Final checks from
+Prowlarr passed ordinary DNS and certificate-validated HTTPS for all three
+internal app hostnames and public Audiobookshelf. Prowlarr's native Radarr
+connection test and its FlareSolverr connection passed. Use the native connection
+test for existing integrations: the applications API returns masked API keys,
+which cannot authenticate an external API probe. Client-local caches can still
+retain older negative answers independently of Pi-hole.
 The user confirmed cold ZFS snapshots of all four application-state volumes
 with tag `namespace-migration-20261004`, created at 16:36 Proxmox host time.
 Encrypted cold archives of all four state volumes were restored to disposable
@@ -24,16 +27,28 @@ images under deny-ingress/egress policies, without shared media mounts. Private
 checks confirmed initialization, authentication and the expected Arr data counts.
 Native snapshot rollback itself has not been exercised.
 
-All seven existing PVs retain `Retain` protection and live `apps` pruning remains
-disabled. The live-test and Renovate workflows remain disabled; FluxInstance,
-root and parent reconciliation remain paused pending finalization. The migrated
-children are active. Old Deployments remain at zero for rollback. Wattbill's
-specification, generation and availability are unchanged.
+Cluster reconciliation was restored on 2026-10-04 after PR #40 merged as
+`cfee8e741c0808851f61b685ae4ab936b0def0e5`. Parent `apps` first reconciled with
+pruning off; its catalog-only inventory and each child's ownership were checked
+before enabling pruning and reconciling again. All seven original PV identities,
+CSI settings and claim bindings survived both passes, root restoration and the
+operator's subsequent reconciliation. All Kustomizations are unsuspended and
+Ready at that revision; all HelmReleases are Ready. Parent `wait` and `prune` are
+both enabled. The operator's original annotation state is restored, its
+specification is unchanged, and a fresh successful reconciliation was verified.
 
-This finalization revision enables the children and parent pruning in Git and
-persists the NFS `Merge` protection verified live. Merge it before restoring the
-paused parent, root and operator using the finalization procedure below. The
-remaining sections also preserve the original migration and rollback procedure.
+All seven existing PVs retain `Retain` protection; the three static NFS PVs keep
+`Merge` protection and exact PVC `volumeName` pins remain in Git. Fresh private app
+checks passed after restoration. Old Deployments remain at zero for rollback.
+Wattbill's specification, generation and availability are unchanged. Encrypted
+final health and storage evidence is retained with the migration backups.
+
+The live-test and Renovate workflows were manually re-enabled after final cluster
+verification; the GitHub API confirmed both states as `active`. The CLI account
+could not enable the live-test itself because GitHub required repository admin
+rights. Enabling a workflow does not by itself prove a new run passed. No old
+namespaces, rollback workloads, original disks or migration snapshots were deleted.
+The remaining sections preserve the original migration and rollback procedure.
 
 | App | Old namespace | New namespace | New workload path |
 | --- | --- | --- | --- |
@@ -58,8 +73,8 @@ finalization revision:
 - Each new child had `suspend: true` until its PVCs were bound to the original
   volumes and the app passed private verification.
 - Parent `apps` had `prune: false` while dropping the old resources from its
-  inventory and transferring ownership to the children. Its live pruning stays
-  disabled until the final inventory checks.
+  inventory and transferring ownership to the children. Live pruning was
+  restored only after the final inventory checks.
 
 Parent `wait: true` remains the steady-state readiness policy. While children
 are suspended or unready, parent readiness is not a migration success signal.
@@ -281,11 +296,15 @@ restoring its live pruning. Reconcile once with pruning enabled and verify no
 migrated resource disappears. Parent readiness alone does not prove every
 child applied the current source revision; check their revisions explicitly.
 
-Restore root reconciliation, then restore the operator's original reconciliation
-annotation. Verify both settle on main and all affected objects retain the
-intended prune, wait and suspend settings. Re-enable scheduled automation only
-after the cluster is healthy, no migration overrides remain, and source refs
-and applied revisions agree.
+Restore root reconciliation, then inspect the operator's annotations. Root
+reconciliation can remove the migration-added annotations while applying the Git
+manifest; this occurred during finalization. If they remain, restore only the
+migration changes to their original values. Verify a fresh successful operator
+reconciliation, unchanged operator specification, main source ref and current
+root revision. Confirm all affected objects retain the intended prune, wait and
+suspend settings. Re-enable scheduled automation only after the cluster is
+healthy, no migration overrides remain, and source refs and applied revisions
+agree.
 
 Old namespaces and zero-replica Deployments are rollback aids. Retain them
 through the agreed rollback window. Then inspect all namespaced resource types,

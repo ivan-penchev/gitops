@@ -9,8 +9,8 @@
 # points at ghcr-pull, a SOPS-encrypted dockerconfigjson secret next to this
 # file. The tag is pinned to a release semver rather than `latest`, matching
 # how the release workflow tags the image (docker/metadata-action strips the
-# `v` from the git tag), so a rollout is reproducible and Renovate can bump it
-# by opening a PR.
+# `v` from the git tag). Renovate can bump it by opening a PR. The version
+# tag remains mutable; this deployment deliberately does not pin a digest.
 #
 # Runs as distroless nonroot (uid/gid 65532, baked into the image) with a
 # read-only root filesystem: nothing this process does needs to write to disk,
@@ -38,7 +38,9 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: wattbill
+        networking.penchev.com/allow-ingress-nginx: "true"
     spec:
+      automountServiceAccountToken: false
       imagePullSecrets:
         - name: ghcr-pull
       securityContext:
@@ -66,9 +68,9 @@ spec:
               value: production
             - name: WATTBILL_LOG_FORMAT
               value: json
-            # ingress-nginx is the only thing that can reach this pod, and it
-            # overwrites X-Forwarded-For on every request, so trusting the
-            # header here identifies real clients instead of the ingress pod.
+            # NetworkPolicy allows ingress-controller Pods to reach this port.
+            # Client-IP integrity still depends on ingress-nginx's trusted
+            # proxy configuration; this setting does not validate the headers.
             - name: WATTBILL_TRUST_PROXY
               value: "true"
           livenessProbe:

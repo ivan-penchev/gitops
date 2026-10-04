@@ -34,10 +34,13 @@ workload namespace. They wait for infrastructure and check their own workloads;
 Radarr does not depend on Prowlarr. The parent `apps` checks child readiness.
 
 The apps now run in their target namespaces using their original retained volumes.
-Child reconcilers are enabled and parent pruning is enabled in Git. Restoring the
-paused live parent, root, operator and workflows remains a controlled final step
-in [the migration runbook](docs/app-namespace-migration.md). Keep the old namespaces
-and stopped workloads for rollback; a Git revert alone does not move their data back.
+Child, parent, root and operator reconciliation are restored; parent pruning and
+readiness checks are enabled and verified live. DNS, HTTPS and the configured
+Prowlarr-to-Radarr connection passed final checks. The live-test and Renovate
+workflows were manually re-enabled and their active states verified through the
+GitHub API. See [the migration runbook](docs/app-namespace-migration.md).
+Keep the old namespaces, stopped workloads and backups for rollback; a Git revert
+alone does not move their data back.
 
 ## Cluster at a glance
 

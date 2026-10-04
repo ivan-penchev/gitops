@@ -1,6 +1,6 @@
 # Renovate live health tests
 
-The live test applies a Renovate PR to the homelab cluster and checks the child
+The live test applies a Renovate or explicitly opted-in PR to the homelab cluster and checks the child
 Flux Kustomizations. It changes running workloads, not a preview environment.
 A passing result requires both a successful PR test and verified recovery to `main`.
 
@@ -10,10 +10,21 @@ Renovate runs weekly or on demand through `.github/workflows/renovate.yml`.
 Its managers update Flux chart/OCI references, Kubernetes images, and GitHub
 Actions. Files matching `*.sops.yaml` are ignored.
 
-`.github/workflows/gitops-live-test.yml` accepts only same-repository
-`renovate/*` PRs targeting `main`. Runs share a concurrency group and use the
-in-cluster ARC runner `gha-homelab-arc` with ServiceAccount `ci-deployer`.
-The Kubernetes API does not need to be exposed outside the cluster network.
+`.github/workflows/gitops-live-test.yml` accepts same-repository PRs targeting
+`main`: `renovate/*` branches run automatically; other branches require a
+maintainer to apply the `gitops-live-test` label. Fork PRs are never eligible.
+Runs share a concurrency group and use the in-cluster ARC runner
+`gha-homelab-arc` with ServiceAccount `ci-deployer`. The Kubernetes API does not
+need to be exposed outside the cluster network.
+
+Adding `gitops-live-test` starts the test. Leaving it on the PR also opts in
+subsequent pushes and reopen events; remove it to stop future non-Renovate runs.
+An unrelated label does not start a run. Before cluster access, the workflow
+re-reads the PR and rejects closed PRs, changed heads or bases, forks, and removed
+opt-ins. Removing the label does not cancel an already running test or its
+recovery. Review the manifests **and workflow code** before applying the label:
+this grants the PR workflow access to a privileged live-cluster runner, not a
+sandbox. Do not cancel recovery or merge until main restoration is confirmed.
 
 **The root Kustomization is deliberately suspended during testing.** The workflow
 explicitly reconciles `infrastructure-controllers`, `infrastructure-configs`,
@@ -46,8 +57,10 @@ a substitute for the approved data migration and per-app activation steps.
    to own `flux-system` and select `refs/heads/main`. The instance must be Ready
    and not already paused. Without this instance, use the legacy source/root path.
 3. Create `gitops-watchdog-<run_id>-<attempt>` in `arc-runners` and wait for its
-   container to run before changing Flux. It carries its own recovery script and
-   does not depend on the runner filesystem.
+   readiness probe to pass before changing Flux. Readiness requires successful
+   Kubernetes API access with the recovery client's configuration, not just a
+   running container. It carries its own recovery script and does not depend on
+   the runner filesystem.
 4. In operator mode, atomically set
    `fluxcd.controlplane.io/reconcile: disabled` and a fresh
    `reconcile.fluxcd.io/requestedAt`. Wait until the instance's
@@ -87,6 +100,22 @@ A pause acknowledgment timeout aborts the switch rather than assuming the
 controllers have stopped.
 
 ## Recovery and watchdog
+
+Both clients use an explicit, temporary kubeconfig referencing the projected
+`ci-deployer` token file and CA; tokens are not copied into it or printed. The
+runner exports its path through `GITHUB_ENV`, so nested `sh` processes inherit it.
+The watchdog creates its own config inside its Pod. This preserves token rotation
+and TLS verification while avoiding kubectl's default-config fallback: adding
+`--request-timeout` alone was observed to bypass automatic in-cluster credentials
+and connect to `localhost:8080` instead.
+
+The watchdog uses `ghcr.io/fluxcd/flux-cli:v2.9.6`, whose Alpine-based image includes
+`/bin/sh`, `date`, `sleep`, and kubectl 1.36 (matching the cluster's minor version).
+The previous `registry.k8s.io/kubectl` image had no shell and could not run recovery.
+When changing this image or authentication, smoke-test the generated Job as its
+non-root user with `ci-deployer`, confirm API-backed readiness, and delete the
+smoke-test Job **before its recovery deadline**. Offline tests cannot prove image
+contents or real service-account access.
 
 The runner's `always()` cleanup and the watchdog use the same commands:
 
@@ -138,13 +167,15 @@ Run the focused regression tests from the repository root:
 python3 -B .github/tests/test_gitops_live_test.py
 ```
 
-These tests use Python's standard library and local `sh` and `bash`. They extract
-and syntax-check the workflow's shell and Python scripts, then exercise the shared
-shell functions with mocked Kubernetes calls. Coverage includes operator and
+These tests use Python's standard library and local `sh`, `bash`, and Node.js.
+They execute the PR authorization script with mocked GitHub responses, check safe
+branch inputs, syntax-check the embedded scripts, and exercise the shared shell
+functions with mocked Kubernetes calls. Coverage includes operator and
 legacy revision formats, immutable PR SHA checks, children discovered after the
 parent starts applying, stale Ready generations and revisions, suspended children,
-and the shared recovery path. They do not contact a cluster or prove live
-controller behavior.
+and the shared recovery path. They also check credential-file references, nested
+shell configuration inheritance, missing-credential failures, and the watchdog's
+API-readiness gate. They do not contact a cluster or prove live controller behavior.
 
 ## One-time manual setup
 
