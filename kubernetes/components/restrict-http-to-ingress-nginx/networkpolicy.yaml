@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-nginx-only
+  name: restrict-http-to-ingress-nginx
 spec:
   podSelector:
     matchLabels:

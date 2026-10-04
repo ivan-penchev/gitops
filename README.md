@@ -105,42 +105,6 @@ removing its Azure CNAME. After removing the check app, delete the stale
 principal currently has zone-wide DNS Zone Contributor; consider narrowing it
 to the intended record sets. Keep credentials SOPS-encrypted.
 
-### Wattbill deployment hardening
-
-Wattbill intentionally allows anonymous public use. Its Pod runs non-root with
-seccomp, a read-only root filesystem, no Linux capabilities and no privilege
-escalation. Kubernetes service-account token mounting is disabled; the image-pull
-secret remains available to the kubelet. The existing version tag is unchanged
-and is deliberately not pinned to an immutable digest.
-
-Wattbill opts into the reusable `kubernetes/components/ingress-nginx-only`
-Kustomize Component. The consuming Kustomization sets `namespace: wattbill` and
-includes it via `components: [../../components/ingress-nginx-only]`. It permits
-inbound TCP on the named Pod port `http` (8080 for Wattbill) only from ingress-nginx
-controller Pods in the `ingress-nginx` namespace. Both the public tunnel route and
-the LAN hostname continue through that controller. Other ordinary Pods, including
-Pods in Wattbill's own namespace, are not allowed to connect directly. This is
-not protection against a compromised node or ingress controller, and additional
-allow policies would be additive. Kubelet probes are not ordinary Pod traffic.
-
-For another application, include the component once in its namespace's resource
-assembly, set that assembly's namespace, add the Pod-template label
-`networking.penchev.com/allow-ingress-nginx: "true"`, and declare a TCP container
-port named `http`. Include it only once per shared namespace; multiple inclusions
-would generate the same policy. Unlabelled Pods are unaffected by this component.
-Review direct API clients and monitoring before opting in: they will need separate
-allow rules. Only Wattbill currently adopts it.
-
-Egress remains unchanged so DNS and upstream billing APIs keep working. This
-policy is not an egress/SSRF firewall or an authentication gate. Cloudflare WAF,
-HTTPS-only enforcement, and trusted client-IP handling need separate verification;
-shared ingress settings are not changed by this hardening.
-
-After GitOps rollout, verify the Pod has no projected API-token volume, readiness
-and both HTTPS hostnames pass, ingress controller Pods can reach TCP 8080, and an
-unrelated Pod cannot. API schema validation alone does not prove network policy
-enforcement. Do not rely on this policy until those live checks pass.
-
 ## Security reminders
 
 - Rotate the Proxmox token once bring-up is verified (it was shared in chat).
