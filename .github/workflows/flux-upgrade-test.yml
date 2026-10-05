@@ -47,7 +47,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.14'
 
       - name: Install harness dependencies
         run: python -m pip install --disable-pip-version-check -r candidate/.github/scripts/flux-upgrade/requirements.txt
