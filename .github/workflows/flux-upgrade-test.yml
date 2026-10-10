@@ -25,7 +25,7 @@ concurrency:
 jobs:
   upgrade:
     name: Flux version transition
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     steps:
       - name: Check out immutable candidate
