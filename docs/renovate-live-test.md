@@ -6,9 +6,26 @@ A passing result requires both a successful PR test and verified recovery to `ma
 
 ## Test scope
 
-Renovate runs weekly or on demand through `.github/workflows/renovate.yml`.
-Its managers update Flux chart/OCI references, Kubernetes images, and GitHub
-Actions. Files matching `*.sops.yaml` are ignored.
+Renovate runs weekly (Monday 03:00 UTC) or on demand through
+`.github/workflows/renovate.yml`. It updates Flux chart/OCI references,
+Kubernetes images, and GitHub Actions. Routine minor/patch updates to the
+monitoring charts share a PR; so do the two related Actions Runner Controller
+charts and GitHub Actions workflows. A group can contain one update when only
+one is available. Major updates stay separate and require manual review; no
+updates auto-merge. Minor and patch updates of the same dependency no longer
+create duplicate PRs.
+
+Renovate ignores `*.sops.yaml`, `terraform/**`, and
+`kubernetes/clusters/homelab/flux-system/**`. Terraform provider/lockfile PRs
+were being created despite the live test not running `terraform plan` or
+applying Terraform (including lockfile-only PRs). Terraform upgrades now need
+an intentional local plan and manual PR. Flux Operator/FluxInstance bootstrap
+files are also outside the live test: it suspends the owning root Kustomization,
+so distribution and operator upgrades must follow the separate
+[Flux transition test](flux-upgrade-test.md) and a manual rollout. Renovate
+still tracks the deployable child Kustomizations and their app charts/images.
+Closing a Renovate PR without merging suppresses that *specific* release, not
+future releases; the exclusions prevent another untestable upgrade PR.
 
 `.github/workflows/gitops-live-test.yml` accepts same-repository PRs targeting
 `main`: `renovate/*` branches run automatically; other branches require a

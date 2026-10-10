@@ -9,14 +9,14 @@
 # GITHUB_TOKEN do not trigger other workflows, so the gitops-live-test gate
 # would never fire. A PAT-authored PR triggers it normally.
 #
-# The Renovate behaviour itself (managers, schedule, one-dep-per-PR, no
-# automerge) lives in /renovate.json.
+# Renovate's managers, grouping, and automerge policy live in /renovate.json;
+# this workflow defines when Renovate runs.
 name: renovate
 
 on:
   schedule:
-    # Monday 04:00 Europe/Copenhagen-ish (cron is UTC). renovate.json also
-    # constrains PR creation to Monday 00:00-06:00, so this is the trigger.
+    # Monday 03:00 UTC (cron does not follow Europe/Copenhagen daylight saving).
+    # On-demand runs can also create PRs at any time.
     - cron: "0 3 * * 1"
   workflow_dispatch:
     inputs:
