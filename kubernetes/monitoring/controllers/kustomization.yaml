@@ -3,6 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - grafana-admin.sops.yaml
-  - kube-prometheus-stack.yaml
+  - kube-prometheus-stack/app
   - loki.yaml
   - alloy.yaml
