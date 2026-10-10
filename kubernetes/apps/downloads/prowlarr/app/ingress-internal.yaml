@@ -17,6 +17,7 @@ metadata:
   annotations:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Prowlarr
+    gethomepage.dev/pod-selector: app=prowlarr
     gethomepage.dev/group: Downloads
     gethomepage.dev/icon: prowlarr.png
     gethomepage.dev/description: Indexer management

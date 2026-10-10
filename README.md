@@ -39,9 +39,12 @@ It uses ingress-nginx's internal wildcard DNS and default TLS certificate; no
 public DNS record, tunnel hostname, or public Ingress is configured. Its
 `kubernetes/apps/homepage/app/config/` supplies the dark, grouped dashboard,
 search, date, and cluster CPU/memory widgets. Homepage discovers seven LAN-only
-services from their internal Ingress annotations. The dashboard uses a dedicated
-service account that can read nodes, pods, namespaces, node/pod metrics, and
-Ingresses; it does not discover public Ingresses without the Homepage annotation.
+services from their internal Ingress annotations. Each Ingress has a
+`gethomepage.dev/pod-selector` matching its workload, so the card can display
+pod status even when the Ingress name differs from the pod labels. The dashboard
+uses a dedicated service account that can read nodes, pods, namespaces,
+node/pod metrics, and Ingresses; it does not discover public Ingresses without
+the Homepage annotation.
 Discovered cards may appear in a different order within each group. Homepage
 needs metrics-server for cluster resource data. Kustomize hashes the generated
 ConfigMap name into the HelmRelease, so an edit to its `subPath`-mounted files

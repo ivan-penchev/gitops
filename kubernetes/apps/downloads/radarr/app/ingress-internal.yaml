@@ -16,6 +16,7 @@ metadata:
   annotations:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Radarr
+    gethomepage.dev/pod-selector: app=radarr
     gethomepage.dev/group: Downloads
     gethomepage.dev/icon: radarr.png
     gethomepage.dev/description: Movie library
