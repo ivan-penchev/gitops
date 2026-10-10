@@ -5,6 +5,7 @@ resources:
   - cloudflare.sops.yaml
   - azure-dns.sops.yaml
   - cert-manager.yaml
+  - metrics-server.yaml
   - proxmox-csi.yaml
   - csi-driver-nfs.yaml
   - ingress-nginx.yaml
