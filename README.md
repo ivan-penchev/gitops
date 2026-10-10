@@ -33,6 +33,16 @@ SOPS key and substitution ConfigMaps. Their `targetNamespace` selects the
 workload namespace. They wait for infrastructure and check their own workloads;
 Radarr does not depend on Prowlarr. The parent `apps` checks child readiness.
 
+Homepage runs in its own namespace at `https://homepage.${internal_domain}`
+(`homepage.int.home.17072021.xyz` with the current cluster configuration).
+It uses ingress-nginx's internal wildcard DNS and default TLS certificate; no
+public DNS record, tunnel hostname, or public Ingress is configured. Its
+`kubernetes/apps/homepage/app/configmap.yaml` supplies a dark dashboard with
+search and date widgets. Service cards and links are intentionally left for a
+follow-up change; it does not require a Kubernetes API token or RBAC. The chart
+mounts individual ConfigMap files via `subPath`, so changing the dashboard
+configuration requires restarting the Homepage pod to pick up the new files.
+
 The apps now run in their target namespaces using their original retained volumes.
 Child, parent, root and operator reconciliation are restored; parent pruning and
 readiness checks are enabled and verified live. DNS, HTTPS and the configured
