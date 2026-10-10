@@ -77,6 +77,13 @@ spec:
       ingress:
         enabled: true
         ingressClassName: nginx
+        annotations:
+          gethomepage.dev/enabled: "true"
+          gethomepage.dev/name: Alertmanager
+          gethomepage.dev/group: Monitoring
+          gethomepage.dev/icon: alertmanager.png
+          gethomepage.dev/description: Alerts
+          gethomepage.dev/href: https://alertmanager.${internal_domain}
         hosts:
           - alertmanager.${internal_domain}
         paths:
@@ -117,6 +124,13 @@ spec:
       ingress:
         enabled: true
         ingressClassName: nginx
+        annotations:
+          gethomepage.dev/enabled: "true"
+          gethomepage.dev/name: Prometheus
+          gethomepage.dev/group: Monitoring
+          gethomepage.dev/icon: prometheus.png
+          gethomepage.dev/description: Metrics and queries
+          gethomepage.dev/href: https://prometheus.${internal_domain}
         hosts:
           - prometheus.${internal_domain}
         paths:
@@ -149,6 +163,13 @@ spec:
       ingress:
         enabled: true
         ingressClassName: nginx
+        annotations:
+          gethomepage.dev/enabled: "true"
+          gethomepage.dev/name: Grafana
+          gethomepage.dev/group: Monitoring
+          gethomepage.dev/icon: grafana.png
+          gethomepage.dev/description: Dashboards
+          gethomepage.dev/href: https://grafana.${internal_domain}
         hosts:
           - grafana.${internal_domain}
         path: /

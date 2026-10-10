@@ -37,11 +37,15 @@ Homepage runs in its own namespace at `https://homepage.${internal_domain}`
 (`homepage.int.home.17072021.xyz` with the current cluster configuration).
 It uses ingress-nginx's internal wildcard DNS and default TLS certificate; no
 public DNS record, tunnel hostname, or public Ingress is configured. Its
-`kubernetes/apps/homepage/app/configmap.yaml` supplies a dark dashboard with
-search and date widgets. Service cards and links are intentionally left for a
-follow-up change; it does not require a Kubernetes API token or RBAC. The chart
-mounts individual ConfigMap files via `subPath`, so changing the dashboard
-configuration requires restarting the Homepage pod to pick up the new files.
+`kubernetes/apps/homepage/app/config/` supplies the dark, grouped dashboard,
+search, date, and cluster CPU/memory widgets. Homepage discovers seven LAN-only
+services from their internal Ingress annotations. The dashboard uses a dedicated
+service account that can read nodes, pods, namespaces, node/pod metrics, and
+Ingresses; it does not discover public Ingresses without the Homepage annotation.
+Discovered cards may appear in a different order within each group. Homepage
+needs metrics-server for cluster resource data. Kustomize hashes the generated
+ConfigMap name into the HelmRelease, so an edit to its `subPath`-mounted files
+rolls the pod when Flux reconciles the HelmRelease.
 
 The apps now run in their target namespaces using their original retained volumes.
 Child, parent, root and operator reconciliation are restored; parent pruning and
