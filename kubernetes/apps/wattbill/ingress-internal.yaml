@@ -7,6 +7,13 @@ kind: Ingress
 metadata:
   name: wattbill-internal
   namespace: wattbill
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Wattbill
+    gethomepage.dev/group: Utilities
+    gethomepage.dev/icon: mdi-lightning-bolt
+    gethomepage.dev/description: Electricity usage
+    gethomepage.dev/href: https://wattbill.${internal_domain}
 spec:
   ingressClassName: nginx
   rules:

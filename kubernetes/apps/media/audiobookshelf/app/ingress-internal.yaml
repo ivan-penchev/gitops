@@ -12,6 +12,12 @@ metadata:
   name: audiobookshelf-internal
   namespace: media
   annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Audiobookshelf
+    gethomepage.dev/group: Media
+    gethomepage.dev/icon: audiobookshelf.png
+    gethomepage.dev/description: Audiobooks and podcasts
+    gethomepage.dev/href: https://audiobookshelf.${internal_domain}
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
