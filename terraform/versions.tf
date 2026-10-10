@@ -33,7 +33,7 @@ terraform {
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 5"
+      version = ">= 5"
     }
     postgresql = {
       source  = "cyrilgdn/postgresql"
