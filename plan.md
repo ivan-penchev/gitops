@@ -215,25 +215,23 @@ Grafana anonymous-admin was reachable.
   `privileged` — node-exporter's hostNetwork/hostPID/hostPath/hostPort is
   rejected by Talos' cluster-wide `baseline` default otherwise.
 
-### Per-app monitoring handoff (Loki transfer pending merge)
+### Per-app monitoring handoff (Alloy transfer pending merge)
 `monitoring-controllers` retains `prune: false` and `deletionPolicy: Orphan`
-throughout the handoff. The ARC runner release recovered on 0.14.2; the
-infrastructure and monitoring Flux Kustomizations reconciled the safeguards at
-main revision `63bd144` on 2026-10-11. The legacy controller observed
-generation 3 with all nine resources in its inventory. `monitoring-configs`
-continues to own the four CRD-dependent monitors. Do not add monitor to the
-general `apps` inventory.
+throughout the handoff. The ARC runner release recovered on 0.14.2. On
+2026-10-11, Loki moved to its dedicated owner at main revision `39e6055`:
+`monitoring-controllers` is Ready with seven inventory entries and
+`monitoring-loki` is Ready with the Loki HelmRelease and shared Grafana
+HelmRepository. The Loki HelmRelease and Grafana source are Ready.
+`monitoring-configs` continues to own the four CRD-dependent monitors. Do not
+add monitor to the general `apps` inventory.
 
-1. This rollout removes `loki/app` from the legacy controllers build and
-   activates `monitoring-loki`. After merge, verify `monitoring-controllers`
-   has reconciled the reduced build with seven inventory entries and
-   `monitoring-loki` is Ready with both the Loki HelmRelease and the shared
-   Grafana HelmRepository. Confirm the Loki HelmRelease stays Ready.
-2. Only after Loki is verified, separately remove `alloy/app` and unsuspend
-   `monitoring-alloy`. Verify its HelmRelease and ClusterRole/ClusterRoleBinding
-   in the new inventory. If anything fails, leave legacy pruning disabled;
-   do not delete the new owner's resources as a rollback.
-3. Move the remaining namespace, secret, Prometheus chart source and release
+1. This rollout removes `alloy/app` from the legacy controllers build and
+   activates `monitoring-alloy`. After merge, verify the legacy inventory has
+   four entries and `monitoring-alloy` is Ready with the Alloy HelmRelease,
+   ClusterRole and ClusterRoleBinding. Confirm the Alloy HelmRelease stays
+   Ready. If anything fails, leave legacy pruning disabled; do not delete the
+   new owner's resources as a rollback.
+2. Move the remaining namespace, secret, Prometheus chart source and release
    only in a later, separately verified handoff. Keep `monitoring-configs`
    dependent on the CRD-emitting stack throughout. Existing Grafana and PVCs
    remain unchanged; no Thanos or Grafana Operator is involved.
