@@ -1,36 +1,3 @@
----
-# Keep the namespace under the legacy owner until all app transfers are verified.
-# Pruning and deletion remain disabled while its former resources change owners.
-# Prometheus now owns the CRD-emitting release; configs wait for it to be Ready.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: monitoring-controllers
-  namespace: flux-system
-spec:
-  dependsOn:
-    - name: infrastructure-configs
-  interval: 1h
-  retryInterval: 2m
-  timeout: 20m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./kubernetes/apps/monitor/controllers
-  prune: false
-  deletionPolicy: Orphan
-  wait: true
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cluster-config
-      - kind: ConfigMap
-        name: cluster-config-tf
----
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
