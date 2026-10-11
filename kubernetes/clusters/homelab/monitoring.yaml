@@ -1,19 +1,7 @@
 ---
-# Monitoring lives under apps/monitor but retains its dedicated Flux owners.
-# The heavy, CRD-emitting stack keeps its own timeout/retry, isolated from the
-# general apps Kustomization. Keep the controllers owner until the per-app
-# handoff is verified; prune: false and deletionPolicy: Orphan protect its
-# inventory while resources move to new owners. Configs retain their own owner.
-#
-#   monitoring-controllers : kube-prometheus-stack + Loki + Alloy (installs the
-#                            Prometheus Operator CRDs). dependsOn
-#                            infrastructure-configs — needs ingress-nginx, the
-#                            cert-manager int-home wildcard cert and the
-#                            proxmox-tank storage class first.
-#   monitoring-configs     : ServiceMonitors/PodMonitors for ingress-nginx,
-#                            cert-manager and Flux. dependsOn
-#                            monitoring-controllers so the CRDs it references
-#                            already exist (avoids a first-apply CRD deadlock).
+# Keep the namespace under the legacy owner until all app transfers are verified.
+# Pruning and deletion remain disabled while its former resources change owners.
+# Prometheus now owns the CRD-emitting release; configs wait for it to be Ready.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -50,7 +38,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: monitoring-controllers
+    - name: monitoring-prometheus
   interval: 1h
   retryInterval: 2m
   timeout: 5m
