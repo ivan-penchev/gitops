@@ -1,7 +1,8 @@
 ---
-# Layer: observability. A dedicated pair of Kustomizations (mirroring the
-# infrastructure controllers/configs split) so the heavy, CRD-emitting metrics
-# + logs stack reconciles on its own timeout/retry, isolated from core infra.
+# Monitoring lives under apps/monitor but retains its dedicated Flux owners.
+# The heavy, CRD-emitting stack keeps its own timeout/retry, isolated from the
+# general apps Kustomization. Retaining owner names and inventories prevents
+# pruning live releases, secrets and ServiceMonitors during this path move.
 #
 #   monitoring-controllers : kube-prometheus-stack + Loki + Alloy (installs the
 #                            Prometheus Operator CRDs). dependsOn
@@ -26,7 +27,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./kubernetes/monitoring/controllers
+  path: ./kubernetes/apps/monitor/controllers
   prune: true
   wait: true
   decryption:
@@ -54,7 +55,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./kubernetes/monitoring/configs
+  path: ./kubernetes/apps/monitor/configs
   prune: true
   decryption:
     provider: sops

@@ -3,7 +3,7 @@
 # SingleBinary mode with filesystem storage on a proxmox-tank PVC: no object
 # store / MinIO, no read/write/backend split, no memcached — the lightest shape
 # that fits a homelab's log volume. 30d retention enforced by the compactor.
-# Grafana Alloy (see alloy.yaml) ships container logs here; Grafana queries it
+# Grafana Alloy ships container logs here; Grafana queries it
 # via the Loki datasource.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
