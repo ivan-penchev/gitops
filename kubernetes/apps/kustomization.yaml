@@ -1,5 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# apps/monitor has its own Flux owners in clusters/homelab/monitoring.yaml;
+# do not add it here or two Kustomizations will manage the same resources.
 resources:
   - downloads
   - media

@@ -188,9 +188,12 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
 
 ## Observability stack (2026-07-31)
 Metrics + logs for the cluster and its K8s nodes, deployed as a dedicated Flux
-layer (`kubernetes/monitoring/`, `controllers` → `configs`,
-`dependsOn: infrastructure-configs`). Live-verified: all Prometheus targets UP,
-Loki ingesting logs from every namespace, Grafana anonymous-admin reachable.
+layer (`kubernetes/apps/monitor/`, `controllers` → `configs`,
+`dependsOn: infrastructure-configs`). The existing monitoring Flux owners keep
+these app paths outside the general apps inventory to avoid pruning releases
+or racing Prometheus Operator CRD installation. At the time of this baseline,
+all Prometheus targets were UP, Loki ingested logs from every namespace, and
+Grafana anonymous-admin was reachable.
 - **kube-prometheus-stack 88.0.1** — Prometheus (30d/40Gi), Alertmanager (1Gi),
   Grafana (2Gi), node-exporter (all 3 nodes, tolerates CP taint),
   kube-state-metrics. CP component scrape jobs (scheduler/controller-manager/
@@ -202,7 +205,7 @@ Loki ingesting logs from every namespace, Grafana anonymous-admin reachable.
 - **Access:** `grafana` / `prometheus` / `alertmanager`.int.home.17072021.xyz
   on the ingress-nginx default wildcard cert. Grafana runs anonymous-**Admin**
   (login form off) with a SOPS break-glass secret
-  (`kubernetes/monitoring/controllers/grafana-admin.sops.yaml`).
+  (`kubernetes/apps/monitor/controllers/grafana-admin.sops.yaml`).
 - **Extra scrape targets:** ServiceMonitors for ingress-nginx (metrics flag
   flipped on) + cert-manager, PodMonitor for Flux.
 - **Alerting:** default rules evaluate in-cluster only, **no external receiver
