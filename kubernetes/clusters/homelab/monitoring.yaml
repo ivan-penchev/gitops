@@ -1,8 +1,9 @@
 ---
 # Monitoring lives under apps/monitor but retains its dedicated Flux owners.
 # The heavy, CRD-emitting stack keeps its own timeout/retry, isolated from the
-# general apps Kustomization. Retaining owner names and inventories prevents
-# pruning live releases, secrets and ServiceMonitors during this path move.
+# general apps Kustomization. Keep the controllers owner until the per-app
+# handoff is verified; prune: false and deletionPolicy: Orphan protect its
+# inventory while resources move to new owners. Configs retain their own owner.
 #
 #   monitoring-controllers : kube-prometheus-stack + Loki + Alloy (installs the
 #                            Prometheus Operator CRDs). dependsOn
@@ -28,7 +29,8 @@ spec:
     kind: GitRepository
     name: flux-system
   path: ./kubernetes/apps/monitor/controllers
-  prune: true
+  prune: false
+  deletionPolicy: Orphan
   wait: true
   decryption:
     provider: sops
