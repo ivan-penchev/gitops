@@ -1,12 +1,11 @@
-# Keep suspended until monitoring-controllers has prune: false on the cluster
-# and its Loki resources have been removed from the old build.
+# Own Loki and the shared Grafana HelmRepository after the legacy owner
+# releases them with pruning disabled.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: monitoring-loki
   namespace: flux-system
 spec:
-  suspend: true
   dependsOn:
     - name: monitoring-controllers
   interval: 1h
