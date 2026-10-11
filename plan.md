@@ -215,36 +215,28 @@ Grafana anonymous-admin was reachable.
   `privileged` — node-exporter's hostNetwork/hostPID/hostPath/hostPort is
   rejected by Talos' cluster-wide `baseline` default otherwise.
 
-### Per-app monitoring handoff (prepared; not active)
-`monitoring-loki` and `monitoring-alloy` are defined under
-`kubernetes/clusters/homelab/` with `suspend: true`. They apply only their
-respective `app/` directories; neither currently owns any live object.
-`monitoring-controllers` still owns all nine existing resources (including the
-namespace, Grafana secret and kube-prometheus-stack). Its `prune: false` and
-`deletionPolicy: Orphan` protect those resources for the staged transfer;
-`monitoring-configs` still owns the four CRD-dependent monitors with pruning
-on. Do not add monitor to the general `apps` inventory.
+### Per-app monitoring handoff (Loki transfer pending merge)
+`monitoring-controllers` retains `prune: false` and `deletionPolicy: Orphan`
+throughout the handoff. The ARC runner release recovered on 0.14.2; the
+infrastructure and monitoring Flux Kustomizations reconciled the safeguards at
+main revision `63bd144` on 2026-10-11. The legacy controller observed
+generation 3 with all nine resources in its inventory. `monitoring-configs`
+continues to own the four CRD-dependent monitors. Do not add monitor to the
+general `apps` inventory.
 
-Before activating either new owner:
-1. Restore Flux infrastructure readiness. An ARC runner HelmRelease failure
-   currently blocks `infrastructure-controllers` → `infrastructure-configs` →
-   monitoring, so the old owners have **not** applied the merged layout revision.
-   Verify both old owners' `observedGeneration` and `lastAppliedRevision` match
-   the current source, and check the old controller's live `prune: false` and
-   `deletionPolicy: Orphan` before removing any resources from its build.
-2. In a separate rollout, remove `loki/app` from the controllers build and
-   unsuspend `monitoring-loki`. Wait until the old controller has reconciled the
-   reduced build and the new owner is Ready; compare their inventories and
-   check Loki's HelmRelease stays Ready. The Grafana HelmRepository moves with
-   Loki and remains available for Alloy.
-3. Likewise remove `alloy/app` and unsuspend `monitoring-alloy` only after
-   Loki is Ready. Verify its HelmRelease and ClusterRole/ClusterRoleBinding in
-   the new inventory. If anything fails, leave the legacy owner's pruning
-   disabled; do not delete the new owner's resources as a rollback.
-4. Move the remaining namespace, secret, Prometheus chart source and release
+1. This rollout removes `loki/app` from the legacy controllers build and
+   activates `monitoring-loki`. After merge, verify `monitoring-controllers`
+   has reconciled the reduced build with seven inventory entries and
+   `monitoring-loki` is Ready with both the Loki HelmRelease and the shared
+   Grafana HelmRepository. Confirm the Loki HelmRelease stays Ready.
+2. Only after Loki is verified, separately remove `alloy/app` and unsuspend
+   `monitoring-alloy`. Verify its HelmRelease and ClusterRole/ClusterRoleBinding
+   in the new inventory. If anything fails, leave legacy pruning disabled;
+   do not delete the new owner's resources as a rollback.
+3. Move the remaining namespace, secret, Prometheus chart source and release
    only in a later, separately verified handoff. Keep `monitoring-configs`
-   dependent on the CRD-emitting stack throughout. The existing Grafana and
-   PVCs remain unchanged; no Thanos or Grafana Operator is involved.
+   dependent on the CRD-emitting stack throughout. Existing Grafana and PVCs
+   remain unchanged; no Thanos or Grafana Operator is involved.
 
 ## Dependency updates (2026-07-31)
 - **GitHub Actions:** `actions/checkout@v7`, `actions/github-script@v9`,

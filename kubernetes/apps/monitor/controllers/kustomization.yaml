@@ -4,5 +4,4 @@ resources:
   - namespace.yaml
   - grafana-admin.sops.yaml
   - kube-prometheus-stack/app
-  - loki/app
   - alloy/app
