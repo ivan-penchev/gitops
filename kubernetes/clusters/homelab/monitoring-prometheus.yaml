@@ -1,5 +1,4 @@
-# The legacy owner keeps the namespace while this owner takes over the
-# Prometheus release, chart source, and Grafana admin secret.
+# The namespace owner must be Ready before deploying Prometheus and Grafana.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -7,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: monitoring-controllers
+    - name: monitoring-namespace
   interval: 1h
   retryInterval: 2m
   timeout: 20m

@@ -205,7 +205,7 @@ Grafana anonymous-admin was reachable.
 - **Access:** `grafana` / `prometheus` / `alertmanager`.int.home.17072021.xyz
   on the ingress-nginx default wildcard cert. Grafana runs anonymous-**Admin**
   (login form off) with a SOPS break-glass secret
-  (`kubernetes/apps/monitor/controllers/grafana-admin.sops.yaml`).
+  (`kubernetes/apps/monitor/controllers/kube-prometheus-stack/app/grafana-admin.sops.yaml`).
 - **Extra scrape targets:** ServiceMonitors for ingress-nginx (metrics flag
   flipped on) + cert-manager, PodMonitor for Flux.
 - **Alerting:** default rules evaluate in-cluster only, **no external receiver
@@ -215,28 +215,25 @@ Grafana anonymous-admin was reachable.
   `privileged` — node-exporter's hostNetwork/hostPID/hostPath/hostPort is
   rejected by Talos' cluster-wide `baseline` default otherwise.
 
-### Per-app monitoring handoff (Prometheus transfer pending merge)
-`monitoring-controllers` retains `prune: false` and `deletionPolicy: Orphan`
-throughout the handoff. Loki moved to its dedicated owner in #68. Alloy moved
-in #69. After #69, the legacy inventory has four entries: the monitoring
-namespace, Grafana admin secret, Prometheus OCIRepository and Prometheus
-HelmRelease. The Loki and Alloy owners, chart sources, HelmReleases, and
-`monitoring-configs` are Ready. Keep monitoring out of the general `apps`
-inventory.
+### Per-app monitoring handoff (namespace cleanup pending merge)
+Loki moved to its dedicated owner in #68, Alloy in #69, and Prometheus in
+#70. After #70, `monitoring-controllers` inventories only the namespace;
+`monitoring-prometheus` owns the Grafana admin secret, OCIRepository, and
+HelmRelease. The monitoring owners, releases, source, and four CRD-dependent
+monitors are Ready; Grafana has 1/1 ready replicas. Keep monitoring out of the
+general `apps` inventory.
 
-1. This rollout leaves the namespace with `monitoring-controllers` and moves
-   the secret, Prometheus OCIRepository and HelmRelease to
-   `monitoring-prometheus`. Its dependency on the legacy owner makes the
-   legacy inventory release these objects before the new owner applies them.
-   `monitoring-configs` now depends on `monitoring-prometheus`, which installs
-   its ServiceMonitor and PodMonitor CRDs. After merge, verify the legacy
-   inventory has only the namespace and the new owner has all three moved
-   resources. Confirm both owners, the Prometheus HelmRelease and source,
-   Grafana, and the four CRD-dependent monitors are Ready. If anything fails,
-   keep legacy pruning disabled; do not delete the new owner's resources.
-2. Move the namespace and retire the legacy owner only in a later, separately
-   verified change. Existing Grafana and PVCs remain unchanged. There is no
-   Thanos or Grafana Operator migration.
+The final cleanup replaces `monitoring-controllers` with `monitoring-namespace`
+and repoints Prometheus and Loki to depend on the new namespace owner.
+`monitoring-configs` continues to depend on Prometheus for ServiceMonitor and
+PodMonitor CRDs. Both the retiring owner (already deployed) and the replacement
+use `prune: false` and `deletionPolicy: Orphan`: removal of the former must not
+remove the namespace or its workloads. After merge, verify the old owner is
+absent, the namespace retains its PodSecurity labels, and all new and existing
+owners, releases, Grafana, and monitors are Ready at the merged revision. If
+any dependency is temporarily NotReady, reconcile the namespace owner before
+Prometheus and Loki, then configs and Alloy. Do not delete release resources or
+PVCs. There is no Thanos or Grafana Operator migration.
 
 ## Dependency updates (2026-07-31)
 - **GitHub Actions:** `actions/checkout@v7`, `actions/github-script@v9`,
