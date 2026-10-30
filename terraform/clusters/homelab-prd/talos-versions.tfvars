@@ -11,4 +11,4 @@ talos_version = "v1.14.5"
 talos_config_contract = "v1.13"
 
 # renovate: datasource=github-releases depName=kubernetes/kubernetes
-kubernetes_version = "1.36.2"
+kubernetes_version = "1.37.1"
