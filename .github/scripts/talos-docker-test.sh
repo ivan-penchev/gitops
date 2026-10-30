@@ -117,10 +117,17 @@ spec:
     metadata:
       labels: {app: echo}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: echo
           image: registry.k8s.io/e2e-test-images/agnhost:2.53
           args: ["netexec", "--http-port=8080"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
 ---
 apiVersion: v1
 kind: Service
@@ -137,6 +144,10 @@ metadata:
   name: client
 spec:
   restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile: {type: RuntimeDefault}
   nodeSelector:
     node-role.kubernetes.io/control-plane: ""
   tolerations:
@@ -145,6 +156,9 @@ spec:
   containers:
     - name: client
       image: busybox:1.37
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
       command:
         - sh
         - -c
