@@ -56,8 +56,6 @@ locals {
       public_domain = var.public_domain
       lan_domain    = var.lan_domain
       dns_owner_id  = var.dns_owner_id
-      # Old name for lan_domain. Remove once main no longer uses it.
-      internal_domain = var.lan_domain
     },
     { for k, z in data.cloudflare_zone.extra : "${k}_cf_zone_id" => z.id },
   )
