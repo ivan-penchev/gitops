@@ -3,12 +3,15 @@
 !*.tfvars.example
 *.auto.tfvars
 !*.auto.tfvars.example
-# Non-secret version pins, tracked so Renovate can bump them.
-!terraform/talos-versions.auto.tfvars
+# Non-secret tfvars, tracked so plans match everywhere and Renovate can bump versions.
+!terraform/shared/shared.auto.tfvars
+!terraform/clusters/*/*.tfvars
 
 # Cluster access artifacts (generated) — kept local, never committed
 kubeconfig
 talosconfig
+kubeconfig-*
+talosconfig-*
 *.kubeconfig
 *.talosconfig
 

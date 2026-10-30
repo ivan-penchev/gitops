@@ -33,7 +33,7 @@
       "customType": "regex",
       "description": "Talos and Kubernetes versions, annotated with a '# renovate:' comment.",
       "managerFilePatterns": [
-        "/^terraform/talos-versions\\.auto\\.tfvars$/"
+        "/^terraform/clusters/[^/]+/talos-versions\\.tfvars$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
@@ -100,7 +100,7 @@
     {
       "description": "Talos and Kubernetes bumps. One PR each, never automerged. Merging only changes Terraform inputs; the upgrade itself is manual (docs/talos-k8s-versions.md).",
       "matchManagers": ["custom.regex"],
-      "matchFileNames": ["terraform/talos-versions.auto.tfvars"],
+      "matchFileNames": ["terraform/clusters/*/talos-versions.tfvars"],
       "enabled": true,
       "automerge": false,
       "separateMinorPatch": true,

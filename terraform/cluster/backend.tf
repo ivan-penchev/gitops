@@ -1,14 +1,15 @@
 # State lives in the private Cloudflare R2 bucket `homelab-tfstate`, through
 # R2's S3 API. Credentials and the endpoint come from secrets.sops.env
-# (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL_S3), so run
-# Terraform through `sops exec-env`. See docs/terraform-secrets.md.
+# (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL_S3). Run
+# Terraform through terraform/tf.sh. See docs/terraform-secrets.md.
 #
-# The state holds the Talos machine secrets and the age key. Treat the bucket
-# like the age key.
+# This state holds the Talos machine secrets. Treat the bucket like the age key.
 terraform {
   backend "s3" {
     bucket = "homelab-tfstate"
-    key    = "homelab/terraform.tfstate"
+    # No key here. terraform/tf.sh passes
+    # -backend-config=key=homelab/clusters/<name>.tfstate, so every cluster
+    # gets its own state.
     region = "auto"
 
     # R2 is not AWS. Skip the AWS-only lookups and checksums.

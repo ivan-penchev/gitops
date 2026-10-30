@@ -1,7 +1,7 @@
 # proxmox-talos-flux
 
 IaC for a Talos-based, HA Kubernetes cluster on a single Proxmox host, managed by
-Flux (GitOps). One imperative boundary: `terraform apply`. Everything else is Git.
+Flux (GitOps). One imperative boundary: `terraform/tf.sh all apply`. Everything else is Git.
 
 See [`plan.md`](./plan.md) for the full design, decisions, and rationale.
 For standing a fresh host up step-by-step, see [`docs/bootstrap.md`](./docs/bootstrap.md).
@@ -9,7 +9,7 @@ For standing a fresh host up step-by-step, see [`docs/bootstrap.md`](./docs/boot
 ## Layout
 
 ```
-terraform/    # Proxmox VMs, Talos and one-time Flux Operator bootstrap
+terraform/    # shared/ for the LXCs and LAN DNS, cluster/ for every cluster, clusters/<name>/ for its settings
 talos/        # Talos machineconfig patches (control-plane / worker)
 kubernetes/   # Flux-managed cluster state (infrastructure + apps)
 ```
@@ -88,18 +88,54 @@ export TALOSCONFIG=$PWD/talosconfig
 
 ## Usage
 
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars   # fill in — DO NOT COMMIT
-export PROXMOX_VE_ENDPOINT='https://192.168.68.2:8006/'
-export PROXMOX_VE_API_TOKEN='terraform-prov@pve!mytoken=<secret>'   # rotate after bring-up
+Terraform has two roots. Neither uses local modules, so each `.tf` file
+holds the resources it's named after.
 
-terraform init
-terraform fmt -check
-terraform validate
-terraform plan      # review — creates real VMs on apply
-# terraform apply   # provisions VMs, bootstraps Talos + Flux
+| Root | Owns | State key |
+|---|---|---|
+| `terraform/shared` | fileserver and pg-01 LXCs, their LAN DNS records | `homelab/shared.tfstate` |
+| `terraform/cluster` | one cluster: Talos ISO, VMs, Talos config and bootstrap, CSI Proxmox user, Cloudflare tunnel, Flux bootstrap, Terraform-made k8s Secrets, pg roles and databases | `homelab/clusters/<name>.tfstate` |
+
+Every cluster runs the same `terraform/cluster` code. What makes clusters
+differ is `terraform/clusters/<name>/`, which holds only `cluster.tfvars` and
+`talos-versions.tfvars`. A cluster reads the LAN settings and the pg-01
+address and password from the shared state through `terraform_remote_state`.
+You set a LAN IP once, in `terraform/shared/shared.auto.tfvars`.
+
+The only cluster is `homelab-prd`. Its Talos cluster name is still `homelab`,
+because changing it renames every node.
+
+`terraform/tf.sh` runs Terraform with the credentials from
+`secrets.sops.env`. For a cluster it also passes that cluster's tfvars and
+state key, and runs `init -reconfigure` when the last run used a different
+cluster. Don't run plain `terraform` in `terraform/cluster`, since it won't
+know which cluster you mean. `all` runs shared first, then every cluster.
+
+```bash
+terraform/tf.sh all init
+terraform/tf.sh all plan
+terraform/tf.sh homelab-prd apply
 ```
+
+### Add a cluster
+
+1. Copy `terraform/clusters/homelab-prd` to `terraform/clusters/<name>`.
+2. In `cluster.tfvars`, change everything that names or addresses the
+   cluster: `cluster_name`, VM IDs, node IPs, `cluster_vip`,
+   `cloudflare_tunnel_name`, `flux_path`, `iso_name_prefix`,
+   `kubeconfig_file` and `talosconfig_file`. Give the CSI user and role new
+   names such as `<name>-csi@pve`, or two clusters share one Proxmox token.
+3. Create the Flux tree at `flux_path`, starting from a copy of
+   `kubernetes/clusters/homelab`.
+4. Run `terraform/tf.sh <name> apply`.
+
+If a cluster needs something the others don't, add a variable to
+`terraform/cluster` with a default that keeps the current clusters as they
+are.
+
+Settings live in tracked tfvars files. There is no local
+`terraform.tfvars`. See [docs/bootstrap.md](docs/bootstrap.md) for a
+rebuild from zero.
 
 After apply, Flux reconciles `kubernetes/` into the cluster.
 

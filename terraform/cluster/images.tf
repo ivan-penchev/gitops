@@ -6,6 +6,6 @@ resource "proxmox_download_file" "talos_iso" {
   node_name    = var.proxmox_node
 
   url       = local.talos_iso_url
-  file_name = "talos-${var.talos_version}-metal-amd64.iso"
+  file_name = "${var.iso_name_prefix}-${var.talos_version}-metal-amd64.iso"
   overwrite = false
 }

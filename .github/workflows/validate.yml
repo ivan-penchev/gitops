@@ -127,10 +127,19 @@ jobs:
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
       - run: terraform fmt -check -recursive -diff
-      - run: terraform init -backend=false -input=false -lockfile=readonly
-      - run: terraform validate -no-color
-      # Warnings (e.g. unused variables) are reported but don't fail the build yet.
-      - run: tflint --format compact --minimum-failure-severity=error
+      - name: Validate each root
+        shell: bash
+        run: |
+          set -euo pipefail
+          for root in shared cluster; do
+            echo "::group::$root"
+            terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$root" validate -no-color
+            echo "::endgroup::"
+          done
+      # Warnings are reported but don't fail the build yet.
+      - run: tflint --recursive --format compact --minimum-failure-severity=error
+      - run: bash -n tf.sh
 
   unit-tests:
     name: CI script unit tests

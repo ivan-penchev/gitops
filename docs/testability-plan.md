@@ -49,20 +49,32 @@ Versions on 2026-10-30:
 
 ## Should Terraform be split?
 
-Yes, into four stacks, split by the API they need and how much damage a bad
-apply does. Going finer adds remote-state plumbing for no gain.
+Yes, by what it manages. My first cut was three stacks split by API,
+named cloudflare, platform and cluster, with remote state between them. Adding a
+service meant editing two stacks and keeping their IPs in sync by hand, and
+nothing in it allowed a second cluster. So I replaced it.
 
-| Stack | Owns | Needs | PR plan runs on | Apply |
+I tried modules next: one per component, wired together in a shared root and
+a copied root per cluster. It worked, but nine single-use modules meant a
+variables file and output plumbing for each, and every new cluster copied
+450 lines of wiring. Too much for one person to read.
+
+What's here now is two roots with plain resource files:
+
+| Root | Owns | Needs | PR plan runs on | Apply |
 |---|---|---|---|---|
-| `terraform/cloudflare` | tunnel, DNS records | Cloudflare API | GitHub-hosted | on merge |
-| `terraform/proxmox` | VMs, LXCs, ISO, CSI user/token | PVE API | ARC runner | manual |
-| `terraform/talos` | machine secrets, config apply, bootstrap | Talos API | ARC runner | manual, laptop only |
-| `terraform/cluster` | Flux bootstrap, k8s Secrets, pg roles/DBs | k8s API, pg-01 | ARC runner | manual |
+| `terraform/shared` | fileserver and pg-01 LXCs, LAN DNS | PVE and Cloudflare APIs | ARC runner | manual |
+| `terraform/cluster` | one cluster: ISO, VMs, Talos, CSI user, tunnel, Flux bootstrap, k8s Secrets, pg roles/DBs | PVE, Talos, Cloudflare and k8s APIs, pg-01 | ARC runner | manual, laptop only |
 
-Stacks read each other through `terraform_remote_state`. The Cloudflare
-stack only gets a plan on GitHub-hosted runners because it needs nothing on the
-LAN. The talos stack stays laptop-only for apply, since the ARC runner lives in
-the cluster that stack can reboot.
+Every cluster runs `terraform/cluster` with its own tfvars from
+`terraform/clusters/<name>/` and its own state key, which `terraform/tf.sh`
+picks. A cluster reads the shared outputs through `terraform_remote_state`,
+so a LAN IP lives in `shared.auto.tfvars` and nowhere else. Proxmox and
+Talos stay in one root, because Talos config apply targets the IPs the VMs
+report. Cluster applies stay laptop-only, since the ARC runner lives in the
+cluster an apply can reboot. All states share one bucket and token, so any
+job that can plan one root can also read the Talos secrets. Separate buckets
+fix that if it ever matters.
 
 ## Plan
 
@@ -93,19 +105,22 @@ the cluster that stack can reboot.
   environment. A `pg` backend on pg-01 was rejected because Terraform manages
   pg-01.
   Status: PR open. State moved to `homelab-tfstate/homelab/terraform.tfstate`
-  and plans clean. The key gets split per stack in B2.
-- **B2 Split into the four stacks above**, one at a time. Move resources with
-  `removed` plus `import` blocks; each move is done when both sides plan
-  "No changes".
+  and plans clean. Merged in #85.
+- **B2 Split into a shared root and one cluster root, as above.** Status:
+  PR #86 open. I merged the three stack states into `homelab/shared.tfstate`
+  and `homelab/clusters/homelab-prd.tfstate`, then used `moved` blocks to
+  take the module prefixes off. Every resource kept its ID. Both roots plan
+  "No changes". I delete the old `terraform`, `cloudflare`, `platform`
+  and `cluster` keys after merge.
 - **B3 `terraform test` with `mock_provider`.** Runs on GitHub-hosted with no
   credentials. Cover the logic that broke before: `postgres_databases` to one
   Secret per namespace, machine config contains the Cilium inline manifest,
   fileserver mount command. Mocks use the real provider schemas, so a provider
   bump that renames an attribute fails here.
-- **B4 Plan on PR.** Matrix over changed stacks, `-detailed-exitcode`, plan
+- **B4 Plan on PR.** Matrix over changed roots, `-detailed-exitcode`, plan
   summary as a PR comment. A provider or CLI bump must plan "No changes".
   Then drop `terraform/**` from Renovate's `ignorePaths` and group provider
-  bumps per stack.
+  bumps per root.
 
 ### P1, Talos and Kubernetes
 
@@ -124,8 +139,8 @@ the cluster that stack can reboot.
   `talosctl upgrade-k8s --to <next>` and check again. This rehearses
   Kubernetes and Cilium bumps on every C1 Renovate PR. It can't test Talos OS
   upgrades, ISO install or Proxmox.
-- **C4 Staging cluster on Proxmox for OS upgrades.** The proxmox and talos
-  stacks with a `staging.tfvars` (1 CP, 1 worker, small). Create it, run
+- **C4 Staging cluster on Proxmox for OS upgrades.** A second cluster
+  under `terraform/clusters/` with 1 small CP and 1 small worker. Create it, run
   `talosctl upgrade`, destroy it. Needs two reserved IPs below `.50`.
 - **C5 Write `docs/talos-upgrade.md`** and run it:
   1. Talos 1.13.7 to 1.13.12, workers first, then cp-1. With one CP the API is
@@ -173,8 +188,8 @@ the cluster that stack can reboot.
 | 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |
 | 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2) | P1 | |
 | 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2) | P1 | 4 |
-| 7 | R2 remote state (B1) | P1 | |
-| 8 | Split Terraform into 4 stacks (B2) | P1 | 7 |
+| 7 | R2 remote state (B1), done | P1 | |
+| 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), PR open | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3) | P1 | 2 |
 | 10 | Terraform plan on PR, unignore in Renovate (B4) | P1 | 7, 8 |
 | 11 | Talos-in-Docker upgrade rehearsal job (C3) | P1 | 4, 5 |
