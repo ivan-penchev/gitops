@@ -4,8 +4,8 @@
 #   export PROXMOX_VE_API_TOKEN='terraform-prov@pve!mytoken=<secret>'
 
 # --- Versions (pin to real, current releases) ---
-talos_version      = "v1.9.0"  # TODO: set to a current Talos release
-kubernetes_version = "v1.32.0" # TODO: set to a version supported by that Talos release
+# talos_version and kubernetes_version live in talos-versions.auto.tfvars
+# (tracked in Git, bumped by Renovate).
 
 # Verify this schematic on https://factory.talos.dev (must include qemu-guest-agent):
 # talos_schematic_id = "ce4c980550dd2ab1b17bbf2b08801c7eb59418eafe8f279833297925d67c7515"

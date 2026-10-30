@@ -3,6 +3,8 @@
 !*.tfvars.example
 *.auto.tfvars
 !*.auto.tfvars.example
+# Non-secret version pins, tracked so Renovate can bump them.
+!terraform/talos-versions.auto.tfvars
 
 # Cluster access artifacts (generated) — kept local, never committed
 kubeconfig

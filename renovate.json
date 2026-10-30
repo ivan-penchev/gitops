@@ -16,7 +16,6 @@
   "separateMultipleMajor": false,
   "ignorePaths": [
     "**/*.sops.yaml",
-    "terraform/**",
     "kubernetes/clusters/homelab/flux-system/**"
   ],
   "flux": {
@@ -29,12 +28,29 @@
       "/kubernetes/.+\\.ya?ml$/"
     ]
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Talos and Kubernetes versions, annotated with a '# renovate:' comment.",
+      "managerFilePatterns": [
+        "/^terraform/talos-versions\\.auto\\.tfvars$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    }
+  ],
   "github-actions": {
     "managerFilePatterns": [
       "/^\\.github/workflows/.+\\.ya?ml$/"
     ]
   },
   "packageRules": [
+    {
+      "description": "Terraform is not live-tested, so nothing under terraform/ gets PRs. The Talos/Kubernetes version file is the one exception, further down.",
+      "matchFileNames": ["terraform/**"],
+      "enabled": false
+    },
     {
       "description": "Upgrade the two Actions Runner Controller charts together when both have updates.",
       "matchManagers": ["flux"],
@@ -80,6 +96,21 @@
         "patch"
       ],
       "enabled": false
+    },
+    {
+      "description": "Talos and Kubernetes bumps. One PR each, never automerged. Merging only changes Terraform inputs; the upgrade itself is manual (docs/talos-k8s-versions.md).",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["terraform/talos-versions.auto.tfvars"],
+      "enabled": true,
+      "automerge": false,
+      "separateMinorPatch": true,
+      "addLabels": ["manual-upgrade"]
+    },
+    {
+      "description": "Kubernetes tags carry a 'v', the Talos provider input does not.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["kubernetes/kubernetes"],
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
     }
   ]
 }

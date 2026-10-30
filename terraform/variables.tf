@@ -87,15 +87,13 @@ variable "cluster_name" {
 }
 
 variable "talos_version" {
-  description = "Talos version tag, e.g. 'v1.9.0'. Set to a current release."
+  description = "Talos version tag, e.g. 'v1.13.7'. Set in talos-versions.auto.tfvars."
   type        = string
-  # No default on purpose — pin to a real, current Talos release in tfvars.
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes version for Talos to install, e.g. 'v1.32.0'."
+  description = "Kubernetes version for Talos to install, e.g. '1.36.2'. Set in talos-versions.auto.tfvars."
   type        = string
-  # No default on purpose — pin to a version supported by the chosen Talos release.
 }
 
 variable "talos_schematic_id" {
