@@ -60,7 +60,6 @@ step 5 is clean.
 
 ```bash
 V=1.17.18
-VIP=192.168.68.29   # cluster_vip of the cluster you're upgrading
 INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-manifests-inventory"'
 ```
 
@@ -75,21 +74,22 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
    so create any new Namespaces first.
 
    ```bash
-   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "select(.kind == \"Namespace\") | $INV" \
+   yq "select(.kind == \"Namespace\") | $INV" talos/cilium/cilium.yaml \
      | kubectl apply --server-side --field-manager=talos --force-conflicts -f -
-   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "$INV" \
+   yq "$INV" talos/cilium/cilium.yaml \
      | kubectl diff --server-side --field-manager=talos --force-conflicts -f -
    ```
 
 3. Pre-pull the new images with Cilium's pre-flight check, so agents don't sit
-   waiting on image pulls during the rollout. The pre-flight render only
-   contains `cilium-pre-flight*` objects, so deleting it is safe.
+   waiting on image pulls during the rollout. The pre-flight render also holds
+   the real Hubble certgen objects, so `yq` keeps only the `cilium-pre-flight*`
+   ones. Without that filter, the delete removes certgen until step 4.
 
    ```bash
    helm template cilium cilium --repo https://helm.cilium.io --version $V \
-     -n kube-system -f talos/cilium/values.yaml --set k8sServiceHost=$VIP \
+     -n kube-system -f talos/cilium/values.yaml \
      --set preflight.enabled=true --set agent=false --set operator.enabled=false \
-     > /tmp/cilium-preflight.yaml
+     | yq 'select(.metadata.name | test("^cilium-pre-flight"))' > /tmp/cilium-preflight.yaml
    kubectl apply -f /tmp/cilium-preflight.yaml
    kubectl -n kube-system rollout status ds/cilium-pre-flight-check --timeout=10m
    kubectl -n kube-system rollout status deploy/cilium-pre-flight-check --timeout=10m
@@ -99,7 +99,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 4. Apply and wait for the rollout.
 
    ```bash
-   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "$INV" \
+   yq "$INV" talos/cilium/cilium.yaml \
      | kubectl apply --server-side --field-manager=talos --force-conflicts -f -
    kubectl -n kube-system rollout status ds/cilium --timeout=10m
    kubectl -n kube-system rollout status ds/cilium-envoy --timeout=10m
@@ -109,7 +109,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 5. Verify. The diff from step 2 should now print nothing.
 
    ```bash
-   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "$INV" \
+   yq "$INV" talos/cilium/cilium.yaml \
      | kubectl diff --server-side --field-manager=talos --force-conflicts -f -
    kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg version
    kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg status --brief
@@ -160,3 +160,8 @@ for the version you're leaving first.
   and certgen issued a new one. The certgen Job name ends in a config hash, so
   each hop creates a new Job instead of patching an immutable one. Old Jobs can
   be deleted.
+- 1.20.4 drops the `ads` default for `envoy.xdsMode`, after Envoy listener
+  fixes in ADS mode. The agent falls back to `split`, so the 1.20.4 render no
+  longer sets `envoy-xds-mode`.
+- Since 1.20.4 Cilium reaches the API through KubePrism on `localhost:7445`.
+  The render has no cluster address, so every cluster uses the same file.

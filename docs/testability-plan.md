@@ -138,6 +138,11 @@ fix that if it ever matters.
   The upgrade steps are in `docs/talos-k8s-versions.md`.
 - **C2 Cilium on KubePrism** (`k8sServiceHost: localhost`,
   `k8sServicePort: 7445`), shipped with Cilium 1.20.4 through the upgrade guide.
+  Status: PR open. homelab-prd runs 1.20.4 on KubePrism, applied by hand
+  through the guide. The render no longer holds a cluster address, so the
+  `__K8S_SERVICE_HOST__` placeholder and its `replace()` are gone. Merging
+  pushes the render into the cp-1 machine config. The run caught a guide bug:
+  the pre-flight cleanup deleted the Hubble certgen objects.
 - **C3 Talos-in-Docker job.** `talosctl cluster create` (docker provisioner)
   at the version from C1, with `talos/patches/*` and the Cilium inline
   manifest. Check nodes Ready, `cilium status`, DNS. Then
@@ -191,7 +196,7 @@ fix that if it ever matters.
 | 2 | `validate.yml` static gate (A1) | P0 | |
 | 3 | `mise.toml` toolchain pin (A3) | P0 | |
 | 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |
-| 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2) | P1 | |
+| 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2), PR open | P1 | |
 | 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2) | P1 | 4 |
 | 7 | R2 remote state (B1), done | P1 | |
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |

@@ -1,9 +1,10 @@
 ipam:
   mode: kubernetes
 kubeProxyReplacement: true
-# Placeholder. Terraform swaps in the cluster VIP (terraform/cluster/talos.tf).
-k8sServiceHost: "__K8S_SERVICE_HOST__"
-k8sServicePort: 6443
+# KubePrism, the API load balancer Talos runs on every node. The render then
+# works for any cluster, and Cilium keeps reaching the API if the VIP moves.
+k8sServiceHost: localhost
+k8sServicePort: 7445
 cgroup:
   autoMount:
     enabled: false

@@ -77,12 +77,12 @@ variables {
   ]
 }
 
-run "cilium_uses_the_cluster_vip" {
+run "cilium_uses_kubeprism" {
   command = plan
 
   assert {
-    condition     = strcontains(local.cilium_inline_patch, "192.0.2.10") && !strcontains(local.cilium_inline_patch, "__K8S_SERVICE_HOST__")
-    error_message = "The Cilium inline manifest must carry this cluster's VIP as k8sServiceHost."
+    condition     = strcontains(local.cilium_inline_patch, "7445") && !strcontains(local.cilium_inline_patch, "192.0.2.10")
+    error_message = "The Cilium inline manifest must reach the API through KubePrism, not a cluster VIP."
   }
 
   assert {
