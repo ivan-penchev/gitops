@@ -21,14 +21,14 @@ metadata:
     gethomepage.dev/group: Downloads
     gethomepage.dev/icon: prowlarr.png
     gethomepage.dev/description: Indexer management
-    gethomepage.dev/href: https://prowlarr.${internal_domain}
+    gethomepage.dev/href: https://prowlarr.${lan_domain}
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
-    - host: prowlarr.${internal_domain}
+    - host: prowlarr.${lan_domain}
       http:
         paths:
           - path: /

@@ -14,11 +14,11 @@ metadata:
     gethomepage.dev/group: Utilities
     gethomepage.dev/icon: mdi-lightning-bolt
     gethomepage.dev/description: Electricity usage
-    gethomepage.dev/href: https://wattbill.${internal_domain}
+    gethomepage.dev/href: https://wattbill.${lan_domain}
 spec:
   ingressClassName: nginx
   rules:
-    - host: wattbill.${internal_domain}
+    - host: wattbill.${lan_domain}
       http:
         paths:
           - path: /

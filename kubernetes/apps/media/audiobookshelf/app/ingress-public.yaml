@@ -1,6 +1,6 @@
 ---
 # PUBLIC: internet -> Cloudflare edge (TLS) -> tunnel -> ingress-nginx -> ABS.
-# The host audiobookshelf.${domain} is auto-registered by external-dns as a
+# The host audiobookshelf.${public_domain} is auto-registered by external-dns as a
 # proxied CNAME to the cluster tunnel (same pattern as whoami). No tls block:
 # TLS terminates at the Cloudflare edge; tunnel -> origin is plain HTTP.
 #
@@ -19,7 +19,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: audiobookshelf.${domain}
+    - host: audiobookshelf.${public_domain}
       http:
         paths:
           - path: /

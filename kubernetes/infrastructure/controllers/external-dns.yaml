@@ -3,14 +3,18 @@
 #
 # Routing is fully automatic (no per-Ingress annotations) via TWO instances
 # scoped by hostname suffix, both using the SAME Cloudflare API token
-# (Zone:Read + DNS:Edit on 17072021.xyz):
+# (Zone:Read + DNS:Edit on the cluster's cloudflare_zone):
 #
-#   * public   : any <app>.17072021.xyz Ingress host  -> proxied CNAME to the
-#                cluster tunnel (<tunnel-id>.cfargotunnel.com). Edge TLS via CF.
-#                Scope: domainFilters=17072021.xyz, excludeDomains=int.home.
-#   * internal : any <app>.int.home.17072021.xyz host  -> grey (DNS-only) A
-#                record to the ingress-nginx LoadBalancer IP (LAN only).
-#                Scope: domainFilters=int.home.17072021.xyz.
+#   * public   : any <app>.${public_domain} Ingress host -> proxied CNAME to
+#                the cluster tunnel (<tunnel-id>.cfargotunnel.com). Edge TLS
+#                via CF. Scope: public_domain, excluding lan_domain.
+#   * internal : any <app>.${lan_domain} host -> grey (DNS-only) A record to
+#                the ingress-nginx LoadBalancer IP (LAN only).
+#                Scope: lan_domain.
+#
+# public_domain, lan_domain and dns_owner_id come from the cluster's tfvars
+# through the cluster-config-tf ConfigMap. Clusters that share a zone need
+# different dns_owner_id values, or each would delete the other's records.
 #
 # Safety on this SHARED zone (which already holds unrelated records such as
 # smb/jelly/sonarr/... pointing at a different tunnel):
@@ -59,13 +63,15 @@ spec:
       - ingress
     policy: sync
     registry: txt
-    txtOwnerId: homelab-k8s-pub
+    txtOwnerId: ${dns_owner_id}-pub
     txtPrefix: extdns-pub-
     domainFilters:
-      - ${domain}
+      - ${public_domain}
     excludeDomains:
-      - ${internal_domain}
+      - ${lan_domain}
     extraArgs:
+      # public_domain can be a subdomain of the zone, so pin the zone by ID.
+      - --zone-id-filter=${cf_zone_id}
       # Any host without its own target becomes a CNAME to the tunnel...
       - --default-targets=${tunnel_id}.cfargotunnel.com
       # ...and FORCE it even though the Ingress advertises the LB IP as a target
@@ -113,7 +119,7 @@ spec:
       - ingress
     policy: sync
     registry: txt
-    txtOwnerId: homelab-k8s-penchev
+    txtOwnerId: ${dns_owner_id}-penchev
     txtPrefix: extdns-penchev-
     extraArgs:
       # Pin the partial zone by ID; only application subdomains pass the filter.
@@ -180,7 +186,7 @@ spec:
       limits:
         memory: 64Mi
 ---
-# Internal instance: *.int.home hosts -> grey A record to the ingress LB IP.
+# Internal instance: *.lan_domain hosts -> grey A record to the ingress LB IP.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -209,14 +215,14 @@ spec:
       - ingress
     policy: sync
     registry: txt
-    txtOwnerId: homelab-k8s-int
+    txtOwnerId: ${dns_owner_id}-int
     txtPrefix: extdns-int-
     domainFilters:
-      - ${internal_domain}
-    # int.home.17072021.xyz is NOT its own Cloudflare zone, so the domain filter
+      - ${lan_domain}
+    # lan_domain is NOT its own Cloudflare zone, so the domain filter
     # alone won't select the parent zone (external-dns matches zones by name).
     # Pin the zone by ID so the zone is selected, while the domain filter still
-    # restricts which *records* this instance manages (only *.int.home, never
+    # restricts which *records* this instance manages (only *.lan_domain, never
     # the apex-child public hosts owned by the public instance).
     extraArgs:
       - --zone-id-filter=${cf_zone_id}

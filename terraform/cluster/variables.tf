@@ -110,18 +110,45 @@ variable "network_bridge" {
   type        = string
 }
 
-variable "cloudflare_domain" {
-  description = "Apex domain / Cloudflare zone name (used to derive zone id + account id)."
+variable "cloudflare_zone" {
+  description = "Cloudflare zone that holds this cluster's DNS records. Several clusters can share one zone."
   type        = string
 }
 
-variable "internal_domain" {
-  description = "LAN-only domain for this cluster's internal ingresses, for example int.home.example.com. It must sit inside cloudflare_domain, because ExternalDNS writes its records to that zone."
+variable "public_domain" {
+  description = "Suffix for hosts reachable from the internet through the Cloudflare tunnel. The zone itself or a subdomain of it."
   type        = string
 
   validation {
-    condition     = endswith(var.internal_domain, ".${var.cloudflare_domain}")
-    error_message = "internal_domain must be a subdomain of cloudflare_domain."
+    condition     = var.public_domain == var.cloudflare_zone || endswith(var.public_domain, ".${var.cloudflare_zone}")
+    error_message = "public_domain must be cloudflare_zone or a subdomain of it."
+  }
+}
+
+variable "lan_domain" {
+  description = "Suffix for hosts reachable only on the LAN, for example int.home.example.com. It must sit inside cloudflare_zone, because ExternalDNS writes its records there."
+  type        = string
+
+  validation {
+    condition     = endswith(var.lan_domain, ".${var.cloudflare_zone}")
+    error_message = "lan_domain must be a subdomain of cloudflare_zone."
+  }
+
+  # The public ExternalDNS instance skips lan_domain. If public_domain equals
+  # it or sits inside it, no public host gets a record.
+  validation {
+    condition     = var.lan_domain != var.public_domain && !endswith(var.public_domain, ".${var.lan_domain}")
+    error_message = "public_domain must not equal lan_domain or sit inside it."
+  }
+}
+
+variable "dns_owner_id" {
+  description = "Prefix for this cluster's ExternalDNS owner IDs. Clusters that share a zone need different values, or each deletes the other's records."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]*$", var.dns_owner_id))
+    error_message = "dns_owner_id must be lowercase letters, digits and dashes."
   }
 }
 

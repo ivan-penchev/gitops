@@ -6,7 +6,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: homepage.${internal_domain}
+    - host: homepage.${lan_domain}
       http:
         paths:
           - path: /

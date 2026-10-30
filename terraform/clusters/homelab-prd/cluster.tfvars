@@ -19,11 +19,14 @@ proxmox_csi_endpoint   = "https://192.168.68.2:8006/api2/json"
 iso_datastore          = "local"
 vm_datastore           = "tank"
 network_bridge         = "vmbr0"
-cloudflare_domain      = "17072021.xyz"
+cloudflare_zone        = "17072021.xyz"
+public_domain          = "17072021.xyz"
 cloudflare_tunnel_name = "homelab-prd"
-internal_domain        = "int.home.17072021.xyz"
-flux_git_url           = "https://github.com/ivan-penchev/gitops.git"
-flux_path              = "kubernetes/clusters/homelab"
+lan_domain             = "int.home.17072021.xyz"
+# Kept from before the multi-cluster layout so prd still owns its records.
+dns_owner_id = "homelab-k8s"
+flux_git_url = "https://github.com/ivan-penchev/gitops.git"
+flux_path    = "kubernetes/clusters/homelab"
 postgres_databases = [
   {
     name       = "landingzone"
