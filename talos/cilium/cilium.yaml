@@ -1141,7 +1141,7 @@ spec:
               resource: limits.memory
               divisor: '1'
         - name: KUBERNETES_SERVICE_HOST
-          value: "192.168.68.29"
+          value: "__K8S_SERVICE_HOST__"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         - name: KUBE_CLIENT_BACKOFF_BASE
@@ -1271,7 +1271,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.namespace
         - name: KUBERNETES_SERVICE_HOST
-          value: "192.168.68.29"
+          value: "__K8S_SERVICE_HOST__"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         volumeMounts:
@@ -1363,7 +1363,7 @@ spec:
               key: write-cni-conf-when-ready
               optional: true
         - name: KUBERNETES_SERVICE_HOST
-          value: "192.168.68.29"
+          value: "__K8S_SERVICE_HOST__"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         terminationMessagePolicy: FallbackToLogsOnError
@@ -1639,7 +1639,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.namespace
         - name: KUBERNETES_SERVICE_HOST
-          value: "192.168.68.29"
+          value: "__K8S_SERVICE_HOST__"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         
@@ -1803,7 +1803,7 @@ spec:
               name: cilium-config
               optional: true
         - name: KUBERNETES_SERVICE_HOST
-          value: "192.168.68.29"
+          value: "__K8S_SERVICE_HOST__"
         - name: KUBERNETES_SERVICE_PORT
           value: "6443"
         ports:

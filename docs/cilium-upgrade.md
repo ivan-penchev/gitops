@@ -60,6 +60,7 @@ step 5 is clean.
 
 ```bash
 V=1.17.18
+VIP=192.168.68.29   # cluster_vip of the cluster you're upgrading
 INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-manifests-inventory"'
 ```
 
@@ -74,9 +75,9 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
    so create any new Namespaces first.
 
    ```bash
-   yq "select(.kind == \"Namespace\") | $INV" talos/cilium/cilium.yaml \
+   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "select(.kind == \"Namespace\") | $INV" \
      | kubectl apply --server-side --field-manager=talos --force-conflicts -f -
-   yq "$INV" talos/cilium/cilium.yaml \
+   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "$INV" \
      | kubectl diff --server-side --field-manager=talos --force-conflicts -f -
    ```
 
@@ -86,7 +87,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 
    ```bash
    helm template cilium cilium --repo https://helm.cilium.io --version $V \
-     -n kube-system -f talos/cilium/values.yaml \
+     -n kube-system -f talos/cilium/values.yaml --set k8sServiceHost=$VIP \
      --set preflight.enabled=true --set agent=false --set operator.enabled=false \
      > /tmp/cilium-preflight.yaml
    kubectl apply -f /tmp/cilium-preflight.yaml
@@ -98,7 +99,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 4. Apply and wait for the rollout.
 
    ```bash
-   yq "$INV" talos/cilium/cilium.yaml \
+   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "$INV" \
      | kubectl apply --server-side --field-manager=talos --force-conflicts -f -
    kubectl -n kube-system rollout status ds/cilium --timeout=10m
    kubectl -n kube-system rollout status ds/cilium-envoy --timeout=10m
@@ -108,7 +109,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 5. Verify. The diff from step 2 should now print nothing.
 
    ```bash
-   yq "$INV" talos/cilium/cilium.yaml \
+   sed "s/__K8S_SERVICE_HOST__/$VIP/" talos/cilium/cilium.yaml | yq "$INV" \
      | kubectl diff --server-side --field-manager=talos --force-conflicts -f -
    kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg version
    kubectl -n kube-system exec ds/cilium -c cilium-agent -- cilium-dbg status --brief

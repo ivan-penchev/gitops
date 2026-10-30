@@ -125,6 +125,7 @@ terraform/tf.sh homelab-prd apply
    `cloudflare_tunnel_name`, `flux_path`, `iso_name_prefix`,
    `kubeconfig_file` and `talosconfig_file`. Give the CSI user and role new
    names such as `<name>-csi@pve`, or two clusters share one Proxmox token.
+   With `workers = {}`, workloads run on the control planes.
 3. Create the Flux tree at `flux_path`, starting from a copy of
    `kubernetes/clusters/homelab`.
 4. Run `terraform/tf.sh <name> apply`.
