@@ -25,8 +25,11 @@ sops exec-env secrets.sops.env 'cd terraform && terraform <cmd>'
 - Tools on PATH: `terraform >= 1.11`, `talosctl`, `kubectl`, `flux`, `helm`, `sops`, `age`.
 - `age.key` (SOPS private key) present; `SOPS_AGE_KEY_FILE` exported.
 - Credentials in `secrets.sops.env` (see [terraform-secrets.md](./terraform-secrets.md)).
+- The private R2 bucket `homelab-tfstate` exists, with a token scoped to it in
+  `secrets.sops.env`. State lives there, so `terraform init` fails without it.
 - `~/.ssh/id_rsa[.pub]` for LXC provisioning. Flux does not use an SSH key.
-- `terraform/terraform.tfvars` filled in (versions, Flux URL, SOPS pubkey, per-LXC gates).
+- `terraform/terraform.tfvars` filled in (Flux URL, SOPS pubkey, per-LXC gates).
+  Versions are in the tracked `terraform/talos-versions.auto.tfvars`.
 
 ## Phase 1 — Cluster *(no manual step)*
 Cilium comes up via Talos inlineManifests, so nodes reach Ready on their own.

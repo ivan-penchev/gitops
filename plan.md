@@ -13,7 +13,7 @@ boundary only: `terraform apply`. Everything else is Git-driven.
 | Talos config/bootstrap | `siderolabs/talos` Terraform provider | Pure IaC: gen-config + apply + bootstrap in one apply |
 | Topology | **1 control-plane + 2 workers** (was 3 CP; collapsed 2026-07-31) | Single Proxmox host → multi-CP adds no hardware HA, only cost; see "Single control-plane collapse" below |
 | API endpoint (VIP) | Talos built-in L2 VIP in machineconfig | Kept after CP collapse: stable endpoint even if cp-1 is rebuilt / CPs re-added |
-| Terraform state | Local, gitignored, manually backed up | Homelab choice (see risk below) |
+| Terraform state | Private Cloudflare R2 bucket via the S3 backend, lockfile locking | Off the laptop, needed for CI plans (docs/testability-plan.md B1) |
 | GitOps engine | Flux CD | Lightweight, Talos community favorite |
 | CNI | Cilium (eBPF, kube-proxy replacement, L2 LB) | Talos favorite; disable kube-proxy + default CNI |
 | Cilium+Flux bootstrap | Cilium via Talos `inlineManifests` (helm-templated); Flux via TF `flux` provider same apply; Flux adopts Cilium HelmRelease | Hands-off, single source of truth |
@@ -155,8 +155,8 @@ CI coverage gaps and the prioritized plan to close them: [`docs/testability-plan
 ## Risks / follow-ups
 - **State loss = identity loss.** Talos `secrets.yaml` is irreplaceable. Generate it
   as a separate SOPS/age-encrypted input committed to Git so the crown jewels are
-  versioned even though TF state is local.
-- **age private key** lives in TF local state + password manager. Losing it = can't
+  versioned even though TF state has no object versioning in R2.
+- **age private key** lives in TF state (R2) + password manager. Losing it = can't
   decrypt Git secrets.
 - Keep bootstrap Cilium values == Flux HelmRelease values to avoid drift/adoption pain.
 - Reserve a static VIP + a LB IP range (Cilium L2) outside Proxmox DHCP scope.

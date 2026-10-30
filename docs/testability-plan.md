@@ -92,6 +92,8 @@ the cluster that stack can reboot.
   State holds the Talos CA keys, so the token must not leave the CI
   environment. A `pg` backend on pg-01 was rejected because Terraform manages
   pg-01.
+  Status: PR open. State moved to `homelab-tfstate/homelab/terraform.tfstate`
+  and plans clean. The key gets split per stack in B2.
 - **B2 Split into the four stacks above**, one at a time. Move resources with
   `removed` plus `import` blocks; each move is done when both sides plan
   "No changes".
