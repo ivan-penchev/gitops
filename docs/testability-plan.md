@@ -155,6 +155,15 @@ fix that if it ever matters.
   `talosctl upgrade-k8s --to <next>` and check again. This rehearses
   Kubernetes and Cilium bumps on every C1 Renovate PR. It can't test Talos OS
   upgrades, ISO install or Proxmox.
+  Status: PR open. `.github/workflows/talos-docker-test.yml` runs
+  `.github/scripts/talos-docker-test.sh` once per cluster on a GitHub-hosted
+  runner. It takes about 2.5 minutes, or 8 with an upgrade. A talosctl of the
+  contract's minor renders the configs, and a second one that matches
+  `talos_version` runs `upgrade-k8s`. The 1.13 talosctl refuses 1.36 to 1.37.
+  `cilium-dbg status`, rollouts and a cross-node DNS and service request
+  replace `cilium status`. A trial run took homelab-prd's setup from 1.36.2 to
+  1.37.1 with Cilium 1.20.4 and passed. That says Cilium works on 1.37 in
+  Docker, not that upstream supports it.
 - **C4 Staging cluster on Proxmox for OS upgrades.** A second cluster
   under `terraform/clusters/` with 1 small CP and 1 small worker. Create it, run
   `talosctl upgrade`, destroy it. Needs two reserved IPs below `.50`.
@@ -219,7 +228,7 @@ fix that if it ever matters.
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3), done | P1 | 2 |
 | 10 | Terraform plan on PR, unignore in Renovate (B4), done | P1 | 7, 8 |
-| 11 | Talos-in-Docker upgrade rehearsal job (C3) | P1 | 4, 5 |
+| 11 | Talos-in-Docker upgrade rehearsal job (C3), PR open | P1 | 4, 5 |
 | 12 | Extract Alloy config + validate (D1) | P2 | 2 |
 | 13 | Monitoring e2e on kind (D2) and selector check (D3) | P2 | 2 |
 | 14 | Staging cluster for Talos OS upgrades (C4) | P2 | 8 |

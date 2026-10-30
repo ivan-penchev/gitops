@@ -15,6 +15,8 @@ The machine configs keep their format. `talos_config_contract` in the same file 
 
 A running node only upgrades its OS when you run `talosctl upgrade`. Kubernetes only upgrades when you run `talosctl upgrade-k8s`. The live PR test doesn't cover either.
 
+The `talos-docker-test` workflow runs on these PRs. It boots the cluster's Talos version, contract, cluster patch and Cilium manifest in Docker, at the base branch's Kubernetes version. If the PR changes `kubernetes_version`, it runs `upgrade-k8s` to the new one and checks again. It can't test `talosctl upgrade`, the ISO or Proxmox.
+
 ## Config contract
 
 `talos_version` picks the installer image and the ISO. `talos_config_contract`, for example `v1.13`, picks the format the Talos provider generates for the machine configs and the secrets. Keep it at the minor version the cluster was created with.
