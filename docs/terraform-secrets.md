@@ -111,6 +111,17 @@ The `sops-age` Secret comes from `sops_age_key_file`. Keep the age private key
 outside Git and preserve it when migrating Flux. Terraform state contains
 secrets, so encrypt backups and restrict access to plan files.
 
+## Plans in CI
+
+`.github/workflows/terraform-plan.yml` needs the age key too. It lives in the
+`SOPS_AGE_KEY` secret of the `terraform-plan` GitHub environment, and only
+that job reads it. The job runs only for PRs from this repo. When you rotate
+the age key, update that secret:
+
+```bash
+gh secret set SOPS_AGE_KEY --env terraform-plan < age.key
+```
+
 ## Safety
 
 - **Never** commit a plaintext `.env` — `.gitignore` ignores `*.env` and only
