@@ -1,0 +1,74 @@
+name: talos-docker-test
+
+# Boots each cluster's Talos version, config contract, cluster patch and
+# Cilium inline manifest in Docker on a GitHub-hosted runner. On a PR that
+# bumps kubernetes_version it starts at the base branch's version and runs
+# `talosctl upgrade-k8s` to the new one. It can't test Talos OS upgrades, the
+# ISO install or Proxmox. See .github/scripts/talos-docker-test.sh.
+
+on:
+  pull_request:
+    paths:
+      - terraform/clusters/*/talos-versions.tfvars
+      - talos/**
+      - .github/scripts/talos-docker-test.sh
+      - .github/workflows/talos-docker-test.yml
+  push:
+    branches: [main]
+    paths:
+      - terraform/clusters/*/talos-versions.tfvars
+      - talos/**
+      - .github/scripts/talos-docker-test.sh
+      - .github/workflows/talos-docker-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: talos-docker-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clusters:
+    name: List clusters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      clusters: ${{ steps.list.outputs.clusters }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: list
+        run: |
+          set -euo pipefail
+          clusters=$(ls terraform/clusters/*/talos-versions.tfvars | cut -d/ -f3 | jq -Rnc '[inputs]')
+          echo "clusters=$clusters" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Talos in Docker (${{ matrix.cluster }})
+    needs: clusters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        cluster: ${{ fromJSON(needs.clusters.outputs.clusters) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Fetch the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_REF"
+
+      - name: Run the test
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          CLUSTER: ${{ matrix.cluster }}
+        run: .github/scripts/talos-docker-test.sh "$CLUSTER" "$BASE"
