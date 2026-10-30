@@ -14,6 +14,28 @@ encrypted with the same age key as the Kubernetes SOPS secrets
   `homelab-tfstate` bucket only), and the S3 keys derived from it.
   `AWS_ACCESS_KEY_ID` is the token ID and `AWS_SECRET_ACCESS_KEY` is the SHA-256
   of the token value. Rotating the token means updating all three.
+  `AWS_ENDPOINT_URL_S3` is the account's R2 endpoint. It lives here and not in
+  `terraform/backend.tf` because the repo is public.
+
+## Terraform state
+
+State is in R2 (`homelab-tfstate/homelab/terraform.tfstate`), configured in
+`terraform/backend.tf`. Terraform takes a lock by writing a `.tflock` object
+next to it, so two runs can't apply at once. It needs Terraform 1.10 or newer;
+Homebrew's `terraform` is stuck at 1.5.7, so install it from
+`hashicorp/tap/terraform` or the release zip.
+
+The state holds the Talos machine secrets and the age key. R2 has no object
+versioning, so keep an age-encrypted copy offline after big changes:
+
+```bash
+sops exec-env secrets.sops.env 'cd terraform && terraform state pull' \
+  | age -r "$(grep -o 'age1[0-9a-z]*' .sops.yaml | head -1)" \
+  > ~/tfstate-backups/homelab-terraform.tfstate.$(date +%F).age
+```
+
+If the lock gets stuck after a crashed run, use `terraform force-unlock <id>`
+with the ID from the error.
 
 > The Cloudflare API token is also stored (independently) inside
 > `kubernetes/infrastructure/controllers/cloudflare.sops.yaml` for the in-cluster

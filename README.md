@@ -125,5 +125,5 @@ to the intended record sets. Keep credentials SOPS-encrypted.
 ## Security reminders
 
 - Rotate the Proxmox token once bring-up is verified (it was shared in chat).
-- Terraform state contains Talos secrets + kubeconfig → treat `terraform/terraform.tfstate` as a secret (gitignored). Back it up encrypted.
+- Terraform state contains Talos secrets + kubeconfig. It lives in the private R2 bucket `homelab-tfstate`; keep an age-encrypted offline copy (see docs/terraform-secrets.md).
 - Commit only SOPS-encrypted `*.sops.yaml` secrets.
