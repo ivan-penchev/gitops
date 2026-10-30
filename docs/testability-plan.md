@@ -144,7 +144,7 @@ fix that if it ever matters.
   The upgrade steps are in `docs/talos-k8s-versions.md`.
 - **C2 Cilium on KubePrism** (`k8sServiceHost: localhost`,
   `k8sServicePort: 7445`), shipped with Cilium 1.20.4 through the upgrade guide.
-  Status: PR open. homelab-prd runs 1.20.4 on KubePrism, applied by hand
+  Status: done. homelab-prd runs 1.20.4 on KubePrism, applied by hand
   through the guide. The render no longer holds a cluster address, so the
   `__K8S_SERVICE_HOST__` placeholder and its `replace()` are gone. Merging
   pushes the render into the cp-1 machine config. The run caught a guide bug:
@@ -158,9 +158,14 @@ fix that if it ever matters.
 - **C4 Staging cluster on Proxmox for OS upgrades.** A second cluster
   under `terraform/clusters/` with 1 small CP and 1 small worker. Create it, run
   `talosctl upgrade`, destroy it. Needs two reserved IPs below `.50`.
-- **C5 Write `docs/talos-upgrade.md`** and run it:
+- **C5 Extend `docs/talos-k8s-versions.md`** and run it:
   1. Talos 1.13.7 to 1.13.12, workers first, then cp-1. With one CP the API is
      down while cp-1 reboots.
+     Status: nodes upgraded, PR open for the tfvars bump. cp-1 took about two
+     minutes. Afterwards the proxmox-csi controller sat in crash-loop back-off
+     with `no route to host` to `10.96.0.1`, which blocked the Flux chain. A
+     pod delete fixed it. The runbook now covers the etcd snapshot, the ISO
+     eject and the post-checks.
   2. Talos 1.13.12 to 1.14.5, after reading the 1.14 notes. Update the C1
      version and apply so the machine config matches.
   3. Cilium 1.20.4 now, 1.21.x once it is GA.
@@ -202,8 +207,8 @@ fix that if it ever matters.
 | 2 | `validate.yml` static gate (A1) | P0 | |
 | 3 | `mise.toml` toolchain pin (A3) | P0 | |
 | 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |
-| 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2), PR open | P1 | |
-| 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2) | P1 | 4 |
+| 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2), done | P1 | |
+| 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2), step 1 PR open | P1 | 4 |
 | 7 | R2 remote state (B1), done | P1 | |
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3), done | P1 | 2 |

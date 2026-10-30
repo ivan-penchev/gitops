@@ -73,6 +73,14 @@ locals {
 
 resource "talos_machine_secrets" "this" {
   talos_version = var.talos_version
+
+  # talos_version here is only the contract used when the secrets were first
+  # generated. Changing it makes provider 0.11 plan every secret as unknown,
+  # and its Update writes back only talos_version, so an upgrade could wipe
+  # the secrets from state. Keep the creation version.
+  lifecycle {
+    ignore_changes = [talos_version]
+  }
 }
 
 # Base machine configs (one per role), with the cluster-wide patch baked in.
