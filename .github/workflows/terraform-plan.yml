@@ -136,11 +136,16 @@ jobs:
                 const changes = all.filter(rc =>
                   !['no-op', 'read'].includes(rc.change.actions.join()) && !ignored(rc));
                 const count = a => changes.filter(rc => rc.change.actions.includes(a)).length;
-                const checked = `${all.length} resources checked`;
+                const moved = all.filter(rc => rc.previous_address && rc.previous_address !== rc.address);
+                const checked = `${all.length} resources checked` + (moved.length ? `, ${moved.length} moved` : '');
                 headline = changes.length === 0
                   ? `:white_check_mark: **${root}**: no changes, ${checked}`
                   : `:warning: **${root}**: ${count('create')} to add, ${count('update')} to change, ${count('delete')} to destroy, ${checked}`;
                 body = changes.map(rc => `${rc.change.actions.join('/')} ${rc.address}`).join('\n');
+                if (moved.length) {
+                  body += `${body ? '\n\n' : ''}Moved in state:\n` +
+                    moved.map(rc => `${rc.previous_address} to ${rc.address}`).join('\n');
+                }
                 if (skipped.length) {
                   body += `${body ? '\n\n' : ''}Skipped, local files the runner lacks:\n` +
                     skipped.map(rc => `create ${rc.address}`).join('\n');

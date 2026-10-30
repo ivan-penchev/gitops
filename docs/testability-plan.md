@@ -126,7 +126,7 @@ fix that if it ever matters.
   summary as a PR comment. A provider or CLI bump must plan "No changes".
   Then drop `terraform/**` from Renovate's `ignorePaths` and group provider
   bumps per root.
-  Status: PR open. `.github/workflows/terraform-plan.yml` plans shared and
+  Status: done. `.github/workflows/terraform-plan.yml` plans shared and
   every cluster on the ARC runner with `-lock=false`, and keeps one PR comment
   up to date. With two roots, planning all of them is simpler than a matrix
   over changed ones. It uses the same tokens as a laptop: the age key sits in
@@ -202,7 +202,7 @@ fix that if it ever matters.
 | 7 | R2 remote state (B1), done | P1 | |
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3), done | P1 | 2 |
-| 10 | Terraform plan on PR, unignore in Renovate (B4), PR open | P1 | 7, 8 |
+| 10 | Terraform plan on PR, unignore in Renovate (B4), done | P1 | 7, 8 |
 | 11 | Talos-in-Docker upgrade rehearsal job (C3) | P1 | 4, 5 |
 | 12 | Extract Alloy config + validate (D1) | P2 | 2 |
 | 13 | Monitoring e2e on kind (D2) and selector check (D3) | P2 | 2 |
