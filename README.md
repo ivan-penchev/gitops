@@ -121,6 +121,9 @@ Each root has plan-only tests in `tests/` that mock every provider, so they
 need no credentials. CI runs them, and locally it's
 `terraform -chdir=terraform/cluster test`.
 
+A PR that touches `terraform/`, `talos/` or a flux-system directory gets a
+comment with the plan for every root. Nothing applies from CI.
+
 ### Add a cluster
 
 1. Copy `terraform/clusters/homelab-prd` to `terraform/clusters/<name>`.

@@ -47,9 +47,18 @@
   },
   "packageRules": [
     {
-      "description": "Terraform is not live-tested, so nothing under terraform/ gets PRs. The Talos/Kubernetes version file is the one exception, further down.",
-      "matchFileNames": ["terraform/**"],
-      "enabled": false
+      "description": "Terraform providers and modules for terraform/shared, in one PR. The Terraform plan workflow shows what the bump changes. Never automerged, since nothing applies Terraform from CI.",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["terraform/shared/**"],
+      "groupName": "terraform shared",
+      "automerge": false
+    },
+    {
+      "description": "Terraform providers and modules for terraform/cluster, in one PR. Every cluster uses this root, so the plan covers each of them.",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["terraform/cluster/**"],
+      "groupName": "terraform cluster",
+      "automerge": false
     },
     {
       "description": "Upgrade the two Actions Runner Controller charts together when both have updates.",

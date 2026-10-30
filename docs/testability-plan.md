@@ -117,7 +117,7 @@ fix that if it ever matters.
   Secret per namespace, machine config contains the Cilium inline manifest,
   fileserver mount command. Mocks use the real provider schemas, so a provider
   bump that renames an attribute fails here.
-  Status: PR open. `terraform/shared/tests` and `terraform/cluster/tests`
+  Status: done. `terraform/shared/tests` and `terraform/cluster/tests`
   hold plan-only runs, and CI runs them after `validate`. The cluster tests
   use a made-up cluster and a mocked `terraform_remote_state`, and also cover
   the #87 fixes: Cilium gets the cluster VIP, and a cluster without workers
@@ -126,6 +126,12 @@ fix that if it ever matters.
   summary as a PR comment. A provider or CLI bump must plan "No changes".
   Then drop `terraform/**` from Renovate's `ignorePaths` and group provider
   bumps per root.
+  Status: PR open. `.github/workflows/terraform-plan.yml` plans shared and
+  every cluster on the ARC runner with `-lock=false`, and keeps one PR comment
+  up to date. With two roots, planning all of them is simpler than a matrix
+  over changed ones. It uses the same tokens as a laptop: the age key sits in
+  the `terraform-plan` environment and decrypts `secrets.sops.env`. Renovate
+  now opens one PR per root for provider and module bumps.
 
 ### P1, Talos and Kubernetes
 
@@ -195,8 +201,8 @@ fix that if it ever matters.
 | 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2) | P1 | 4 |
 | 7 | R2 remote state (B1), done | P1 | |
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
-| 9 | `terraform test` with mock providers (B3), PR open | P1 | 2 |
-| 10 | Terraform plan on PR, unignore in Renovate (B4) | P1 | 7, 8 |
+| 9 | `terraform test` with mock providers (B3), done | P1 | 2 |
+| 10 | Terraform plan on PR, unignore in Renovate (B4), PR open | P1 | 7, 8 |
 | 11 | Talos-in-Docker upgrade rehearsal job (C3) | P1 | 4, 5 |
 | 12 | Extract Alloy config + validate (D1) | P2 | 2 |
 | 13 | Monitoring e2e on kind (D2) and selector check (D3) | P2 | 2 |

@@ -1,0 +1,161 @@
+# Plans every Terraform root on PRs that touch Terraform inputs and posts the
+# result as one PR comment. It never applies.
+#
+# It runs on the ARC runner, because only the LAN reaches Proxmox, pg-01 and
+# the cluster API. The age key comes from the `terraform-plan` environment and
+# decrypts secrets.sops.env, the same credentials terraform/tf.sh uses on a
+# laptop. Anyone who can read the state is cluster admin anyway, so the job
+# only runs for PRs from this repo, never from forks.
+name: Terraform plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - terraform/**
+      - talos/**
+      - kubernetes/clusters/*/flux-system/**
+      - secrets.sops.env
+      - .github/workflows/terraform-plan.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: terraform-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Terraform plan
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: gha-homelab-arc
+    environment: terraform-plan
+    timeout-minutes: 20
+    env:
+      TF_IN_AUTOMATION: "1"
+    steps:
+      - name: Set paths
+        run: |
+          {
+            echo "SOPS_AGE_KEY_FILE=$RUNNER_TEMP/age.key"
+            echo "TF_VAR_sops_age_key_file=$RUNNER_TEMP/age.key"
+            echo "PLANS=$RUNNER_TEMP/plans"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Install pinned tools
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          command -v unzip >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq unzip; }
+          mkdir -p bin
+          fetch() {
+            curl --fail --silent --show-error --location --retry 3 \
+              --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"
+          }
+          fetch https://releases.hashicorp.com/terraform/1.17.1/terraform_1.17.1_linux_amd64.zip terraform.zip
+          echo '4638628058e71a55212b1c563712eac03b902128f40740f3dc8174df12135061  terraform.zip' | sha256sum --check --strict
+          fetch https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64 bin/sops
+          echo 'e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b  bin/sops' | sha256sum --check --strict
+          unzip -q -o terraform.zip terraform -d bin
+          chmod +x bin/sops
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Write the age key
+        shell: bash
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SOPS_AGE_KEY" || { echo "SOPS_AGE_KEY is not set in the terraform-plan environment" >&2; exit 1; }
+          umask 077
+          printf '%s\n' "$SOPS_AGE_KEY" > "$SOPS_AGE_KEY_FILE"
+
+      - name: Plan every root
+        id: plan
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p "$PLANS"
+          failed=0
+          for t in shared $(ls terraform/clusters); do
+            echo "::group::$t"
+            status=ok
+            terraform/tf.sh "$t" init -input=false -no-color > "$PLANS/$t.log" 2>&1 || status=error
+            if [ "$status" = ok ]; then
+              terraform/tf.sh "$t" plan -lock=false -input=false -no-color -out="$PLANS/$t.tfplan" >> "$PLANS/$t.log" 2>&1 || status=error
+            fi
+            if [ "$status" = ok ]; then
+              terraform/tf.sh "$t" show -no-color "$PLANS/$t.tfplan" > "$PLANS/$t.txt" 2>/dev/null
+              terraform/tf.sh "$t" show -json "$PLANS/$t.tfplan" > "$PLANS/$t.json" 2>/dev/null
+            else
+              failed=1
+            fi
+            echo "$status" > "$PLANS/$t.status"
+            tail -n 40 "$PLANS/$t.log"
+            echo "::endgroup::"
+          done
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on the PR
+        if: always() && steps.plan.outcome != 'skipped'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const dir = process.env.PLANS;
+            const marker = '<!-- terraform-plan -->';
+            const limit = 20000;
+            const read = f => fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
+            // The runner has no kubeconfig or talosconfig file, so every plan
+            // wants to write them. That is not a real change.
+            const ignored = rc => rc.type === 'local_sensitive_file' && rc.change.actions.join() === 'create';
+            const sections = [];
+            for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.status')).sort()) {
+              const root = path.basename(f, '.status');
+              const status = read(path.join(dir, f)).trim();
+              let headline, body;
+              if (status !== 'ok') {
+                headline = `:x: **${root}**: plan failed`;
+                body = read(path.join(dir, `${root}.log`)).split('\n').slice(-60).join('\n');
+              } else {
+                const plan = JSON.parse(read(path.join(dir, `${root}.json`)));
+                const changes = (plan.resource_changes || []).filter(rc =>
+                  !['no-op', 'read'].includes(rc.change.actions.join()) && !ignored(rc));
+                const count = a => changes.filter(rc => rc.change.actions.includes(a)).length;
+                headline = changes.length === 0
+                  ? `:white_check_mark: **${root}**: no changes`
+                  : `:warning: **${root}**: ${count('create')} to add, ${count('update')} to change, ${count('delete')} to destroy`;
+                body = changes.map(rc => `${rc.change.actions.join('/')} ${rc.address}`).join('\n');
+                if (changes.length) body += '\n\n' + read(path.join(dir, `${root}.txt`));
+              }
+              if (body.length > limit) body = body.slice(0, limit) + '\n... truncated, see the job log';
+              sections.push(`${headline}\n\n<details><summary>Details</summary>\n\n\`\`\`\n${body || 'Nothing to show.'}\n\`\`\`\n</details>`);
+            }
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const text = `${marker}\n### Terraform plan for ${context.payload.pull_request.head.sha.slice(0, 7)}\n\n${sections.join('\n\n')}\n\n[Job log](${run})`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const old = comments.find(c => c.body?.startsWith(marker));
+            if (old) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: old.id, body: text });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body: text });
+            }
+
+      - name: Fail if a plan failed
+        if: steps.plan.outputs.failed == '1'
+        run: exit 1
+
+      - name: Remove the age key and plans
+        if: always()
+        run: rm -rf "$SOPS_AGE_KEY_FILE" "$PLANS"
