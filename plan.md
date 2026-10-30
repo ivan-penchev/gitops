@@ -3,7 +3,7 @@
 ## Goal
 Infrastructure-as-Code that provisions a Talos-based, HA Kubernetes cluster on
 Proxmox and hands ongoing cluster management to Flux (GitOps). One imperative
-boundary only: `terraform apply`, run per stack by `terraform/tf.sh all apply`.
+boundary only: `terraform apply`, run per root by `terraform/tf.sh all apply`.
 Everything else is Git-driven.
 
 ## Locked Decisions
@@ -15,7 +15,7 @@ Everything else is Git-driven.
 | Topology | **1 control-plane + 2 workers** (was 3 CP; collapsed 2026-07-31) | Single Proxmox host → multi-CP adds no hardware HA, only cost; see "Single control-plane collapse" below |
 | API endpoint (VIP) | Talos built-in L2 VIP in machineconfig | Kept after CP collapse: stable endpoint even if cp-1 is rebuilt / CPs re-added |
 | Terraform state | Private Cloudflare R2 bucket via the S3 backend, lockfile locking | Off the laptop, needed for CI plans (docs/testability-plan.md B1) |
-| Terraform layout | Three stacks (cloudflare, platform, cluster), one state each, cluster reads the others via `terraform_remote_state` | Smaller plans, Cloudflare plans need no LAN access (docs/testability-plan.md B2) |
+| Terraform layout | Modules in `terraform/modules`. `terraform/shared` wires the LXCs and LAN DNS, and each `terraform/clusters/<name>` wires one cluster. Each root has its own state, and clusters read shared through `terraform_remote_state` | A new service is one edit in one root, and a second cluster reuses the modules (docs/testability-plan.md B2) |
 | GitOps engine | Flux CD | Lightweight, Talos community favorite |
 | CNI | Cilium (eBPF, kube-proxy replacement, L2 LB) | Talos favorite; disable kube-proxy + default CNI |
 | Cilium+Flux bootstrap | Cilium via Talos `inlineManifests` (helm-templated); Flux via TF `flux` provider same apply; Flux adopts Cilium HelmRelease | Hands-off, single source of truth |
@@ -359,7 +359,7 @@ non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
   0 restarts. Both in `deployment.yaml`.
 - **Fileserver child datasets in IaC (done 2026-08-01).** Folded the LXC 110
   `movies` + `torrent-download` bind mounts and NFS exports into
-  `terraform/platform/fileserver.tf` (driven by `var.fileserver_child_datasets`): the
+  `terraform/modules/fileserver`, driven by `child_datasets`. The
   provisioner now writes all export lines and `output.fileserver_host_mount_command`
   emits the full `pct set -mp0/-mp1/-mp2 … && pct reboot`. Verified byte-identical
   to the live hand-applied state.
@@ -373,7 +373,7 @@ Deployed & verified 2026-08-19: PostgreSQL 17.11 online, PGDATA on `/mnt/pgdata/
 Secret injected into `db-landing-zone`, and an in-cluster pod connected end-to-end.
 
 Shared homelab Postgres as a privileged Debian LXC (CT **111**, `.12`,
-`pg-01.int.home.17072021.xyz`), provisioned in `terraform/platform/postgres.tf` (databases in `terraform/cluster/postgres.tf`). Runs
+`pg-01.int.home.17072021.xyz`), provisioned in `terraform/modules/postgres`, with databases in `terraform/modules/postgres-databases`. Runs
 outside the cluster so databases survive Talos rebuilds (same rationale as the
 fileserver).
 
@@ -409,10 +409,11 @@ fileserver).
 ```
 /
 ├── terraform/
-│   ├── cloudflare/     # tunnel, LAN DNS records
-│   ├── platform/       # Talos ISO, VMs, Talos config/bootstrap, LXCs, CSI user
-│   ├── cluster/        # Flux bootstrap, k8s Secrets, pg roles/DBs
-│   └── tf.sh           # runs a stack (or all) with secrets.sops.env
+│   ├── modules/        # one module per thing: talos-cluster, postgres, flux, ...
+│   ├── shared/         # fileserver and pg-01 LXCs, LAN DNS
+│   ├── clusters/
+│   │   └── homelab-prd/  # VMs, Talos, tunnel, Flux bootstrap, k8s Secrets, pg DBs
+│   └── tf.sh           # runs one root, or all of them, with secrets.sops.env
 ├── kubernetes/
 │   ├── flux-system/    # Flux sync + Kustomizations
 │   ├── infrastructure/ # cilium, cert-manager, storage CSI, etc.

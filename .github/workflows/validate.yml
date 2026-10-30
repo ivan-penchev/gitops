@@ -127,14 +127,15 @@ jobs:
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
       - run: terraform fmt -check -recursive -diff
-      - name: Validate each stack
+      - name: Validate each root
         shell: bash
         run: |
           set -euo pipefail
-          for stack in cloudflare platform cluster; do
-            echo "::group::$stack"
-            terraform -chdir="$stack" init -backend=false -input=false -lockfile=readonly
-            terraform -chdir="$stack" validate -no-color
+          for root in shared clusters/*/; do
+            root="${root%/}"
+            echo "::group::$root"
+            terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="$root" validate -no-color
             echo "::endgroup::"
           done
       # Warnings are reported but don't fail the build yet.

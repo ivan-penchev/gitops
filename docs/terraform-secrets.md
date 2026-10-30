@@ -1,7 +1,7 @@
 # Terraform provider secrets (SOPS)
 
 Terraform's `bpg/proxmox` and `cloudflare` providers read their credentials from
-**environment variables** (see `terraform/platform/providers.tf`). The Proxmox credentials
+**environment variables**, which each root's `providers.tf` reads. The Proxmox credentials
 live encrypted in the repo root at [`secrets.sops.env`](../secrets.sops.env),
 encrypted with the same age key as the Kubernetes SOPS secrets
 (recipient in [`.sops.yaml`](../.sops.yaml)).
@@ -19,20 +19,21 @@ encrypted with the same age key as the Kubernetes SOPS secrets
 
 ## Terraform state
 
-Each stack has its own state in R2: `homelab-tfstate/homelab/<stack>.tfstate`
-for `cloudflare`, `platform` and `cluster`, configured in each stack's
-`backend.tf`. Terraform takes a lock by writing a `.tflock` object next to the
-state, so two runs can't apply the same stack at once. The cluster stack reads
-the other two through `terraform_remote_state`. It needs Terraform 1.10 or newer;
+Each root has its own state in R2, set in its `backend.tf`:
+`homelab-tfstate/homelab/shared.tfstate` for `terraform/shared`, and
+`homelab-tfstate/homelab/clusters/<name>.tfstate` for each cluster. Terraform
+takes a lock by writing a `.tflock` object next to the state, so two runs
+can't apply the same root at once. A cluster reads the shared state through
+`terraform_remote_state`. It needs Terraform 1.10 or newer;
 Homebrew's `terraform` is stuck at 1.5.7, so install it from
 `hashicorp/tap/terraform` or the release zip.
 
-The platform state holds the Talos machine secrets and the cluster state
-holds the age key. R2 has no object versioning, so keep an age-encrypted copy
+A cluster's state holds its Talos machine secrets and the age key. The shared
+state holds the pg-01 superuser password. R2 has no object versioning, so keep an age-encrypted copy
 offline after big changes:
 
 ```bash
-for s in cloudflare platform cluster; do
+for s in shared homelab-prd; do
   terraform/tf.sh $s state pull \
     | age -r "$(age-keygen -y age.key)" \
     > ~/tfstate-backups/$s.tfstate.$(date +%F).age
@@ -68,7 +69,7 @@ one command. It uses `age.key` in the repo root unless `SOPS_AGE_KEY_FILE` is
 set:
 
 ```bash
-terraform/tf.sh platform plan
+terraform/tf.sh homelab-prd plan
 terraform/tf.sh all apply
 ```
 
@@ -76,7 +77,7 @@ To export them into your shell instead (they stay until you close it):
 
 ```bash
 set -a; eval "$(sops -d secrets.sops.env)"; set +a
-terraform -chdir=terraform/platform plan
+terraform -chdir=terraform/clusters/homelab-prd plan
 ```
 
 ## Edit the secrets

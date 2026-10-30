@@ -128,17 +128,17 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 
    ```bash
    export SOPS_AGE_KEY_FILE=$PWD/age.key
-   terraform/tf.sh platform plan
+   terraform/tf.sh homelab-prd plan
    ```
 
    Expect an in-place update to the control-plane
    `talos_machine_configuration_apply` and nothing else. If the plan shows
    unrelated changes, apply with
-   `-target='talos_machine_configuration_apply.this["cp-1"]'`. Changing
+   `-target='module.talos_cluster.talos_machine_configuration_apply.this["cp-1"]'`. Changing
    `inlineManifests` doesn't reboot the node or touch live objects.
 
    ```bash
-   terraform/tf.sh platform apply
+   terraform/tf.sh homelab-prd apply
    ```
 
 ## Rolling back

@@ -1,40 +1,52 @@
 #!/usr/bin/env bash
-# Run Terraform in one stack, or in all of them in dependency order, with the
-# credentials from secrets.sops.env.
+# Run Terraform in one root with the credentials from secrets.sops.env.
 #
-#   terraform/tf.sh platform plan
-#   terraform/tf.sh all init
-#   terraform/tf.sh all apply
+#   terraform/tf.sh shared plan          # terraform/shared
+#   terraform/tf.sh homelab-prd plan     # terraform/clusters/homelab-prd
+#   terraform/tf.sh all apply            # shared, then every cluster
 #
-# `all` runs cloudflare, platform, then cluster. cluster reads the other two
-# states, so on a fresh rebuild it can only plan after they are applied.
+# Cluster roots read the shared state, so on a fresh rebuild apply shared
+# first.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-stacks=(cloudflare platform cluster)
 
-if [ $# -lt 2 ]; then
-  echo "usage: $0 <cloudflare|platform|cluster|all> <terraform args...>" >&2
+usage() {
+  echo "usage: $0 <shared|all|CLUSTER> <terraform args...>" >&2
+  echo "clusters: $(ls "$root/terraform/clusters" | tr '\n' ' ')" >&2
   exit 2
-fi
+}
 
+[ $# -ge 2 ] || usage
 target=$1
 shift
 
-case "$target" in
-  all) selected=("${stacks[@]}") ;;
-  cloudflare | platform | cluster) selected=("$target") ;;
-  *)
-    echo "unknown stack: $target" >&2
-    exit 2
-    ;;
-esac
+dir_of() {
+  if [ "$1" = shared ]; then
+    echo "$root/terraform/shared"
+  elif [ -d "$root/terraform/clusters/$1" ]; then
+    echo "$root/terraform/clusters/$1"
+  else
+    echo "unknown root: $1" >&2
+    usage
+  fi
+}
+
+if [ "$target" = all ]; then
+  selected=(shared)
+  for d in "$root"/terraform/clusters/*/; do
+    selected+=("$(basename "$d")")
+  done
+else
+  selected=("$target")
+fi
 
 export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$root/age.key}
 args=$(printf '%q ' "$@")
 
-for stack in "${selected[@]}"; do
-  echo "==> $stack" >&2
+for name in "${selected[@]}"; do
+  dir=$(dir_of "$name")
+  echo "==> $name" >&2
   sops exec-env "$root/secrets.sops.env" \
-    "exec terraform -chdir=$(printf '%q' "$root/terraform/$stack") $args"
+    "exec terraform -chdir=$(printf '%q' "$dir") $args"
 done
