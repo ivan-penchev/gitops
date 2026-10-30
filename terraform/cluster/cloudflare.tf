@@ -50,9 +50,10 @@ locals {
   # Read by Flux postBuild substitution through the cluster-config-tf ConfigMap.
   cluster_config = merge(
     {
-      cf_zone_id    = data.cloudflare_zone.main.id
-      cf_account_id = data.cloudflare_zone.main.account.id
-      tunnel_id     = cloudflare_zero_trust_tunnel_cloudflared.tunnel.id
+      cf_zone_id      = data.cloudflare_zone.main.id
+      cf_account_id   = data.cloudflare_zone.main.account.id
+      tunnel_id       = cloudflare_zero_trust_tunnel_cloudflared.tunnel.id
+      internal_domain = var.internal_domain
     },
     { for k, z in data.cloudflare_zone.extra : "${k}_cf_zone_id" => z.id },
   )

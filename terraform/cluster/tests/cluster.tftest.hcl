@@ -62,6 +62,7 @@ variables {
   vm_datastore           = "tank"
   network_bridge         = "vmbr0"
   cloudflare_domain      = "example.test"
+  internal_domain        = "int.example.test"
   cloudflare_tunnel_name = "test"
   flux_git_url           = "https://github.com/ivan-penchev/gitops.git"
   flux_path              = "kubernetes/clusters/homelab"
@@ -198,6 +199,11 @@ run "per_cluster_names_come_from_variables" {
   }
 
   assert {
+    condition     = kubernetes_config_map_v1.cluster_config_tf.data.internal_domain == "int.example.test"
+    error_message = "cluster-config-tf must carry the cluster's internal_domain."
+  }
+
+  assert {
     condition     = contains(keys(kubernetes_config_map_v1.cluster_config_tf.data), "other_cf_zone_id")
     error_message = "cluster-config-tf must carry a zone id for each extra zone."
   }
@@ -238,4 +244,14 @@ run "config_contract_is_major_minor_only" {
   }
 
   expect_failures = [var.talos_config_contract]
+}
+
+run "internal_domain_must_be_inside_the_zone" {
+  command = plan
+
+  variables {
+    internal_domain = "int.other.test"
+  }
+
+  expect_failures = [var.internal_domain]
 }

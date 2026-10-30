@@ -115,6 +115,16 @@ variable "cloudflare_domain" {
   type        = string
 }
 
+variable "internal_domain" {
+  description = "LAN-only domain for this cluster's internal ingresses, for example int.home.example.com. It must sit inside cloudflare_domain, because ExternalDNS writes its records to that zone."
+  type        = string
+
+  validation {
+    condition     = endswith(var.internal_domain, ".${var.cloudflare_domain}")
+    error_message = "internal_domain must be a subdomain of cloudflare_domain."
+  }
+}
+
 variable "cloudflare_tunnel_name" {
   description = "Name of the Cloudflare Tunnel Terraform creates for the cluster."
   type        = string

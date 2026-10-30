@@ -21,6 +21,7 @@ vm_datastore           = "tank"
 network_bridge         = "vmbr0"
 cloudflare_domain      = "17072021.xyz"
 cloudflare_tunnel_name = "homelab-prd"
+internal_domain        = "int.home.17072021.xyz"
 flux_git_url           = "https://github.com/ivan-penchev/gitops.git"
 flux_path              = "kubernetes/clusters/homelab"
 postgres_databases = [
