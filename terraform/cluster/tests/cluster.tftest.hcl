@@ -252,13 +252,42 @@ run "config_contract_is_major_minor_only" {
   expect_failures = [var.talos_config_contract]
 }
 
-run "domains_must_be_inside_the_zone" {
+run "public_domain_must_be_inside_the_zone" {
   command = plan
 
   variables {
     public_domain = "other.test"
-    lan_domain    = "int.other.test"
   }
 
-  expect_failures = [var.public_domain, var.lan_domain]
+  expect_failures = [var.public_domain]
+}
+
+run "lan_domain_must_be_inside_the_zone" {
+  command = plan
+
+  variables {
+    lan_domain = "int.other.test"
+  }
+
+  expect_failures = [var.lan_domain]
+}
+
+run "lan_domain_must_not_cover_public_domain" {
+  command = plan
+
+  variables {
+    public_domain = "app.int.example.test"
+  }
+
+  expect_failures = [var.lan_domain]
+}
+
+run "lan_domain_must_differ_from_public_domain" {
+  command = plan
+
+  variables {
+    public_domain = "int.example.test"
+  }
+
+  expect_failures = [var.lan_domain]
 }

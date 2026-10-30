@@ -133,6 +133,13 @@ variable "lan_domain" {
     condition     = endswith(var.lan_domain, ".${var.cloudflare_zone}")
     error_message = "lan_domain must be a subdomain of cloudflare_zone."
   }
+
+  # The public ExternalDNS instance skips lan_domain. If public_domain equals
+  # it or sits inside it, no public host gets a record.
+  validation {
+    condition     = var.lan_domain != var.public_domain && !endswith(var.public_domain, ".${var.lan_domain}")
+    error_message = "public_domain must not equal lan_domain or sit inside it."
+  }
 }
 
 variable "dns_owner_id" {
