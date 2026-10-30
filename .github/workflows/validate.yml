@@ -1,0 +1,146 @@
+name: validate
+
+# Offline checks for every PR. No cluster, no secrets, GitHub-hosted runner.
+# The live cluster test (gitops-live-test.yml) still covers what this can't.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Kubernetes version the cluster runs today, and the next one we want to reach.
+  KUBE_VERSION: 1.36.2
+  KUBE_NEXT: v1.37.0
+
+jobs:
+  kubernetes:
+    name: Kubernetes render and schemas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP"
+          fetch() {
+            curl --fail --silent --show-error --location --retry 3 \
+              --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"
+          }
+          # SHA-256 values published with each upstream release.
+          fetch https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_linux_amd64.tar.gz flate.tgz
+          echo '37eb0cd91a6752340754375743aa616c263cd8367ce594abd42ee955e1ec0099  flate.tgz' | sha256sum --check --strict
+          fetch https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz kubeconform.tgz
+          echo '9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  kubeconform.tgz' | sha256sum --check --strict
+          fetch https://github.com/FairwindsOps/pluto/releases/download/v5.24.0/pluto_5.24.0_linux_amd64.tar.gz pluto.tgz
+          echo 'b37fd6548e80614ffff5b3452a5e309d477ea61477519316bf9241246a9c4cbb  pluto.tgz' | sha256sum --check --strict
+          tar -xzf flate.tgz -C bin flate
+          tar -xzf kubeconform.tgz -C bin kubeconform
+          tar -xzf pluto.tgz -C bin pluto
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Stub the Terraform-owned ConfigMap
+        run: cp .github/ci/cluster-config-tf.yaml kubernetes/clusters/homelab/zz-ci-cluster-config-tf.yaml
+
+      - name: Reconcile every Kustomization and HelmRelease offline
+        run: flate test all --path ./kubernetes --kube-version "$KUBE_VERSION" --no-progress
+
+      - name: Render
+        run: flate build all --path ./kubernetes --kube-version "$KUBE_VERSION" --no-progress > "$RUNNER_TEMP/render.yaml"
+
+      - name: Schema check
+        run: >-
+          kubeconform -strict -summary -output text
+          -kubernetes-version "$KUBE_VERSION"
+          -schema-location default
+          -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          "$RUNNER_TEMP/render.yaml"
+
+      - name: Deprecated APIs for the next Kubernetes
+        run: pluto detect "$RUNNER_TEMP/render.yaml" --target-versions "k8s=$KUBE_NEXT" -o wide
+
+      - name: Alloy config
+        shell: bash
+        run: |
+          set -euo pipefail
+          yq 'select(.kind == "ConfigMap" and (.data | has("config.alloy"))) | .data["config.alloy"]' \
+            "$RUNNER_TEMP/render.yaml" > "$RUNNER_TEMP/config.alloy"
+          test -s "$RUNNER_TEMP/config.alloy" || { echo "::error::no config.alloy found in the render"; exit 1; }
+          docker run --rm -v "$RUNNER_TEMP/config.alloy:/cfg/config.alloy:ro" \
+            grafana/alloy:v1.21.3 validate /cfg/config.alloy
+
+  secrets:
+    name: SOPS encryption
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - run: python3 -B .github/scripts/check_sops.py
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned tools
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          fetch() {
+            curl --fail --silent --show-error --location --retry 3 \
+              --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"
+          }
+          fetch https://releases.hashicorp.com/terraform/1.17.1/terraform_1.17.1_linux_amd64.zip terraform.zip
+          echo '4638628058e71a55212b1c563712eac03b902128f40740f3dc8174df12135061  terraform.zip' | sha256sum --check --strict
+          fetch https://github.com/terraform-linters/tflint/releases/download/v0.65.0/tflint_linux_amd64.zip tflint.zip
+          echo 'd4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61  tflint.zip' | sha256sum --check --strict
+          unzip -q -o terraform.zip terraform -d bin
+          unzip -q -o tflint.zip tflint -d bin
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - run: terraform fmt -check -recursive -diff
+      - run: terraform init -backend=false -input=false -lockfile=readonly
+      - run: terraform validate -no-color
+      # Warnings (e.g. unused variables) are reported but don't fail the build yet.
+      - run: tflint --format compact --minimum-failure-severity=error
+
+  unit-tests:
+    name: CI script unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python3 -B .github/tests/test_gitops_live_test.py
