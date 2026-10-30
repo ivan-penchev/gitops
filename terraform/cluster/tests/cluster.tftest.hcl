@@ -43,11 +43,12 @@ override_data {
 }
 
 variables {
-  talos_version      = "v1.13.7"
-  kubernetes_version = "1.36.2"
-  talos_schematic_id = "0000"
-  cluster_name       = "test"
-  cluster_vip        = "192.0.2.10"
+  talos_version         = "v1.13.7"
+  talos_config_contract = "v1.13"
+  kubernetes_version    = "1.36.2"
+  talos_schematic_id    = "0000"
+  cluster_name          = "test"
+  cluster_vip           = "192.0.2.10"
   control_planes = {
     cp-1 = { vmid = 901, ip = "192.0.2.11", cpu = 2, memory = 4096, disk = 20 }
   }
@@ -205,4 +206,36 @@ run "per_cluster_names_come_from_variables" {
     condition     = length(kubernetes_secret_v1.sops_age) == 0
     error_message = "No sops-age Secret without a key file."
   }
+}
+
+run "talos_upgrade_keeps_the_config_contract" {
+  command = plan
+
+  variables {
+    talos_version = "v1.14.5"
+  }
+
+  assert {
+    condition     = strcontains(local.cluster_patch, "/installer/0000:v1.14.5")
+    error_message = "The installer image must follow talos_version."
+  }
+
+  assert {
+    condition = alltrue([
+      data.talos_machine_configuration.controlplane.talos_version == "v1.13",
+      data.talos_machine_configuration.worker.talos_version == "v1.13",
+      talos_machine_secrets.this.talos_version == "v1.13",
+    ])
+    error_message = "Machine configs and secrets must use talos_config_contract, not talos_version."
+  }
+}
+
+run "config_contract_is_major_minor_only" {
+  command = plan
+
+  variables {
+    talos_config_contract = "v1.13.7"
+  }
+
+  expect_failures = [var.talos_config_contract]
 }

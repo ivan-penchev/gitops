@@ -72,12 +72,12 @@ locals {
 }
 
 resource "talos_machine_secrets" "this" {
-  talos_version = var.talos_version
+  talos_version = var.talos_config_contract
 
   # talos_version here is only the contract used when the secrets were first
   # generated. Changing it makes provider 0.11 plan every secret as unknown,
-  # and its Update writes back only talos_version, so an upgrade could wipe
-  # the secrets from state. Keep the creation version.
+  # and its Update writes back only talos_version, so a change could wipe the
+  # secrets from state. Existing state still holds the full creation version.
   lifecycle {
     ignore_changes = [talos_version]
   }
@@ -89,7 +89,7 @@ data "talos_machine_configuration" "controlplane" {
   cluster_endpoint   = local.cluster_endpoint
   machine_type       = "controlplane"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
-  talos_version      = var.talos_version
+  talos_version      = var.talos_config_contract
   kubernetes_version = var.kubernetes_version
   config_patches     = local.control_plane_patches
 }
@@ -99,7 +99,7 @@ data "talos_machine_configuration" "worker" {
   cluster_endpoint   = local.cluster_endpoint
   machine_type       = "worker"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
-  talos_version      = var.talos_version
+  talos_version      = var.talos_config_contract
   kubernetes_version = var.kubernetes_version
   config_patches     = [local.cluster_patch]
 }
