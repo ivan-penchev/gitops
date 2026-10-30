@@ -10,6 +10,10 @@ encrypted with the same age key as the Kubernetes SOPS secrets
   file diffs cleanly). Rule: `path_regex: (^|/)secrets\.sops\.env$` in `.sops.yaml`.
 - Contains: `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_INSECURE`,
   `CLOUDFLARE_API_TOKEN` — everything both providers need.
+- R2 state backend: `R2_ACCOUNT_ID`, `R2_API_TOKEN` (Object Read & Write on the
+  `homelab-tfstate` bucket only), and the S3 keys derived from it.
+  `AWS_ACCESS_KEY_ID` is the token ID and `AWS_SECRET_ACCESS_KEY` is the SHA-256
+  of the token value. Rotating the token means updating all three.
 
 > The Cloudflare API token is also stored (independently) inside
 > `kubernetes/infrastructure/controllers/cloudflare.sops.yaml` for the in-cluster
