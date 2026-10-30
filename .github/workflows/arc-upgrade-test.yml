@@ -1,0 +1,133 @@
+name: arc-upgrade-test
+
+# ARC upgrades can't use the live test: it runs on the ARC runner, and the
+# upgrade replaces that runner mid-job. This installs the PR base's ARC charts
+# on kind, upgrades them to the PR head, and checks both releases end up Ready
+# on the new chart with the runner set still there. It catches CRD and chart
+# breakage. It can't check GitHub registration, since the token is a dummy.
+
+on:
+  pull_request:
+    paths:
+      - kubernetes/infrastructure/controllers/actions-runner-controller.yaml
+      - .github/workflows/arc-upgrade-test.yml
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Git ref to install first (the candidate is the selected workflow ref)
+        type: string
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arc-upgrade-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARC_FILE: kubernetes/infrastructure/controllers/actions-runner-controller.yaml
+
+jobs:
+  upgrade:
+    name: ARC upgrade on kind
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Check out baseline
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha || inputs.baseline_ref }}
+          path: baseline
+          persist-credentials: false
+
+      - name: Install pinned tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP"
+          fetch() {
+            curl --fail --silent --show-error --location --retry 3 \
+              --proto '=https' --proto-redir '=https' --tlsv1.2 "$1" -o "$2"
+          }
+          # SHA-256 values published with each upstream release.
+          fetch https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 kind
+          echo 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  kind' | sha256sum --check --strict
+          fetch https://dl.k8s.io/release/v1.36.4/bin/linux/amd64/kubectl kubectl
+          echo '8b8f088da2dab964f853b38464033b1be15ede2839eca751482357c45abdd05a  kubectl' | sha256sum --check --strict
+          fetch https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_linux_amd64.tar.gz flux.tgz
+          echo 'b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5  flux.tgz' | sha256sum --check --strict
+          tar -xzf flux.tgz flux
+          install -m 0755 kind kubectl flux bin/
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Create kind cluster with Flux
+        run: |
+          kind create cluster --name arc --wait 120s
+          flux install --components=source-controller,helm-controller --network-policy=false
+          kubectl create namespace arc-systems
+          kubectl create namespace arc-runners
+          # The real Secret is SOPS-encrypted. A dummy token is enough for Helm.
+          kubectl -n arc-runners create secret generic arc-github-pat --from-literal=github_token=dummy
+
+      - name: Write helpers
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/arc.sh" <<'EOF'
+          set -euo pipefail
+          # Only the Flux sources, releases and the runner ServiceAccount. RBAC for
+          # ci-deployer doesn't affect the upgrade.
+          apply() {
+            yq 'select(.kind == "OCIRepository" or .kind == "HelmRelease" or .kind == "ServiceAccount")' \
+              "$1/$ARC_FILE" | kubectl apply -f -
+          }
+          tag() { kubectl -n "$1" get ocirepository "$2" -o jsonpath='{.spec.ref.tag}'; }
+          reconcile() {
+            # dependsOn order: the runner chart needs the controller's CRDs.
+            flux -n arc-systems reconcile hr arc-controller --with-source --timeout 5m
+            flux -n arc-runners reconcile hr gha-homelab-arc --with-source --timeout 5m
+          }
+          verify() {
+            local ok=0 ns hr src want got
+            for ns_hr_src in arc-systems/arc-controller/gha-runner-scale-set-controller arc-runners/gha-homelab-arc/gha-runner-scale-set; do
+              IFS=/ read -r ns hr src <<<"$ns_hr_src"
+              want="$(tag "$ns" "$src")"
+              got="$(kubectl -n "$ns" get hr "$hr" -o jsonpath='{.status.history[0].chartVersion}')"
+              kubectl -n "$ns" wait hr "$hr" --for=condition=Ready --timeout=60s || ok=1
+              echo "$ns/$hr: chart ${got} (want ${want})"
+              case "$got" in "$want"|"$want"+*) ;; *) echo "::error::$ns/$hr is on ${got}, expected ${want}"; ok=1 ;; esac
+            done
+            kubectl -n arc-runners get autoscalingrunnerset gha-homelab-arc || { echo "::error::runner set is gone"; ok=1; }
+            return "$ok"
+          }
+          diag() {
+            flux get all -A || true
+            kubectl -n arc-systems logs deploy/arc-controller-gha-rs-controller --tail=50 || true
+            kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
+          }
+          "$@"
+          EOF
+
+      - name: Install baseline
+        run: |
+          bash "$RUNNER_TEMP/arc.sh" apply baseline
+          bash "$RUNNER_TEMP/arc.sh" reconcile
+          bash "$RUNNER_TEMP/arc.sh" verify
+
+      - name: Upgrade to candidate
+        run: |
+          bash "$RUNNER_TEMP/arc.sh" apply candidate
+          bash "$RUNNER_TEMP/arc.sh" reconcile
+          bash "$RUNNER_TEMP/arc.sh" verify
+
+      - name: Diagnostics
+        if: failure()
+        run: bash "$RUNNER_TEMP/arc.sh" diag

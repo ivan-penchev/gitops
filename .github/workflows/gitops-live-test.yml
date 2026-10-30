@@ -21,8 +21,11 @@ permissions:
 jobs:
   live-test:
     # Other same-repository PRs require an explicit, manually applied label.
+    # ARC upgrades are excluded: they replace this job's own runner mid-test.
+    # arc-upgrade-test.yml tests them on kind instead.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref != 'renovate/actions-runner-controller' &&
       (startsWith(github.head_ref, 'renovate/') || contains(github.event.pull_request.labels.*.name, 'gitops-live-test')) &&
       (github.event.action != 'labeled' || github.event.label.name == 'gitops-live-test')
     runs-on: gha-homelab-arc

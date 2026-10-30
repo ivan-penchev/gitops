@@ -34,6 +34,13 @@ Runs share a concurrency group and use the in-cluster ARC runner
 `gha-homelab-arc` with ServiceAccount `ci-deployer`. The Kubernetes API does not
 need to be exposed outside the cluster network.
 
+The one exception is `renovate/actions-runner-controller`. Upgrading ARC
+replaces the runner the test is running on, so the job dies halfway and leaves
+the cluster on the PR branch until the watchdog restores it.
+`.github/workflows/arc-upgrade-test.yml` covers those PRs instead. It installs
+the base branch's ARC charts on kind, upgrades them to the PR's, and fails
+unless both releases are Ready on the new chart and the runner set still exists.
+
 Adding `gitops-live-test` starts the test. Leaving it on the PR also opts in
 subsequent pushes and reopen events; remove it to stop future non-Renovate runs.
 An unrelated label does not start a run. Before cluster access, the workflow
