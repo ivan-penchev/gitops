@@ -46,15 +46,24 @@ else
 fi
 [[ -n $talosctl_version ]] || { echo "no talosctl release for contract $contract" >&2; exit 1; }
 
-echo "cluster=$cluster talos=$talos_version contract=$contract talosctl=$talosctl_version kubernetes=$k8s_from->$k8s_to"
+echo "cluster=$cluster talos=$talos_version contract=$contract config-talosctl=$talosctl_version kubernetes=$k8s_from->$k8s_to"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m); [[ $arch == x86_64 ]] && arch=amd64; [[ $arch == aarch64 ]] && arch=arm64
 asset=talosctl-$os-$arch
-base=https://github.com/siderolabs/talos/releases/download/$talosctl_version
-curl -fsSL "$base/$asset" -o "$work/bin/$asset"
-curl -fsSL "$base/sha256sum.txt" | grep " _out/$asset\$\| $asset\$" | sed "s| .*|  $work/bin/$asset|" | sha256sum --check --strict
-mv "$work/bin/$asset" "$work/bin/talosctl" && chmod +x "$work/bin/talosctl"
+
+fetch_talosctl() {
+  local version=$1 dest=$work/bin/$2
+  local base=https://github.com/siderolabs/talos/releases/download/$version
+  curl -fsSL "$base/$asset" -o "$dest"
+  curl -fsSL "$base/sha256sum.txt" | grep " _out/$asset\$\| $asset\$" | sed "s| .*|  $dest|" | sha256sum --check --strict
+  chmod +x "$dest"
+}
+
+# talosctl-config renders the configs. talosctl matches the running Talos and
+# does everything else, since only it knows that release's upgrade paths.
+fetch_talosctl "$talosctl_version" talosctl-config
+fetch_talosctl "$talos_version" talosctl
 
 # Docker only supports the cluster-wide part of the patch. The machine part
 # sets the install disk, installer image and nameserver, none of which apply.
@@ -69,12 +78,12 @@ cleanup() {
     kubectl get pods -A -o wide || true
     kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
   fi
-  talosctl cluster destroy --name "$name" --state "$work/state" >/dev/null 2>&1 || true
+  talosctl-config cluster destroy --name "$name" --state "$work/state" >/dev/null 2>&1 || true
   exit "$status"
 }
 trap cleanup EXIT
 
-talosctl cluster create docker \
+talosctl-config cluster create docker \
   --name "$name" \
   --state "$work/state" \
   --image "ghcr.io/siderolabs/talos:$talos_version" \
