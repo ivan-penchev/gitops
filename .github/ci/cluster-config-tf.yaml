@@ -11,4 +11,6 @@ data:
   cf_account_id: "00000000000000000000000000000000"
   penchev_cf_zone_id: "00000000000000000000000000000000"
   tunnel_id: "00000000-0000-0000-0000-000000000000"
-  internal_domain: "int.home.17072021.xyz"
+  public_domain: "17072021.xyz"
+  lan_domain: "int.home.17072021.xyz"
+  dns_owner_id: "homelab-k8s"

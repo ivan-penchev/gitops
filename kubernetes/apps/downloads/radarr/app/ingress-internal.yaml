@@ -20,14 +20,14 @@ metadata:
     gethomepage.dev/group: Downloads
     gethomepage.dev/icon: radarr.png
     gethomepage.dev/description: Movie library
-    gethomepage.dev/href: https://radarr.${internal_domain}
+    gethomepage.dev/href: https://radarr.${lan_domain}
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
-    - host: radarr.${internal_domain}
+    - host: radarr.${lan_domain}
       http:
         paths:
           - path: /

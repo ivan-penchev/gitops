@@ -70,9 +70,9 @@ spec:
           gethomepage.dev/group: Monitoring
           gethomepage.dev/icon: alertmanager.png
           gethomepage.dev/description: Alerts
-          gethomepage.dev/href: https://alertmanager.${internal_domain}
+          gethomepage.dev/href: https://alertmanager.${lan_domain}
         hosts:
-          - alertmanager.${internal_domain}
+          - alertmanager.${lan_domain}
         paths:
           - /
 
@@ -118,9 +118,9 @@ spec:
           gethomepage.dev/group: Monitoring
           gethomepage.dev/icon: prometheus.png
           gethomepage.dev/description: Metrics and queries
-          gethomepage.dev/href: https://prometheus.${internal_domain}
+          gethomepage.dev/href: https://prometheus.${lan_domain}
         hosts:
-          - prometheus.${internal_domain}
+          - prometheus.${lan_domain}
         paths:
           - /
 
@@ -146,7 +146,7 @@ spec:
           memory: 1Gi
       grafana.ini:
         server:
-          root_url: https://grafana.${internal_domain}
+          root_url: https://grafana.${lan_domain}
         dashboards:
           min_refresh_interval: 1m
         auth:
@@ -164,9 +164,9 @@ spec:
           gethomepage.dev/group: Monitoring
           gethomepage.dev/icon: grafana.png
           gethomepage.dev/description: Dashboards
-          gethomepage.dev/href: https://grafana.${internal_domain}
+          gethomepage.dev/href: https://grafana.${lan_domain}
         hosts:
-          - grafana.${internal_domain}
+          - grafana.${lan_domain}
         path: /
       # Loki wired as a second datasource so logs are explorable from Grafana.
       additionalDataSources:

@@ -14,6 +14,6 @@ spec:
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
-  commonName: "*.${internal_domain}"
+  commonName: "*.${lan_domain}"
   dnsNames:
-    - "*.${internal_domain}"
+    - "*.${lan_domain}"

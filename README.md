@@ -33,7 +33,7 @@ SOPS key and substitution ConfigMaps. Their `targetNamespace` selects the
 workload namespace. They wait for infrastructure and check their own workloads;
 Radarr does not depend on Prowlarr. The parent `apps` checks child readiness.
 
-Homepage runs in its own namespace at `https://homepage.${internal_domain}`
+Homepage runs in its own namespace at `https://homepage.${lan_domain}`
 (`homepage.int.home.17072021.xyz` with the current cluster configuration).
 It uses ingress-nginx's internal wildcard DNS and default TLS certificate; no
 public DNS record, tunnel hostname, or public Ingress is configured. Its

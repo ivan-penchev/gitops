@@ -18,14 +18,14 @@ metadata:
     gethomepage.dev/group: Media
     gethomepage.dev/icon: audiobookshelf.png
     gethomepage.dev/description: Audiobooks and podcasts
-    gethomepage.dev/href: https://audiobookshelf.${internal_domain}
+    gethomepage.dev/href: https://audiobookshelf.${lan_domain}
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: nginx
   rules:
-    - host: audiobookshelf.${internal_domain}
+    - host: audiobookshelf.${lan_domain}
       http:
         paths:
           - path: /

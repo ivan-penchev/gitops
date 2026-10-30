@@ -61,8 +61,10 @@ variables {
   iso_datastore          = "local"
   vm_datastore           = "tank"
   network_bridge         = "vmbr0"
-  cloudflare_domain      = "example.test"
-  internal_domain        = "int.example.test"
+  cloudflare_zone        = "example.test"
+  public_domain          = "test.example.test"
+  lan_domain             = "int.example.test"
+  dns_owner_id           = "test"
   cloudflare_tunnel_name = "test"
   flux_git_url           = "https://github.com/ivan-penchev/gitops.git"
   flux_path              = "kubernetes/clusters/homelab"
@@ -199,8 +201,12 @@ run "per_cluster_names_come_from_variables" {
   }
 
   assert {
-    condition     = kubernetes_config_map_v1.cluster_config_tf.data.internal_domain == "int.example.test"
-    error_message = "cluster-config-tf must carry the cluster's internal_domain."
+    condition = alltrue([
+      kubernetes_config_map_v1.cluster_config_tf.data.public_domain == "test.example.test",
+      kubernetes_config_map_v1.cluster_config_tf.data.lan_domain == "int.example.test",
+      kubernetes_config_map_v1.cluster_config_tf.data.dns_owner_id == "test",
+    ])
+    error_message = "cluster-config-tf must carry the cluster's domains and DNS owner ID."
   }
 
   assert {
@@ -246,12 +252,13 @@ run "config_contract_is_major_minor_only" {
   expect_failures = [var.talos_config_contract]
 }
 
-run "internal_domain_must_be_inside_the_zone" {
+run "domains_must_be_inside_the_zone" {
   command = plan
 
   variables {
-    internal_domain = "int.other.test"
+    public_domain = "other.test"
+    lan_domain    = "int.other.test"
   }
 
-  expect_failures = [var.internal_domain]
+  expect_failures = [var.public_domain, var.lan_domain]
 }

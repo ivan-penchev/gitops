@@ -6,8 +6,8 @@
 # Kustomization references this via `postBuild.substituteFrom`, so manifests use
 # ${var} placeholders instead of magic strings.
 #
-# DERIVED / TERRAFORM-OWNED values (cf_zone_id, cf_account_id, tunnel_id,
-# internal_domain) do NOT
+# PER-CLUSTER / TERRAFORM-OWNED values (cf_zone_id, cf_account_id, tunnel_id,
+# public_domain, lan_domain, dns_owner_id) do NOT
 # live here — Terraform writes them to the `cluster-config-tf` ConfigMap
 # (see terraform/cluster/flux.tf), which is listed second in every substituteFrom.
 #
@@ -23,9 +23,7 @@ metadata:
   name: cluster-config
   namespace: flux-system
 data:
-  # Cloudflare zone `17072021.xyz`.
-  domain: "17072021.xyz"
-  # ingress-nginx LoadBalancer IP (target of the internal_domain A records). It is the
+  # ingress-nginx LoadBalancer IP (target of the lan_domain A records). It is the
   # first address of the Cilium LB pool below.
   ingress_lb_ip: "192.168.68.40"
   lb_pool_start: "192.168.68.40"
