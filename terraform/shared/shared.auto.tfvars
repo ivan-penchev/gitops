@@ -5,7 +5,7 @@ vm_datastore      = "tank"
 network_bridge    = "vmbr0"
 cloudflare_domain = "17072021.xyz"
 # Set after the one-time pg-01 host step (zfs create + bind mount). See the
-# header of modules/postgres/main.tf. Keep false on a fresh rebuild until that is done.
+# header of terraform/shared/postgres.tf. Keep false on a fresh rebuild until that is done.
 postgres_data_mounted = true
 
 network = {

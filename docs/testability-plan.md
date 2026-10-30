@@ -107,16 +107,21 @@ fix that if it ever matters.
   Status: PR open. State moved to `homelab-tfstate/homelab/terraform.tfstate`
   and plans clean. Merged in #85.
 - **B2 Split into a shared root and one cluster root, as above.** Status:
-  PR #86 open. I merged the three stack states into `homelab/shared.tfstate`
+  done in #86. I merged the three stack states into `homelab/shared.tfstate`
   and `homelab/clusters/homelab-prd.tfstate`, then used `moved` blocks to
-  take the module prefixes off. Every resource kept its ID. Both roots plan
-  "No changes". I delete the old `terraform`, `cloudflare`, `platform`
-  and `cluster` keys after merge.
+  take the module prefixes off. Every resource kept its ID, and the old keys
+  are gone from R2. A throwaway single-node cluster then found three bugs
+  that would hit any second cluster, fixed in #87.
 - **B3 `terraform test` with `mock_provider`.** Runs on GitHub-hosted with no
   credentials. Cover the logic that broke before: `postgres_databases` to one
   Secret per namespace, machine config contains the Cilium inline manifest,
   fileserver mount command. Mocks use the real provider schemas, so a provider
   bump that renames an attribute fails here.
+  Status: PR open. `terraform/shared/tests` and `terraform/cluster/tests`
+  hold plan-only runs, and CI runs them after `validate`. The cluster tests
+  use a made-up cluster and a mocked `terraform_remote_state`, and also cover
+  the #87 fixes: Cilium gets the cluster VIP, and a cluster without workers
+  schedules on its control planes.
 - **B4 Plan on PR.** Matrix over changed roots, `-detailed-exitcode`, plan
   summary as a PR comment. A provider or CLI bump must plan "No changes".
   Then drop `terraform/**` from Renovate's `ignorePaths` and group provider
@@ -189,8 +194,8 @@ fix that if it ever matters.
 | 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2) | P1 | |
 | 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2) | P1 | 4 |
 | 7 | R2 remote state (B1), done | P1 | |
-| 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), PR open | P1 | 7 |
-| 9 | `terraform test` with mock providers (B3) | P1 | 2 |
+| 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
+| 9 | `terraform test` with mock providers (B3), PR open | P1 | 2 |
 | 10 | Terraform plan on PR, unignore in Renovate (B4) | P1 | 7, 8 |
 | 11 | Talos-in-Docker upgrade rehearsal job (C3) | P1 | 4, 5 |
 | 12 | Extract Alloy config + validate (D1) | P2 | 2 |
