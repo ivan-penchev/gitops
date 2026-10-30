@@ -7,8 +7,8 @@ CNI). It is embedded into the control-plane machine config as
 `terraform/cluster/talos.tf`.
 
 `cilium.yaml` is rendered from the Cilium Helm chart with `values.yaml` as the
-single source of Talos-specific values. `k8sServiceHost` is the placeholder
-`__K8S_SERVICE_HOST__`, and Terraform replaces it with each cluster's VIP.
+single source of Talos-specific values. Cilium reaches the API through
+KubePrism on `localhost:7445`, so one render works for every cluster.
 Regenerate it with:
 
 ```sh

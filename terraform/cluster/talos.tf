@@ -44,7 +44,7 @@ locals {
       inlineManifests = [
         {
           name     = "cilium"
-          contents = replace(file(local.cilium_manifest_path), "__K8S_SERVICE_HOST__", var.cluster_vip)
+          contents = file(local.cilium_manifest_path)
         },
       ]
     }
