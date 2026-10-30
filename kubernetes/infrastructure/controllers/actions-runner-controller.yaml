@@ -39,6 +39,12 @@ spec:
     kind: OCIRepository
     name: gha-runner-scale-set-controller
     namespace: arc-systems
+  # The controller chart ships the CRDs. Flux skips CRD changes on upgrade by
+  # default, so a new runner chart then fails on fields the old CRDs lack.
+  install:
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
   values: {}
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
