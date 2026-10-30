@@ -7,7 +7,7 @@ locals {
   # Cluster-wide patch shared by control-plane and worker configs.
   cluster_patch = templatefile("${path.module}/../../talos/patches/cluster.yaml.tmpl", {
     install_disk = "/dev/sda" # virtio-scsi boot disk (scsi0)
-    nameserver   = var.nameserver
+    nameserver   = module.network.nameserver
     # Install the Image Factory schematic installer (NOT the provider's bundled
     # ghcr.io/siderolabs/installer:<machinery-version>). This pins the on-disk
     # system to our exact Talos version AND bakes in the qemu-guest-agent (and
@@ -92,9 +92,9 @@ resource "talos_machine_configuration_apply" "this" {
     templatefile("${path.module}/../../talos/patches/node.yaml.tmpl", {
       hostname = "${var.cluster_name}-${each.key}"
       ip       = each.value.ip
-      cidr     = var.network_cidr_bits
-      gateway  = var.network_gateway
-      vip      = each.value.role == "controlplane" ? var.cluster_vip : ""
+      cidr     = module.network.cidr_bits
+      gateway  = module.network.gateway
+      vip      = each.value.role == "controlplane" ? module.network.cluster_vip : ""
       region   = var.proxmox_region
       zone     = var.proxmox_node
     })
@@ -116,7 +116,7 @@ resource "talos_machine_bootstrap" "this" {
 resource "talos_cluster_kubeconfig" "this" {
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = var.control_planes[local.first_control_plane].ip
-  endpoint             = var.cluster_vip
+  endpoint             = module.network.cluster_vip
 
   depends_on = [talos_machine_bootstrap.this]
 }

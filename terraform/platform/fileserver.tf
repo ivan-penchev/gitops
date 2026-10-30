@@ -61,7 +61,7 @@
 #     terraform/tf.sh platform apply \
 #       -target=proxmox_virtual_environment_container.fileserver \
 #       -target=null_resource.fileserver_nfs
-#     # the DNS record is in the cloudflare stack (var.lan_records)
+#     # the DNS record is in the cloudflare stack (modules/network lan_hosts)
 #     # then run the printed `pct set ... && pct reboot ...` on the PVE host
 #     # verify:  showmount -e 192.168.68.11
 # ===========================================================================
@@ -156,13 +156,13 @@ resource "proxmox_virtual_environment_container" "fileserver" {
     hostname = var.fileserver_hostname
 
     dns {
-      servers = [var.nameserver]
+      servers = [module.network.nameserver]
     }
 
     ip_config {
       ipv4 {
-        address = "${var.fileserver_ip}/${var.network_cidr_bits}"
-        gateway = var.network_gateway
+        address = "${local.fileserver_ip}/${module.network.cidr_bits}"
+        gateway = module.network.gateway
       }
     }
 
@@ -211,7 +211,7 @@ resource "null_resource" "fileserver_nfs" {
 
   connection {
     type        = "ssh"
-    host        = var.fileserver_ip
+    host        = local.fileserver_ip
     user        = "root"
     private_key = file(pathexpand(var.fileserver_ssh_private_key_path))
     timeout     = "4m"

@@ -110,13 +110,13 @@ resource "proxmox_virtual_environment_container" "postgres" {
     hostname = var.postgres_hostname
 
     dns {
-      servers = [var.nameserver]
+      servers = [module.network.nameserver]
     }
 
     ip_config {
       ipv4 {
-        address = "${var.postgres_ip}/${var.network_cidr_bits}"
-        gateway = var.network_gateway
+        address = "${local.postgres_ip}/${module.network.cidr_bits}"
+        gateway = module.network.gateway
       }
     }
 
@@ -159,7 +159,7 @@ resource "null_resource" "postgres_setup" {
 
   connection {
     type        = "ssh"
-    host        = var.postgres_ip
+    host        = local.postgres_ip
     user        = "root"
     private_key = file(pathexpand(var.postgres_ssh_private_key_path))
     timeout     = "5m"
@@ -194,7 +194,7 @@ resource "null_resource" "postgres_setup" {
       # Set the superuser password TF's provider will authenticate with.
       "runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c \"ALTER USER postgres WITH PASSWORD '${random_password.postgres_superuser.result}'\"",
       "systemctl restart postgresql@${var.postgres_version}-main || pg_ctlcluster ${var.postgres_version} main restart || true",
-      "echo 'PostgreSQL ${var.postgres_version} ready on ${var.postgres_ip}:5432 (data: ${local.postgres_data_dir})'",
+      "echo 'PostgreSQL ${var.postgres_version} ready on ${local.postgres_ip}:5432 (data: ${local.postgres_data_dir})'",
     ]
   }
 }

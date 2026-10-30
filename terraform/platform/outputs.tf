@@ -43,17 +43,17 @@ output "node_ips" {
 # ---------------------------------------------------------------------------
 output "fileserver_ip" {
   description = "Static IP of the fileserver LXC."
-  value       = var.fileserver_enabled ? var.fileserver_ip : null
+  value       = var.fileserver_enabled ? local.fileserver_ip : null
 }
 
 output "fileserver_nfs_export" {
   description = "NFS export to mount from k8s (csi-driver-nfs server + share)."
-  value       = var.fileserver_enabled ? "${var.fileserver_ip}:${var.fileserver_container_media_path}" : null
+  value       = var.fileserver_enabled ? "${local.fileserver_ip}:${var.fileserver_container_media_path}" : null
 }
 
 output "fileserver_verify_hint" {
   description = "Command to verify the NFS export is reachable."
-  value       = var.fileserver_enabled ? "showmount -e ${var.fileserver_ip}" : null
+  value       = var.fileserver_enabled ? "showmount -e ${local.fileserver_ip}" : null
 }
 
 output "fileserver_host_mount_command" {
@@ -66,7 +66,7 @@ output "fileserver_host_mount_command" {
 # ---------------------------------------------------------------------------
 output "postgres_ip" {
   description = "Static IP of the PostgreSQL LXC."
-  value       = var.postgres_enabled ? var.postgres_ip : null
+  value       = var.postgres_enabled ? local.postgres_ip : null
 }
 
 output "postgres_host_mount_command" {

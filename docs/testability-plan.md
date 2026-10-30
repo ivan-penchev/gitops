@@ -61,7 +61,9 @@ splitting them adds a remote-state hop for no gain.
 | `terraform/cluster` | Flux bootstrap, k8s Secrets, pg roles/DBs | k8s API, pg-01 | ARC runner | manual |
 
 The cluster stack reads the other two through `terraform_remote_state`;
-cloudflare and platform don't depend on each other. The Cloudflare stack can
+cloudflare and platform don't depend on each other.
+Both take the static LAN IPs from `terraform/modules/network`, a module with
+only outputs, so an IP lives in one file. The Cloudflare stack can
 plan on GitHub-hosted runners because it needs nothing on the LAN. Platform
 applies stay laptop-only, since the ARC runner lives in the cluster that stack
 can reboot. All three states share one bucket and token, so any job that can

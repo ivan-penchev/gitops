@@ -4,7 +4,7 @@
 #   * data.cloudflare_zone  -> derives zone id + account id from the domain.
 #   * cloudflare_zero_trust_tunnel_cloudflared -> CREATES a named tunnel (local
 #                               config mode) and a random tunnel secret.
-#   * cloudflare_dns_record.lan -> A records for the LXCs (var.lan_records).
+#   * cloudflare_dns_record.lan -> A records for the LXCs (module.network.lan_hosts).
 #
 # This stack needs only the Cloudflare API. The cluster stack reads its
 # outputs and writes the cloudflared Secret and the `cluster-config-tf`
@@ -68,13 +68,17 @@ data "cloudflare_zone" "penchev" {
 # these must not be proxied. external-dns leaves them alone: it only deletes
 # records that carry its TXT ownership entry.
 resource "cloudflare_dns_record" "lan" {
-  for_each = var.lan_records
+  for_each = module.network.lan_hosts
 
   zone_id = data.cloudflare_zone.main.id
-  name    = each.value.name
+  name    = each.value.dns
   type    = "A"
   content = each.value.ip
   proxied = false
   ttl     = 60
   comment = each.value.comment
+}
+
+module "network" {
+  source = "../modules/network"
 }

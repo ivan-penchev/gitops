@@ -1,4 +1,11 @@
+module "network" {
+  source = "../modules/network"
+}
+
 locals {
+  fileserver_ip = module.network.lan_hosts.fileserver.ip
+  postgres_ip   = module.network.lan_hosts.postgres.ip
+
   # All nodes merged for uniform VM creation, tagged with their Talos role.
   nodes = merge(
     { for k, v in var.control_planes : k => merge(v, { role = "controlplane" }) },
@@ -6,7 +13,7 @@ locals {
   )
 
   # Talos control-plane endpoint = the VIP (HA API).
-  cluster_endpoint = "https://${var.cluster_vip}:6443"
+  cluster_endpoint = "https://${module.network.cluster_vip}:6443"
 
   # First control plane — the single node we run `talos bootstrap` against.
   first_control_plane = "cp-1"

@@ -96,6 +96,11 @@ Terraform is split into three stacks, each with its own state in R2:
 | `terraform/platform` | Talos ISO, VMs, Talos config and bootstrap, fileserver and pg-01 LXCs, CSI Proxmox user | |
 | `terraform/cluster` | Flux bootstrap, Terraform-made k8s Secrets and ConfigMap, pg roles and databases | both |
 
+Static LAN IPs (gateway, API VIP, fileserver, pg-01) live in
+`terraform/modules/network`. Platform uses them for the hosts and cloudflare
+uses them for the DNS records, so change an IP there and apply platform, then
+cloudflare.
+
 `terraform/tf.sh` runs Terraform in a stack with the credentials from
 `secrets.sops.env`. `all` runs the stacks in the order above.
 

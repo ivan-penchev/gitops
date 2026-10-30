@@ -59,24 +59,6 @@ variable "network_bridge" {
   default     = "vmbr0"
 }
 
-variable "network_gateway" {
-  description = "Default gateway for the flat LAN."
-  type        = string
-  default     = "192.168.68.1"
-}
-
-variable "network_cidr_bits" {
-  description = "Prefix length of the LAN subnet."
-  type        = number
-  default     = 24
-}
-
-variable "nameserver" {
-  description = "DNS server handed to Talos nodes (Pi-hole)."
-  type        = string
-  default     = "192.168.68.20"
-}
-
 # ---------------------------------------------------------------------------
 # Talos / Kubernetes versions + image
 # ---------------------------------------------------------------------------
@@ -110,12 +92,6 @@ variable "talos_schematic_id" {
 # ---------------------------------------------------------------------------
 # Control-plane VIP (shared API endpoint)
 # ---------------------------------------------------------------------------
-variable "cluster_vip" {
-  description = "Talos built-in L2 VIP for the Kubernetes API."
-  type        = string
-  default     = "192.168.68.29"
-}
-
 # ---------------------------------------------------------------------------
 # Node topology. IP is the last octet's full address; vmid maps to it.
 # ---------------------------------------------------------------------------
@@ -157,7 +133,7 @@ variable "workers" {
 # alias; NFS is configured over container-SSH (host stays API-only).
 # ---------------------------------------------------------------------------
 variable "fileserver_enabled" {
-  description = "Create the fileserver LXC. Its DNS record is in the cloudflare stack (lan_records)."
+  description = "Create the fileserver LXC. Its IP and DNS name are in modules/network."
   type        = bool
   default     = true
 }
@@ -172,12 +148,6 @@ variable "fileserver_hostname" {
   description = "Hostname of the fileserver container."
   type        = string
   default     = "fileserver"
-}
-
-variable "fileserver_ip" {
-  description = "Static IPv4 address of the fileserver (no CIDR suffix)."
-  type        = string
-  default     = "192.168.68.11"
 }
 
 variable "fileserver_cores" {
@@ -285,12 +255,6 @@ variable "postgres_hostname" {
   description = "Hostname of the PostgreSQL container (also the internal DNS label)."
   type        = string
   default     = "pg-01"
-}
-
-variable "postgres_ip" {
-  description = "Static IPv4 address of the PostgreSQL LXC (no CIDR suffix)."
-  type        = string
-  default     = "192.168.68.12"
 }
 
 variable "postgres_cores" {

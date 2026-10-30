@@ -27,6 +27,6 @@ output "tunnel_credentials_json" {
 }
 
 output "lan_fqdns" {
-  description = "FQDN of each lan_records entry, keyed like lan_records."
-  value       = { for k, r in var.lan_records : k => "${r.name}.${var.cloudflare_domain}" }
+  description = "FQDN of each modules/network lan_hosts entry, keyed the same way."
+  value       = { for k, r in module.network.lan_hosts : k => "${r.dns}.${var.cloudflare_domain}" }
 }
