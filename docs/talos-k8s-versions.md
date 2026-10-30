@@ -1,6 +1,6 @@
 # Talos and Kubernetes versions
 
-Each cluster keeps both versions in `terraform/clusters/<name>/talos-versions.tfvars`, tracked in Git. `terraform/tf.sh` passes it as a `-var-file`. The commands below use `homelab-prd`.
+Each cluster keeps its versions in `terraform/clusters/<name>/talos-versions.tfvars`, tracked in Git. `terraform/tf.sh` passes it as a `-var-file`. The commands below use `homelab-prd`.
 
 Renovate watches the `siderolabs/talos` and `kubernetes/kubernetes` GitHub releases. Each new release gets its own PR with the `manual-upgrade` label. Patch and minor bumps come as separate PRs, so a Talos minor jump has a patch PR to land first. Renovate never automerges these.
 
@@ -11,7 +11,19 @@ Nothing on the running nodes changes. The next `terraform/tf.sh homelab-prd appl
 - download the new Talos ISO and delete the old one. VMs ignore cdrom changes, so eject the ISO first, see step 6 below
 - change the installer image and Kubernetes version in the machine configs
 
+The machine configs keep their format. `talos_config_contract` in the same file sets the format, and Renovate never touches it.
+
 A running node only upgrades its OS when you run `talosctl upgrade`. Kubernetes only upgrades when you run `talosctl upgrade-k8s`. The live PR test doesn't cover either.
+
+## Config contract
+
+`talos_version` picks the installer image and the ISO. `talos_config_contract`, for example `v1.13`, picks the format the Talos provider generates for the machine configs and the secrets. Keep it at the minor version the cluster was created with.
+
+Talos 1.14 shows why. With a `v1.14` contract, provider 0.12 splits the config into new documents such as `KubeNodeConfig` and `UnattendedInstallConfig`. It also adds `SecurityProfileConfig` with `workloadIsolation: true`. Talos leaves workload isolation off on upgraded clusters, so raising the contract turns it on for the first time. Provider 0.11 ignores contracts above `v1.13`, which hid this until the provider bump.
+
+Raise the contract as its own change. Read the new config format first, check that `talos/patches/*` still apply, and test it on a staging cluster.
+
+Use the talosctl that matches the target Talos version. The Nix-managed one can lag behind.
 
 ## Upgrade order
 

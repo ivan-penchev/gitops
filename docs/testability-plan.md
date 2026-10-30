@@ -161,13 +161,19 @@ fix that if it ever matters.
 - **C5 Extend `docs/talos-k8s-versions.md`** and run it:
   1. Talos 1.13.7 to 1.13.12, workers first, then cp-1. With one CP the API is
      down while cp-1 reboots.
-     Status: nodes upgraded, PR open for the tfvars bump. cp-1 took about two
+     Status: done. cp-1 took about two
      minutes. Afterwards the proxmox-csi controller sat in crash-loop back-off
      with `no route to host` to `10.96.0.1`, which blocked the Flux chain. A
      pod delete fixed it. The runbook now covers the etcd snapshot, the ISO
      eject and the post-checks.
   2. Talos 1.13.12 to 1.14.5, after reading the 1.14 notes. Update the C1
      version and apply so the machine config matches.
+     Status: nodes upgraded, PR open for the tfvars bump. Each node took 83
+     to 96 seconds, and etcd moved to 3.7.3. The CSI controller recovered on
+     its own this time. The machine configs stay on the `v1.13` contract
+     through the new `talos_config_contract` variable. A `v1.14` contract
+     with provider 0.12 would switch to the multi-document format and turn on
+     workload isolation.
   3. Cilium 1.20.4 now, 1.21.x once it is GA.
   4. Kubernetes 1.36.2 to 1.37.x with `talosctl upgrade-k8s`. That command
      re-syncs inline manifests from the machine config, so the machine config
@@ -208,7 +214,7 @@ fix that if it ever matters.
 | 3 | `mise.toml` toolchain pin (A3) | P0 | |
 | 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |
 | 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2), done | P1 | |
-| 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2), step 1 PR open | P1 | 4 |
+| 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2), step 1 done, step 2 PR open | P1 | 4 |
 | 7 | R2 remote state (B1), done | P1 | |
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3), done | P1 | 2 |

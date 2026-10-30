@@ -28,6 +28,16 @@ variable "talos_version" {
   type        = string
 }
 
+variable "talos_config_contract" {
+  description = "Talos version contract for the machine configs and secrets, e.g. 'v1.13'. Keep the version the cluster was created with. Bumping it makes the provider generate the newer config format, which can turn on features such as workload isolation. Set in terraform/clusters/<name>/talos-versions.tfvars."
+  type        = string
+
+  validation {
+    condition     = can(regex("^v\\d+\\.\\d+$", var.talos_config_contract))
+    error_message = "talos_config_contract must look like v1.13."
+  }
+}
+
 variable "kubernetes_version" {
   description = "Kubernetes version for Talos to install, e.g. '1.36.2'. Set in terraform/clusters/<name>/talos-versions.tfvars."
   type        = string
