@@ -8,7 +8,9 @@
 #   cluster   directory name under terraform/clusters/
 #   base-ref  git ref to read the starting Kubernetes version from, for
 #             example origin/main. Without it the cluster starts at the
-#             version in the working tree and skips the upgrade.
+#             version in the working tree and skips the upgrade. With it,
+#             the test exits early if the cluster's versions, talos/ and
+#             this script all match base-ref.
 #
 # Docker can't test Talos OS upgrades, the ISO install or Proxmox. It only
 # covers what runs inside Kubernetes.
@@ -32,6 +34,13 @@ k8s_to=$(tfvar kubernetes_version <"$vars")
 k8s_from=$k8s_to
 if [[ -n $base_ref ]] && git cat-file -e "$base_ref:$vars" 2>/dev/null; then
   k8s_from=$(git show "$base_ref:$vars" | tfvar kubernetes_version)
+  base_talos=$(git show "$base_ref:$vars" | tfvar talos_version)
+  base_contract=$(git show "$base_ref:$vars" | tfvar talos_config_contract)
+  if [[ $talos_version == "$base_talos" && $contract == "$base_contract" && $k8s_from == "$k8s_to" ]] &&
+    git diff --quiet "$base_ref" -- talos .github/scripts/talos-docker-test.sh; then
+    echo "$cluster: versions, talos/ and this script match $base_ref, skipping"
+    exit 0
+  fi
 fi
 
 # talosctl generates the config in its own minor version's format. Terraform
