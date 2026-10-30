@@ -44,11 +44,17 @@ locals {
       inlineManifests = [
         {
           name     = "cilium"
-          contents = file(local.cilium_manifest_path)
+          contents = replace(file(local.cilium_manifest_path), "__K8S_SERVICE_HOST__", var.cluster_vip)
         },
       ]
     }
   })
+
+  # A cluster without workers runs its workloads on the control planes.
+  control_plane_patches = concat(
+    [local.cluster_patch, local.cilium_inline_patch],
+    length(var.workers) == 0 ? [yamlencode({ cluster = { allowSchedulingOnControlPlanes = true } })] : [],
+  )
 
   # In Talos maintenance mode each node DHCPs a temporary lease; the qemu guest
   # agent reports it. We target that IP for the FIRST config apply (which then
@@ -77,7 +83,7 @@ data "talos_machine_configuration" "controlplane" {
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   talos_version      = var.talos_version
   kubernetes_version = var.kubernetes_version
-  config_patches     = [local.cluster_patch, local.cilium_inline_patch]
+  config_patches     = local.control_plane_patches
 }
 
 data "talos_machine_configuration" "worker" {
@@ -135,7 +141,27 @@ resource "talos_cluster_kubeconfig" "this" {
   node                 = var.control_planes[local.first_control_plane].ip
   endpoint             = var.cluster_vip
 
-  depends_on = [talos_machine_bootstrap.this]
+  depends_on = [terraform_data.api_ready]
+}
+
+# Bootstrap returns before the API server listens. The kubernetes and helm
+# providers read the kubeconfig above, so waiting here holds back every
+# in-cluster resource. Any HTTP status counts, since only "connection
+# refused" means the server isn't up yet.
+resource "terraform_data" "api_ready" {
+  triggers_replace = [talos_machine_bootstrap.this.id, var.cluster_vip]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      for i in $(seq 1 60); do
+        code=$(curl -sk -o /dev/null -m 5 -w '%%{http_code}' https://${var.cluster_vip}:6443/readyz)
+        [ "$code" != "000" ] && exit 0
+        sleep 10
+      done
+      echo "API server at ${var.cluster_vip} not up after 10 minutes" >&2
+      exit 1
+    EOT
+  }
 }
 
 # talosconfig for day-2 talosctl access (endpoints = control-plane static IPs).
