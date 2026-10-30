@@ -15,7 +15,7 @@ resource "kubernetes_secret_v1" "cloudflared_token" {
   }
 
   data = {
-    "credentials.json" = var.credentials_json
+    "credentials.json" = local.cloudflared_credentials
   }
 
   type = "Opaque"

@@ -1,6 +1,6 @@
 # Talos and Kubernetes versions
 
-Each cluster keeps both versions in `terraform/clusters/<name>/talos-versions.auto.tfvars`, tracked in Git. Terraform reads any `*.auto.tfvars` in the root, so you don't pass `-var-file`. The commands below use `homelab-prd`.
+Each cluster keeps both versions in `terraform/clusters/<name>/talos-versions.tfvars`, tracked in Git. `terraform/tf.sh` passes it as a `-var-file`. The commands below use `homelab-prd`.
 
 Renovate watches the `siderolabs/talos` and `kubernetes/kubernetes` GitHub releases. Each new release gets its own PR with the `manual-upgrade` label. Patch and minor bumps come as separate PRs, so a Talos minor jump has a patch PR to land first. Renovate never automerges these.
 
@@ -33,4 +33,4 @@ Upgrade with talosctl first, then merge the PR and apply. If you apply first, Te
    talosctl --talosconfig talosconfig -n <cp-ip> upgrade-k8s --to <new-version>
    ```
 
-4. Merge the Renovate PR, then run `terraform/tf.sh homelab-prd plan`. Expect in-place updates to `module.talos_cluster.talos_machine_configuration_apply` and a replaced `module.talos_cluster.proxmox_download_file.talos_iso`. No VM should be replaced. Apply.
+4. Merge the Renovate PR, then run `terraform/tf.sh homelab-prd plan`. Expect in-place updates to `talos_machine_configuration_apply` and a replaced `proxmox_download_file.talos_iso`. No VM should be replaced. Apply.

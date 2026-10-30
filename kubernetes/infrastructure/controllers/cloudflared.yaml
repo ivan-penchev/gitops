@@ -25,7 +25,7 @@ data:
 # Cloudflare Tunnel connector — the ONLY inbound path from the internet (no
 # public IP / CGNAT). Runs in credentials-file mode using `credentials.json`
 # from the `cloudflared-token` Secret, which Terraform creates in the
-# Terraform-owned `cloudflared` namespace (see terraform/modules/cloudflared).
+# Terraform-owned `cloudflared` namespace (see terraform/cluster/cloudflared.tf).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

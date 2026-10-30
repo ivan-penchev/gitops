@@ -2,21 +2,21 @@
 # Databases on pg-01 and their k8s Secrets. terraform/shared owns the LXC,
 # the PostgreSQL install and the superuser password.
 #
-# Databases are declared once in `var.databases`. Terraform reconciles
+# Databases are declared once in `var.postgres_databases`. Terraform reconciles
 # one login role per database, the database, and one `postgres-<db>` Secret per
-# target namespace. Nothing here runs until var.ready is true
+# target namespace. Nothing here runs until local.shared.postgres_ready is true
 # (LXC up and PGDATA on the ZFS dataset).
 # ---------------------------------------------------------------------------
 
 locals {
-  postgres_db_map = var.ready ? {
-    for db in var.databases : db.name => db
+  postgres_db_map = local.shared.postgres_ready ? {
+    for db in var.postgres_databases : db.name => db
   } : {}
 
   # One (database, namespace) pair per Secret to inject.
-  postgres_secret_pairs = var.ready ? {
+  postgres_secret_pairs = local.shared.postgres_ready ? {
     for pair in flatten([
-      for db in var.databases : [
+      for db in var.postgres_databases : [
         for ns in db.namespaces : {
           key = "${db.name}/${ns}"
           db  = db.name
@@ -27,8 +27,8 @@ locals {
   } : {}
 
   # Distinct namespaces to ensure exist (when postgres_create_namespaces = true).
-  postgres_namespaces = var.ready && var.create_namespaces ? toset(
-    flatten([for db in var.databases : db.namespaces])
+  postgres_namespaces = local.shared.postgres_ready && var.postgres_create_namespaces ? toset(
+    flatten([for db in var.postgres_databases : db.namespaces])
   ) : toset([])
 }
 
@@ -42,7 +42,7 @@ resource "random_password" "postgres_db" {
 }
 
 # One login role per database, owner == role. Removing an entry from
-# var.databases will NOT drop the database (prevent_destroy). Delete
+# var.postgres_databases will NOT drop the database (prevent_destroy). Delete
 # data by hand, deliberately.
 resource "postgresql_role" "db" {
   for_each = local.postgres_db_map
@@ -92,12 +92,12 @@ resource "kubernetes_secret_v1" "db" {
   }
 
   data = {
-    POSTGRES_HOST     = var.host
+    POSTGRES_HOST     = local.shared.postgres_fqdn
     POSTGRES_PORT     = "5432"
     POSTGRES_DB       = each.value.db
     POSTGRES_USER     = each.value.db
     POSTGRES_PASSWORD = random_password.postgres_db[each.value.db].result
-    DATABASE_URL      = "postgresql://${each.value.db}:${random_password.postgres_db[each.value.db].result}@${var.host}:5432/${each.value.db}?sslmode=disable"
+    DATABASE_URL      = "postgresql://${each.value.db}:${random_password.postgres_db[each.value.db].result}@${local.shared.postgres_fqdn}:5432/${each.value.db}?sslmode=disable"
   }
 
   type = "Opaque"

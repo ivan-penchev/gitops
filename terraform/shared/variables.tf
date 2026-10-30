@@ -64,9 +64,18 @@ variable "fileserver" {
     hostname = string
     ip       = string
     dns_name = string
-    # ZFS child datasets under the media dataset that need their own bind
-    # mount and NFS export. See child_datasets in modules/fileserver.
-    child_datasets = list(string)
+    # ZFS child datasets under host_media_path (e.g. /tank/media/movies) that
+    # are separate filesystems. The bind mount of the parent doesn't include
+    # them, so each gets its own mpN and export line. Order sets the mp index.
+    # A plain folder like audiobooks needs nothing here.
+    child_datasets       = list(string)
+    host_media_path      = optional(string, "/tank/media")
+    container_media_path = optional(string, "/srv/media")
+    cores                = optional(number, 2)
+    memory               = optional(number, 2048)
+    swap                 = optional(number, 512)
+    disk_size            = optional(number, 8)
+    template             = optional(string, "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst")
   })
 }
 
@@ -77,5 +86,34 @@ variable "postgres" {
     hostname = string
     ip       = string
     dns_name = string
+    # Mount at /mnt/pgdata, not /var/lib/postgresql, which would hide the
+    # apt-created cluster.
+    pg_version          = optional(string, "17")
+    host_data_path      = optional(string, "/tank/postgres")
+    container_data_path = optional(string, "/mnt/pgdata")
+    cores               = optional(number, 2)
+    memory              = optional(number, 2048)
+    swap                = optional(number, 512)
+    disk_size           = optional(number, 8)
+    template            = optional(string, "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst")
   })
+}
+
+variable "lxc_root_password" {
+  description = "Root password for the LXCs. Empty means SSH key only."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ssh_public_key_path" {
+  description = "Public key installed in the LXCs."
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "ssh_private_key_path" {
+  description = "Private key the provisioners use to reach the LXCs."
+  type        = string
+  default     = "~/.ssh/id_rsa"
 }

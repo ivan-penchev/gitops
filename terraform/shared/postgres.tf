@@ -7,9 +7,9 @@
 # Some apps (Immich, Paperless, Authentik, …) need a real PostgreSQL, not the
 # SQLite the *arr stack uses. Running ONE Postgres as an LXC (not in-cluster)
 # means the databases survive Talos cluster rebuilds — same reasoning as the
-# fileserver. This module owns the LXC, the PostgreSQL install and the superuser
+# fileserver. This file owns the LXC, the PostgreSQL install and the superuser
 # password. terraform/shared calls it. Each cluster root creates its own
-# databases, roles and k8s Secrets with modules/postgres-databases.
+# databases, roles and k8s Secrets in terraform/cluster/postgres.tf.
 #
 # ---------------------------------------------------------------------------
 # ⚠️  ONE REQUIRED MANUAL HOST STEP  (same root@pam limitation as fileserver)
@@ -42,17 +42,17 @@
 locals {
   # Cluster roots create databases only once PostgreSQL runs on the mounted
   # dataset (output.ready).
-  ready = var.data_mounted
+  postgres_ready = var.postgres_data_mounted
 
   # The single root@pam host command: create the dataset + bind-mount it, reboot.
-  mount_command = join(" ", [
-    "zfs create ${trimprefix(var.host_data_path, "/")}",
-    "&& pct set ${var.vm_id} -mp0 ${var.host_data_path},mp=${var.container_data_path}",
-    "&& pct reboot ${var.vm_id}",
+  postgres_mount_command = join(" ", [
+    "zfs create ${trimprefix(var.postgres.host_data_path, "/")}",
+    "&& pct set ${var.postgres.vm_id} -mp0 ${var.postgres.host_data_path},mp=${var.postgres.container_data_path}",
+    "&& pct reboot ${var.postgres.vm_id}",
   ])
 
   # PGDATA on the dataset (avoids shadowing /var/lib/postgresql).
-  data_dir = "${var.container_data_path}/${var.pg_version}/main"
+  postgres_data_dir = "${var.postgres.container_data_path}/${var.postgres.pg_version}/main"
 }
 
 # Generated superuser password. Cluster roots' postgresql providers log
@@ -70,7 +70,7 @@ resource "random_password" "postgres_superuser" {
 # ---------------------------------------------------------------------------
 resource "proxmox_virtual_environment_container" "postgres" {
   node_name = var.proxmox_node
-  vm_id     = var.vm_id
+  vm_id     = var.postgres.vm_id
   tags      = ["terraform", "postgres", "database"]
 
   # Privileged: keeps host UID/GID semantics on the bind-mounted dataset simple
@@ -81,18 +81,18 @@ resource "proxmox_virtual_environment_container" "postgres" {
   started       = true
 
   cpu {
-    cores = var.cores
+    cores = var.postgres.cores
   }
 
   memory {
-    dedicated = var.memory
-    swap      = var.swap
+    dedicated = var.postgres.memory
+    swap      = var.postgres.swap
   }
 
   # Small rootfs — PGDATA lives on the host bind mount you add manually.
   disk {
     datastore_id = var.vm_datastore
-    size         = var.disk_size
+    size         = var.postgres.disk_size
   }
 
   # NOTE: intentionally NO `mount_point` block. /tank/postgres is bind-mounted at
@@ -100,27 +100,27 @@ resource "proxmox_virtual_environment_container" "postgres" {
   # `ignore_changes` below stops Terraform stripping it on later applies.
 
   operating_system {
-    template_file_id = var.template
+    template_file_id = var.postgres.template
     type             = "debian"
   }
 
   initialization {
-    hostname = var.hostname
+    hostname = var.postgres.hostname
 
     dns {
-      servers = [var.nameserver]
+      servers = [var.network.nameserver]
     }
 
     ip_config {
       ipv4 {
-        address = "${var.ip}/${var.cidr_bits}"
-        gateway = var.gateway
+        address = "${var.postgres.ip}/${var.network.cidr_bits}"
+        gateway = var.network.gateway
       }
     }
 
     user_account {
       keys     = [trimspace(file(pathexpand(var.ssh_public_key_path)))]
-      password = var.root_password != "" ? var.root_password : null
+      password = var.lxc_root_password != "" ? var.lxc_root_password : null
     }
   }
 
@@ -144,20 +144,20 @@ resource "proxmox_virtual_environment_container" "postgres" {
 # ephemeral rootfs. Idempotent: safe to re-run.
 # ---------------------------------------------------------------------------
 resource "null_resource" "postgres_setup" {
-  count = local.ready ? 1 : 0
+  count = local.postgres_ready ? 1 : 0
 
   triggers = {
     container_id = proxmox_virtual_environment_container.postgres.id
-    version      = var.pg_version
-    data_dir     = local.data_dir
-    client_cidr  = var.client_cidr
+    version      = var.postgres.pg_version
+    data_dir     = local.postgres_data_dir
+    client_cidr  = var.network.cidr
     # Re-run if the superuser password changes so the role stays in sync.
     superuser = random_password.postgres_superuser.result
   }
 
   connection {
     type        = "ssh"
-    host        = var.ip
+    host        = var.postgres.ip
     user        = "root"
     private_key = file(pathexpand(var.ssh_private_key_path))
     timeout     = "5m"
@@ -170,7 +170,7 @@ resource "null_resource" "postgres_setup" {
       # Wait for network/DNS before hitting apt.
       "for i in $(seq 1 30); do getent hosts deb.debian.org >/dev/null 2>&1 && break; sleep 2; done",
       # Refuse to initialise on the rootfs: /mnt/pgdata MUST be the bind mount.
-      "if ! mountpoint -q ${var.container_data_path}; then echo 'FATAL: ${var.container_data_path} is not a mountpoint — run the host zfs/pct step first (see output.postgres_host_mount_command), then re-apply.'; exit 1; fi",
+      "if ! mountpoint -q ${var.postgres.container_data_path}; then echo 'FATAL: ${var.postgres.container_data_path} is not a mountpoint — run the host zfs/pct step first (see output.postgres_host_mount_command), then re-apply.'; exit 1; fi",
       "apt-get update -qq",
       "apt-get install -y -qq curl ca-certificates gnupg lsb-release",
       # PGDG apt repo (official PostgreSQL packages).
@@ -178,21 +178,21 @@ resource "null_resource" "postgres_setup" {
       "curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc",
       "echo \"deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main\" > /etc/apt/sources.list.d/pgdg.list",
       "apt-get update -qq",
-      "apt-get install -y -qq postgresql-${var.pg_version}",
+      "apt-get install -y -qq postgresql-${var.postgres.pg_version}",
       # Move the auto-created cluster onto the dataset the first time only.
-      "if [ ! -f ${local.data_dir}/PG_VERSION ]; then pg_dropcluster --stop ${var.pg_version} main || true; install -d -o postgres -g postgres -m 700 ${var.container_data_path}; pg_createcluster -d ${local.data_dir} ${var.pg_version} main; fi",
+      "if [ ! -f ${local.postgres_data_dir}/PG_VERSION ]; then pg_dropcluster --stop ${var.postgres.pg_version} main || true; install -d -o postgres -g postgres -m 700 ${var.postgres.container_data_path}; pg_createcluster -d ${local.postgres_data_dir} ${var.postgres.pg_version} main; fi",
       # Listen on the LAN, scram password auth.
-      "conf=/etc/postgresql/${var.pg_version}/main/postgresql.conf",
-      "hba=/etc/postgresql/${var.pg_version}/main/pg_hba.conf",
+      "conf=/etc/postgresql/${var.postgres.pg_version}/main/postgresql.conf",
+      "hba=/etc/postgresql/${var.postgres.pg_version}/main/pg_hba.conf",
       "sed -i \"s/^#\\?listen_addresses.*/listen_addresses = '*'/\" $conf",
       "sed -i \"s/^#\\?password_encryption.*/password_encryption = scram-sha-256/\" $conf",
-      "grep -q '${var.client_cidr}' $hba || echo 'host all all ${var.client_cidr} scram-sha-256' >> $hba",
-      "pg_ctlcluster ${var.pg_version} main start || systemctl restart postgresql@${var.pg_version}-main || true",
+      "grep -q '${var.network.cidr}' $hba || echo 'host all all ${var.network.cidr} scram-sha-256' >> $hba",
+      "pg_ctlcluster ${var.postgres.pg_version} main start || systemctl restart postgresql@${var.postgres.pg_version}-main || true",
       "systemctl enable postgresql >/dev/null 2>&1 || true",
       # Set the superuser password TF's provider will authenticate with.
       "runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c \"ALTER USER postgres WITH PASSWORD '${random_password.postgres_superuser.result}'\"",
-      "systemctl restart postgresql@${var.pg_version}-main || pg_ctlcluster ${var.pg_version} main restart || true",
-      "echo 'PostgreSQL ${var.pg_version} ready on ${var.ip}:5432 (data: ${local.data_dir})'",
+      "systemctl restart postgresql@${var.postgres.pg_version}-main || pg_ctlcluster ${var.postgres.pg_version} main restart || true",
+      "echo 'PostgreSQL ${var.postgres.pg_version} ready on ${var.postgres.ip}:5432 (data: ${local.postgres_data_dir})'",
     ]
   }
 }

@@ -134,7 +134,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
    Expect an in-place update to the control-plane
    `talos_machine_configuration_apply` and nothing else. If the plan shows
    unrelated changes, apply with
-   `-target='module.talos_cluster.talos_machine_configuration_apply.this["cp-1"]'`. Changing
+   `-target='talos_machine_configuration_apply.this["cp-1"]'`. Changing
    `inlineManifests` doesn't reboot the node or touch live objects.
 
    ```bash

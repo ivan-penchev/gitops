@@ -17,7 +17,7 @@ provider "cloudflare" {}
 # Wired to the Talos cluster's own kubeconfig, never ~/.kube/config, so these
 # can't reach any other cluster.
 locals {
-  kube = module.talos_cluster.kubernetes_client_configuration
+  kube = talos_cluster_kubeconfig.this.kubernetes_client_configuration
 }
 
 provider "kubernetes" {
@@ -38,7 +38,7 @@ provider "helm" {
 
 # Logs in to pg-01 as `postgres` over the LAN (sslmode=disable). It only
 # connects when a postgresql_* resource is read or created, so phase 1 of a
-# fresh build works before PostgreSQL exists (see modules/postgres/main.tf). pg-01 itself is in terraform/shared.
+# fresh build works before PostgreSQL exists (see terraform/shared/postgres.tf), where pg-01 lives.
 provider "postgresql" {
   host            = local.shared.postgres_ip
   port            = 5432

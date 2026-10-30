@@ -131,8 +131,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for root in shared clusters/*/; do
-            root="${root%/}"
+          for root in shared cluster; do
             echo "::group::$root"
             terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly
             terraform -chdir="$root" validate -no-color

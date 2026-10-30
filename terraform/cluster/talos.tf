@@ -1,3 +1,20 @@
+locals {
+  # All nodes merged for uniform VM creation, tagged with their Talos role.
+  nodes = merge(
+    { for k, v in var.control_planes : k => merge(v, { role = "controlplane" }) },
+    { for k, v in var.workers : k => merge(v, { role = "worker" }) },
+  )
+
+  # Talos control-plane endpoint = the VIP (HA API).
+  cluster_endpoint = "https://${var.cluster_vip}:6443"
+
+  # First control plane — the single node we run `talos bootstrap` against.
+  first_control_plane = "cp-1"
+
+  # Talos Image Factory metal ISO URL for the pinned schematic + version.
+  talos_iso_url = "https://factory.talos.dev/image/${var.talos_schematic_id}/${var.talos_version}/metal-amd64.iso"
+}
+
 # ---------------------------------------------------------------------------
 # Talos: secrets, machine configuration, per-node apply, bootstrap, kubeconfig.
 # The whole cluster identity (secrets.yaml) lives in Terraform state — back it up.
@@ -5,9 +22,9 @@
 
 locals {
   # Cluster-wide patch shared by control-plane and worker configs.
-  cluster_patch = templatefile("${var.talos_patches_dir}/cluster.yaml.tmpl", {
+  cluster_patch = templatefile("${local.talos_patches_dir}/cluster.yaml.tmpl", {
     install_disk = "/dev/sda" # virtio-scsi boot disk (scsi0)
-    nameserver   = var.nameserver
+    nameserver   = local.shared.network.nameserver
     # Install the Image Factory schematic installer (NOT the provider's bundled
     # ghcr.io/siderolabs/installer:<machinery-version>). This pins the on-disk
     # system to our exact Talos version AND bakes in the qemu-guest-agent (and
@@ -27,7 +44,7 @@ locals {
       inlineManifests = [
         {
           name     = "cilium"
-          contents = file(var.cilium_manifest_path)
+          contents = file(local.cilium_manifest_path)
         },
       ]
     }
@@ -89,11 +106,11 @@ resource "talos_machine_configuration_apply" "this" {
   endpoint = local.node_maintenance_ip[each.key]
 
   config_patches = [
-    templatefile("${var.talos_patches_dir}/node.yaml.tmpl", {
+    templatefile("${local.talos_patches_dir}/node.yaml.tmpl", {
       hostname = "${var.cluster_name}-${each.key}"
       ip       = each.value.ip
-      cidr     = var.cidr_bits
-      gateway  = var.gateway
+      cidr     = local.shared.network.cidr_bits
+      gateway  = local.shared.network.gateway
       vip      = each.value.role == "controlplane" ? var.cluster_vip : ""
       region   = var.proxmox_region
       zone     = var.proxmox_node
@@ -128,3 +145,7 @@ data "talos_client_configuration" "this" {
   endpoints            = [for k, v in var.control_planes : v.ip]
   nodes                = [for k, v in local.nodes : v.ip]
 }
+
+# One VM per Talos node (control-plane + workers) via the accepted tuning profile:
+# CPU type=host, no ballooning (floating=0), q35+SeaBIOS, virtio-scsi + iothread +
+# discard + ssd, guest agent on, boot disk on ZFS `tank`, Talos ISO as CD-ROM.

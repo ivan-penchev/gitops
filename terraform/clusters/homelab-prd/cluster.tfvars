@@ -1,4 +1,5 @@
-# Settings for the homelab-prd cluster. Copy this directory to add a cluster.
+# Settings for the homelab-prd cluster, used with the root in terraform/cluster.
+# Copy this directory to add a cluster.
 
 # Talos cluster name. It also prefixes node hostnames and VM names, so
 # changing it re-registers every node. Kept from before the homelab-prd rename.

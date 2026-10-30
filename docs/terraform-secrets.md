@@ -19,11 +19,13 @@ encrypted with the same age key as the Kubernetes SOPS secrets
 
 ## Terraform state
 
-Each root has its own state in R2, set in its `backend.tf`:
-`homelab-tfstate/homelab/shared.tfstate` for `terraform/shared`, and
-`homelab-tfstate/homelab/clusters/<name>.tfstate` for each cluster. Terraform
+`terraform/shared` keeps its state at
+`homelab-tfstate/homelab/shared.tfstate`, set in its `backend.tf`. Each
+cluster gets `homelab-tfstate/homelab/clusters/<name>.tfstate`. The
+`backend.tf` in `terraform/cluster` has no key, and `terraform/tf.sh` passes
+it at init. Terraform
 takes a lock by writing a `.tflock` object next to the state, so two runs
-can't apply the same root at once. A cluster reads the shared state through
+can't apply the same state at once. A cluster reads the shared state through
 `terraform_remote_state`. It needs Terraform 1.10 or newer;
 Homebrew's `terraform` is stuck at 1.5.7, so install it from
 `hashicorp/tap/terraform` or the release zip.
@@ -77,7 +79,8 @@ To export them into your shell instead (they stay until you close it):
 
 ```bash
 set -a; eval "$(sops -d secrets.sops.env)"; set +a
-terraform -chdir=terraform/clusters/homelab-prd plan
+terraform -chdir=terraform/cluster init -reconfigure -backend-config=key=homelab/clusters/homelab-prd.tfstate
+terraform -chdir=terraform/cluster plan -var-file=../clusters/homelab-prd/cluster.tfvars -var-file=../clusters/homelab-prd/talos-versions.tfvars
 ```
 
 ## Edit the secrets

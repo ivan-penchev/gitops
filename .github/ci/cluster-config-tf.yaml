@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: cluster-config-tf
   namespace: flux-system
-# CI stand-in for the ConfigMap Terraform writes (terraform/modules/flux).
+# CI stand-in for the ConfigMap Terraform writes (terraform/cluster/flux.tf).
 # validate.yml copies it into kubernetes/clusters/homelab so offline renders can
 # resolve postBuild substitutions. Keep the keys in sync with the Terraform one.
 data:

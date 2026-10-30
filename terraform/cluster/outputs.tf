@@ -3,20 +3,20 @@
 #   KUBECONFIG=./<kubeconfig_file> kubectl ...
 #   talosctl --talosconfig ./<talosconfig_file> ...
 resource "local_sensitive_file" "kubeconfig" {
-  content         = module.talos_cluster.kubeconfig_raw
+  content         = talos_cluster_kubeconfig.this.kubeconfig_raw
   filename        = "${local.repo_root}/${var.kubeconfig_file}"
   file_permission = "0600"
 }
 
 resource "local_sensitive_file" "talosconfig" {
-  content         = module.talos_cluster.talosconfig
+  content         = data.talos_client_configuration.this.talos_config
   filename        = "${local.repo_root}/${var.talosconfig_file}"
   file_permission = "0600"
 }
 
 output "cluster_endpoint" {
   description = "Kubernetes API endpoint (control-plane VIP)."
-  value       = module.talos_cluster.cluster_endpoint
+  value       = local.cluster_endpoint
 }
 
 output "kubeconfig_path" {
@@ -31,10 +31,15 @@ output "talosconfig_path" {
 
 output "node_ips" {
   description = "Static IPs assigned to each Talos node."
-  value       = module.talos_cluster.node_ips
+  value       = { for k, v in local.nodes : k => v.ip }
 }
 
 output "postgres_databases_provisioned" {
   description = "Databases created and the namespaces each credential Secret was injected into."
-  value       = module.postgres_databases.provisioned
+  value = local.shared.postgres_ready ? {
+    for db in var.postgres_databases : db.name => {
+      secret_name = "postgres-${db.name}"
+      namespaces  = db.namespaces
+    }
+  } : null
 }

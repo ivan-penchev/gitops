@@ -15,7 +15,7 @@ Everything else is Git-driven.
 | Topology | **1 control-plane + 2 workers** (was 3 CP; collapsed 2026-07-31) | Single Proxmox host → multi-CP adds no hardware HA, only cost; see "Single control-plane collapse" below |
 | API endpoint (VIP) | Talos built-in L2 VIP in machineconfig | Kept after CP collapse: stable endpoint even if cp-1 is rebuilt / CPs re-added |
 | Terraform state | Private Cloudflare R2 bucket via the S3 backend, lockfile locking | Off the laptop, needed for CI plans (docs/testability-plan.md B1) |
-| Terraform layout | Modules in `terraform/modules`. `terraform/shared` wires the LXCs and LAN DNS, and each `terraform/clusters/<name>` wires one cluster. Each root has its own state, and clusters read shared through `terraform_remote_state` | A new service is one edit in one root, and a second cluster reuses the modules (docs/testability-plan.md B2) |
+| Terraform layout | `terraform/shared` holds the LXCs and LAN DNS. `terraform/cluster` holds one cluster and runs once per `terraform/clusters/<name>/` tfvars set, each with its own state. No local modules | A new cluster is a tfvars file, and a new resource is one plain file (docs/testability-plan.md B2) |
 | GitOps engine | Flux CD | Lightweight, Talos community favorite |
 | CNI | Cilium (eBPF, kube-proxy replacement, L2 LB) | Talos favorite; disable kube-proxy + default CNI |
 | Cilium+Flux bootstrap | Cilium via Talos `inlineManifests` (helm-templated); Flux via TF `flux` provider same apply; Flux adopts Cilium HelmRelease | Hands-off, single source of truth |
@@ -359,7 +359,7 @@ non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
   0 restarts. Both in `deployment.yaml`.
 - **Fileserver child datasets in IaC (done 2026-08-01).** Folded the LXC 110
   `movies` + `torrent-download` bind mounts and NFS exports into
-  `terraform/modules/fileserver`, driven by `child_datasets`. The
+  `terraform/shared/fileserver.tf`, driven by `child_datasets`. The
   provisioner now writes all export lines and `output.fileserver_host_mount_command`
   emits the full `pct set -mp0/-mp1/-mp2 … && pct reboot`. Verified byte-identical
   to the live hand-applied state.
@@ -373,7 +373,7 @@ Deployed & verified 2026-08-19: PostgreSQL 17.11 online, PGDATA on `/mnt/pgdata/
 Secret injected into `db-landing-zone`, and an in-cluster pod connected end-to-end.
 
 Shared homelab Postgres as a privileged Debian LXC (CT **111**, `.12`,
-`pg-01.int.home.17072021.xyz`), provisioned in `terraform/modules/postgres`, with databases in `terraform/modules/postgres-databases`. Runs
+`pg-01.int.home.17072021.xyz`), provisioned in `terraform/shared/postgres.tf`, with databases in `terraform/cluster/postgres.tf`. Runs
 outside the cluster so databases survive Talos rebuilds (same rationale as the
 fileserver).
 
@@ -409,10 +409,10 @@ fileserver).
 ```
 /
 ├── terraform/
-│   ├── modules/        # one module per thing: talos-cluster, postgres, flux, ...
 │   ├── shared/         # fileserver and pg-01 LXCs, LAN DNS
+│   ├── cluster/        # VMs, Talos, tunnel, Flux bootstrap, k8s Secrets, pg DBs
 │   ├── clusters/
-│   │   └── homelab-prd/  # VMs, Talos, tunnel, Flux bootstrap, k8s Secrets, pg DBs
+│   │   └── homelab-prd/  # cluster.tfvars, talos-versions.tfvars
 │   └── tf.sh           # runs one root, or all of them, with secrets.sops.env
 ├── kubernetes/
 │   ├── flux-system/    # Flux sync + Kustomizations

@@ -3,6 +3,18 @@
 # terraform_remote_state.
 
 locals {
+  lan_records = {
+    fileserver = {
+      name    = var.fileserver.dns_name
+      ip      = var.fileserver.ip
+      comment = "Terraform: fileserver LXC NFS (DNS-only, LAN)"
+    }
+    postgres = {
+      name    = var.postgres.dns_name
+      ip      = var.postgres.ip
+      comment = "Terraform: PostgreSQL LXC (DNS-only, LAN)"
+    }
+  }
   lxc_common = {
     proxmox_node   = var.proxmox_node
     vm_datastore   = var.vm_datastore
@@ -13,52 +25,3 @@ locals {
   }
 }
 
-module "fileserver" {
-  source = "../modules/fileserver"
-
-  vm_id          = var.fileserver.vm_id
-  hostname       = var.fileserver.hostname
-  ip             = var.fileserver.ip
-  export_cidr    = var.network.cidr
-  child_datasets = var.fileserver.child_datasets
-  proxmox_node   = local.lxc_common.proxmox_node
-  vm_datastore   = local.lxc_common.vm_datastore
-  network_bridge = local.lxc_common.network_bridge
-  gateway        = local.lxc_common.gateway
-  cidr_bits      = local.lxc_common.cidr_bits
-  nameserver     = local.lxc_common.nameserver
-}
-
-module "postgres" {
-  source = "../modules/postgres"
-
-  vm_id          = var.postgres.vm_id
-  hostname       = var.postgres.hostname
-  ip             = var.postgres.ip
-  data_mounted   = var.postgres_data_mounted
-  client_cidr    = var.network.cidr
-  proxmox_node   = local.lxc_common.proxmox_node
-  vm_datastore   = local.lxc_common.vm_datastore
-  network_bridge = local.lxc_common.network_bridge
-  gateway        = local.lxc_common.gateway
-  cidr_bits      = local.lxc_common.cidr_bits
-  nameserver     = local.lxc_common.nameserver
-}
-
-module "lan_dns" {
-  source = "../modules/lan-dns"
-
-  domain = var.cloudflare_domain
-  records = {
-    fileserver = {
-      name    = var.fileserver.dns_name
-      ip      = module.fileserver.ip
-      comment = "Terraform: fileserver LXC NFS (DNS-only, LAN)"
-    }
-    postgres = {
-      name    = var.postgres.dns_name
-      ip      = module.postgres.ip
-      comment = "Terraform: PostgreSQL LXC (DNS-only, LAN)"
-    }
-  }
-}

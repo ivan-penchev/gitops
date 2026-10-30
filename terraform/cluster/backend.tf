@@ -7,7 +7,9 @@
 terraform {
   backend "s3" {
     bucket = "homelab-tfstate"
-    key    = "homelab/clusters/homelab-prd.tfstate"
+    # No key here. terraform/tf.sh passes
+    # -backend-config=key=homelab/clusters/<name>.tfstate, so every cluster
+    # gets its own state.
     region = "auto"
 
     # R2 is not AWS. Skip the AWS-only lookups and checksums.

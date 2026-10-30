@@ -1,6 +1,3 @@
-# One VM per Talos node (control-plane + workers) via the accepted tuning profile:
-# CPU type=host, no ballooning (floating=0), q35+SeaBIOS, virtio-scsi + iothread +
-# discard + ssd, guest agent on, boot disk on ZFS `tank`, Talos ISO as CD-ROM.
 resource "proxmox_virtual_environment_vm" "this" {
   for_each = local.nodes
 

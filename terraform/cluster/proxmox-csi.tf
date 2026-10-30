@@ -14,7 +14,7 @@
 
 # Least-privilege role: disk lifecycle + audit only.
 resource "proxmox_virtual_environment_role" "csi" {
-  role_id = var.role_id
+  role_id = var.csi_proxmox_role
   privileges = [
     "VM.Audit",
     "VM.Config.Disk",
@@ -25,7 +25,7 @@ resource "proxmox_virtual_environment_role" "csi" {
 }
 
 resource "proxmox_virtual_environment_user" "csi" {
-  user_id = var.user_id
+  user_id = var.csi_proxmox_user
   comment = "proxmox-csi-plugin (managed by Terraform)"
   enabled = true
 }
@@ -41,7 +41,7 @@ resource "proxmox_virtual_environment_acl" "csi" {
 # API token that inherits the user's privileges (privileges_separation = false).
 resource "proxmox_virtual_environment_user_token" "csi" {
   user_id               = proxmox_virtual_environment_user.csi.user_id
-  token_name            = var.token_name
+  token_name            = var.csi_token_name
   comment               = "proxmox-csi-plugin (managed by Terraform)"
   privileges_separation = false
 

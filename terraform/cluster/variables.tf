@@ -24,19 +24,19 @@ variable "postgres_create_namespaces" {
 }
 
 variable "talos_version" {
-  description = "Talos version tag, e.g. 'v1.13.7'. Set in talos-versions.auto.tfvars."
+  description = "Talos version tag, e.g. 'v1.13.7'. Set in terraform/clusters/<name>/talos-versions.tfvars."
   type        = string
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes version for Talos to install, e.g. '1.36.2'. Set in talos-versions.auto.tfvars."
+  description = "Kubernetes version for Talos to install, e.g. '1.36.2'. Set in terraform/clusters/<name>/talos-versions.tfvars."
   type        = string
 }
 
 variable "sops_age_key_file" {
   description = "Path to the age PRIVATE key file used to create the in-cluster sops-age secret for Flux decryption. Relative to this directory. Empty skips the secret (and deletes it if it exists)."
   type        = string
-  default     = "../../../age.key"
+  default     = "../../age.key"
 }
 
 variable "cluster_name" {
@@ -173,4 +173,10 @@ variable "kubeconfig_file" {
 variable "talosconfig_file" {
   description = "File name in the repo root for the generated talosconfig."
   type        = string
+}
+
+variable "csi_token_name" {
+  description = "Name of the Proxmox API token for proxmox-csi."
+  type        = string
+  default     = "csi"
 }

@@ -8,7 +8,7 @@
 #
 # DERIVED / TERRAFORM-OWNED values (cf_zone_id, cf_account_id, tunnel_id) do NOT
 # live here — Terraform writes them to the `cluster-config-tf` ConfigMap
-# (see terraform/modules/flux), which is listed second in every substituteFrom.
+# (see terraform/cluster/flux.tf), which is listed second in every substituteFrom.
 #
 # SECRETS DO NOT BELONG HERE — this ConfigMap is plaintext in Git. Secrets stay
 # SOPS-encrypted and are consumed via secretKeyRef, never substitution.

@@ -9,8 +9,8 @@ copy-paste, never guess.
 All Terraform runs go through `terraform/tf.sh <shared|all|CLUSTER> <args>`.
 It decrypts `secrets.sops.env` with `age.key` and passes the credentials only
 to that command. `shared` owns the LXCs and their DNS records. Each directory
-under `terraform/clusters/` is one cluster, and this runbook uses
-`homelab-prd`. A cluster reads the shared outputs, so `all` applies shared
+under `terraform/clusters/` is one cluster's settings for the root in
+`terraform/cluster`, and this runbook uses `homelab-prd`. A cluster reads the shared outputs, so `all` applies shared
 first.
 
 | # | Phase | Command | Manual host step |
@@ -29,7 +29,7 @@ first.
   `secrets.sops.env`. State lives there, so `terraform init` fails without it.
 - `~/.ssh/id_rsa[.pub]` for LXC provisioning. Flux does not use an SSH key.
 - Git tracks the settings in `terraform/shared/shared.auto.tfvars` and in
-  each cluster's `cluster.auto.tfvars` and `talos-versions.auto.tfvars`. On a fresh
+  each cluster's `cluster.tfvars` and `talos-versions.tfvars`. On a fresh
   host set `postgres_data_mounted = false` in `shared.auto.tfvars` until
   Phase 3.
 
@@ -82,7 +82,7 @@ Mount is `/mnt/pgdata` (not `/var/lib/postgresql`, which would shadow the apt cl
 Verify: a pod in `db-landing-zone` connects via the injected `postgres-landingzone` secret.
 
 ## Phase 4 — More databases *(no host step)*
-Add to `postgres_databases` in `terraform/clusters/homelab-prd/cluster.auto.tfvars`
+Add to `postgres_databases` in `terraform/clusters/homelab-prd/cluster.tfvars`
 and run `terraform/tf.sh homelab-prd apply`:
 ```hcl
 postgres_databases = [
