@@ -42,6 +42,7 @@ jobs:
             echo "SOPS_AGE_KEY_FILE=$RUNNER_TEMP/age.key"
             echo "TF_VAR_sops_age_key_file=$RUNNER_TEMP/age.key"
             echo "PLANS=$RUNNER_TEMP/plans"
+            echo "TF_VAR_ssh_public_key_path=$RUNNER_TEMP/placeholder.pub"
           } >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
@@ -77,6 +78,8 @@ jobs:
           test -n "$SOPS_AGE_KEY" || { echo "SOPS_AGE_KEY is not set in the terraform-plan environment" >&2; exit 1; }
           umask 077
           printf '%s\n' "$SOPS_AGE_KEY" > "$SOPS_AGE_KEY_FILE"
+          # The LXCs ignore changes to user_account, so any key plans the same.
+          echo "ssh-ed25519 AAAAplaceholder ci" > "$TF_VAR_ssh_public_key_path"
 
       - name: Plan every root
         id: plan
