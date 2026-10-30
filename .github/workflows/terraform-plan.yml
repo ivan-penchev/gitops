@@ -131,13 +131,20 @@ jobs:
                 body = read(path.join(dir, `${root}.log`)).split('\n').slice(-60).join('\n');
               } else {
                 const plan = JSON.parse(read(path.join(dir, `${root}.json`)));
-                const changes = (plan.resource_changes || []).filter(rc =>
+                const all = plan.resource_changes || [];
+                const skipped = all.filter(ignored);
+                const changes = all.filter(rc =>
                   !['no-op', 'read'].includes(rc.change.actions.join()) && !ignored(rc));
                 const count = a => changes.filter(rc => rc.change.actions.includes(a)).length;
+                const checked = `${all.length} resources checked`;
                 headline = changes.length === 0
-                  ? `:white_check_mark: **${root}**: no changes`
-                  : `:warning: **${root}**: ${count('create')} to add, ${count('update')} to change, ${count('delete')} to destroy`;
+                  ? `:white_check_mark: **${root}**: no changes, ${checked}`
+                  : `:warning: **${root}**: ${count('create')} to add, ${count('update')} to change, ${count('delete')} to destroy, ${checked}`;
                 body = changes.map(rc => `${rc.change.actions.join('/')} ${rc.address}`).join('\n');
+                if (skipped.length) {
+                  body += `${body ? '\n\n' : ''}Skipped, local files the runner lacks:\n` +
+                    skipped.map(rc => `create ${rc.address}`).join('\n');
+                }
                 if (changes.length) body += '\n\n' + read(path.join(dir, `${root}.txt`));
               }
               if (body.length > limit) body = body.slice(0, limit) + '\n... truncated, see the job log';
