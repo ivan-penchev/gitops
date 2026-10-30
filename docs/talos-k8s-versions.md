@@ -8,7 +8,7 @@ Renovate watches the `siderolabs/talos` and `kubernetes/kubernetes` GitHub relea
 
 Nothing on the running nodes changes. The next `terraform/tf.sh homelab-prd apply` will:
 
-- download the new Talos ISO (VMs ignore cdrom changes, so they keep the old one)
+- download the new Talos ISO and delete the old one. VMs ignore cdrom changes, so eject the ISO first, see step 6 below
 - change the installer image and Kubernetes version in the machine configs
 
 A running node only upgrades its OS when you run `talosctl upgrade`. Kubernetes only upgrades when you run `talosctl upgrade-k8s`. The live PR test doesn't cover either.
@@ -17,20 +17,45 @@ A running node only upgrades its OS when you run `talosctl upgrade`. Kubernetes 
 
 Upgrade with talosctl first, then merge the PR and apply. If you apply first, Terraform pushes the new Kubernetes version straight into the machine config, and that skips the checks `upgrade-k8s` runs.
 
-1. Read the release notes. For Kubernetes, check the [Talos support matrix](https://www.talos.dev/latest/introduction/support-matrix/) and the Cilium compatibility list in `docs/cilium-upgrade.md`.
-2. Talos, one node at a time. Wait for `talosctl health` to pass before you move to the next node:
+1. Check that `talosctl health` passes, then take an etcd snapshot:
+
+   ```sh
+   talosctl --talosconfig talosconfig -n <cp-ip> etcd snapshot ~/talos-backups/<cluster>-etcd-$(date +%Y%m%d-%H%M).db
+   ```
+
+2. Read the release notes. For Kubernetes, check the [Talos support matrix](https://www.talos.dev/latest/introduction/support-matrix/) and the Cilium compatibility list in `docs/cilium-upgrade.md`.
+3. Talos, workers first, then control planes, one node at a time. Wait for `talosctl health` to pass before you move to the next node. With a single control plane the Kubernetes API is down while that node reboots. On homelab-prd that took about two minutes:
 
    ```sh
    talosctl --talosconfig talosconfig -n <node-ip> upgrade \
-     --image factory.talos.dev/installer/<schematic-id>:<new-version>
+     --image factory.talos.dev/installer/<schematic-id>:<new-version> --wait --timeout 20m
    talosctl --talosconfig talosconfig -n <node-ip> health
    ```
 
-3. Kubernetes, run against one control-plane node. It rolls the whole cluster:
+4. Kubernetes, run against one control-plane node. It rolls the whole cluster:
 
    ```sh
    talosctl --talosconfig talosconfig -n <cp-ip> upgrade-k8s --to <new-version> --dry-run
    talosctl --talosconfig talosconfig -n <cp-ip> upgrade-k8s --to <new-version>
    ```
 
-4. Merge the Renovate PR, then run `terraform/tf.sh homelab-prd plan`. Expect in-place updates to `talos_machine_configuration_apply` and a replaced `proxmox_download_file.talos_iso`. No VM should be replaced. Apply.
+5. Check the cluster. Every node should report the new version, and Flux should be green:
+
+   ```sh
+   talosctl --talosconfig talosconfig -n <node-ips> version | grep Tag
+   kubectl get nodes
+   kubectl get pods -A | grep -vE 'Running|Completed'
+   flux get ks -A; flux get hr -A
+   ```
+
+   Pods that talk to the API can crash while the control plane reboots and then sit in back-off. After the 1.13.12 upgrade the proxmox-csi controller logged `dial tcp 10.96.0.1:443: connect: no route to host` and blocked `infrastructure-controllers` and everything after it. Deleting the pod fixed it.
+
+6. Eject the ISO from every VM of the cluster. The ISO file name carries the Talos version, so the apply deletes the old file, and Proxmox can refuse to start a VM whose cdrom points at a missing file. Terraform ignores cdrom changes, so this does not show up in the plan:
+
+   ```sh
+   curl -sk -X PUT -H "Authorization: PVEAPIToken=$PROXMOX_VE_API_TOKEN" \
+     --data-urlencode "ide2=none,media=cdrom" \
+     "$PROXMOX_VE_ENDPOINT/api2/json/nodes/<node>/qemu/<vmid>/config"
+   ```
+
+7. Merge the Renovate PR, then run `terraform/tf.sh homelab-prd plan`. Expect in-place updates to `talos_machine_configuration_apply` and a replaced `proxmox_download_file.talos_iso`. No VM should be replaced, and `talos_machine_secrets` must not change. Stop if it does. Apply.
