@@ -108,6 +108,9 @@ the cluster that stack can reboot.
   schematic ID to a committed `terraform/talos/versions.auto.tfvars`. Add a
   Renovate regex manager (`github-releases` for `siderolabs/talos` and
   `kubernetes/kubernetes`).
+  Status: PR open. The file is `terraform/talos-versions.auto.tfvars` because
+  the stacks don't exist yet. The schematic ID stays as the variable default.
+  The upgrade steps are in `docs/talos-k8s-versions.md`.
 - **C2 Cilium on KubePrism** (`k8sServiceHost: localhost`,
   `k8sServicePort: 7445`), shipped with Cilium 1.20.4 through the upgrade guide.
 - **C3 Talos-in-Docker job.** `talosctl cluster create` (docker provisioner)
