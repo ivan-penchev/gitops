@@ -149,6 +149,9 @@ trim it (e.g. cap at 8–16 GB) before pushing VM RAM higher.
 5. Terraform `flux` provider installs Flux, seeds `sops-age` secret, points at repo.
 6. Flux syncs `/kubernetes`, adopts Cilium HelmRelease, manages all apps.
 
+## Testability
+CI coverage gaps and the prioritized plan to close them: [`docs/testability-plan.md`](docs/testability-plan.md).
+
 ## Risks / follow-ups
 - **State loss = identity loss.** Talos `secrets.yaml` is irreplaceable. Generate it
   as a separate SOPS/age-encrypted input committed to Git so the crown jewels are
