@@ -13,13 +13,6 @@ on:
       - talos/**
       - .github/scripts/talos-docker-test.sh
       - .github/workflows/talos-docker-test.yml
-  push:
-    branches: [main]
-    paths:
-      - terraform/clusters/*/talos-versions.tfvars
-      - talos/**
-      - .github/scripts/talos-docker-test.sh
-      - .github/workflows/talos-docker-test.yml
   workflow_dispatch:
 
 permissions:
