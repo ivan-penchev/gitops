@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-config-tf
+  namespace: flux-system
+# CI stand-in for the ConfigMap Terraform writes (terraform/cloudflare.tf).
+# validate.yml copies it into kubernetes/clusters/homelab so offline renders can
+# resolve postBuild substitutions. Keep the keys in sync with the Terraform one.
+data:
+  cf_zone_id: "00000000000000000000000000000000"
+  cf_account_id: "00000000000000000000000000000000"
+  penchev_cf_zone_id: "00000000000000000000000000000000"
+  tunnel_id: "00000000-0000-0000-0000-000000000000"

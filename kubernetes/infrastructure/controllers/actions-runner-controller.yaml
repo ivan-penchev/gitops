@@ -74,6 +74,11 @@ spec:
     githubConfigSecret: arc-github-pat
     # This is the `runs-on:` label workflows target.
     runnerScaleSetName: gha-homelab-arc
+    # Explicit, so the chart skips its live-cluster lookup of the controller.
+    # Offline renders in CI (validate.yml) can't do that lookup.
+    controllerServiceAccount:
+      namespace: arc-systems
+      name: arc-controller-gha-rs-controller
     minRunners: 0
     maxRunners: 2
     # Only override serviceAccountName — deep-merges into the chart's default

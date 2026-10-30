@@ -75,6 +75,9 @@ the cluster that stack can reboot.
   `tflint`. `alloy validate` on the Alloy config. A check that every
   `*.sops.yaml` is encrypted and no plaintext `kind: Secret` exists. `pluto`
   for deprecated APIs against the next Kubernetes version.
+  Status: PR open. It uses `flate` instead of `flux-local`, which is
+  deprecated. The Alloy check validates the rendered ConfigMap, so D1 needs
+  no extraction step.
 - **A2 Close the monitoring gap in the live test.** Reconcile every
   root-owned Kustomization except `flux-system`, in `dependsOn` order, instead
   of the fixed `layers` list. Update `test_gitops_live_test.py` and
