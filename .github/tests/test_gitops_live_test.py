@@ -22,6 +22,16 @@ CONTROL = TEXT.split("cat > gitops-live-control.sh <<'SCRIPT'\n", 1)[1].split(
 CONTROL = "\n".join(line[10:] for line in CONTROL.splitlines()) + "\n"
 FUNCTIONS = CONTROL.split('\ncase "$1" in\n', 1)[0]
 SHA = "a" * 40
+# Live kubectl output order (alphabetical), from the homelab cluster.
+ROOT_CHILDREN = """apps GitRepository/flux-system infrastructure-configs,
+infrastructure-configs GitRepository/flux-system infrastructure-controllers,
+infrastructure-controllers GitRepository/flux-system 
+monitoring-alloy GitRepository/flux-system monitoring-loki,
+monitoring-configs GitRepository/flux-system monitoring-prometheus,
+monitoring-loki GitRepository/flux-system monitoring-namespace,
+monitoring-namespace GitRepository/flux-system infrastructure-configs,
+monitoring-prometheus GitRepository/flux-system monitoring-namespace,
+"""
 
 # All API calls are shell functions. No kubectl, Flux CLI, or cluster is used.
 MOCK = r'''
@@ -34,6 +44,11 @@ k() {
     get)
       test "$2" = kustomizations.kustomize.toolkit.fluxcd.io
       test "$3" = -l
+      if [ "$4" = 'kustomize.toolkit.fluxcd.io/name=flux-system,kustomize.toolkit.fluxcd.io/namespace=flux-system' ]; then
+        [ "$BAD" != root-discovery ] || return 1
+        printf '%s' "$ROOT_CHILDREN"
+        return 0
+      fi
       test "$4" = 'kustomize.toolkit.fluxcd.io/name=apps,kustomize.toolkit.fluxcd.io/namespace=flux-system'
       [ "$BAD" != discovery ] || return 1
       [ "$CHILDREN" != none ] || return 0
@@ -91,6 +106,7 @@ field() {
       if [ "$bad" = source-namespace ]; then printf other; else printf '%s' "$SOURCE_NAMESPACE"; fi ;;
     '{.spec.suspend}')
       if [ "$bad" = suspended ]; then printf true
+      elif [ "$1" = kustomization.kustomize.toolkit.fluxcd.io/monitoring-loki ] && [ "$BAD" = suspended-layer ]; then printf true
       elif [ "$1" = "$root" ]; then printf '%s' "$ROOT_SUSPENDED"
       else printf false; fi ;;
     '{.status.artifact.revision}') printf '%s' "${ARTIFACT:-$expected}" ;;
@@ -109,7 +125,8 @@ class LiveTestWorkflow(unittest.TestCase):
         env = dict(os.environ, MODE="operator", HEAD_BRANCH="renovate/example", HEAD_SHA=SHA,
                    BRANCH="renovate/example", GITHUB_RUN_ID="42", GITHUB_RUN_ATTEMPT="1",
                    ORIGINAL_RECONCILE="null", ROOT_SUSPENDED="true", INSTANCE_RECONCILE="disabled",
-                   PARENT="waiting", CHILDREN="present", BAD="", SOURCE_NAMESPACE="", ARTIFACT="")
+                   PARENT="waiting", CHILDREN="present", BAD="", SOURCE_NAMESPACE="", ARTIFACT="",
+                   ROOT_CHILDREN=ROOT_CHILDREN)
         env.update(overrides)
         return subprocess.run(["sh", "-c", FUNCTIONS + MOCK + command], env=env,
                               text=True, capture_output=True, timeout=10)
@@ -351,7 +368,58 @@ sleep() { exit 0; }
                     self.assertNotEqual(self.shell("restore", BAD=bad, **args).returncode, 0)
                 self.assertNotEqual(self.shell("restore", ARTIFACT=f"renovate/example@sha1:{SHA}", **args).returncode, 0)
 
+    def root_layers(self, **overrides):
+        return self.shell("root_layers", **overrides)
+
+    def test_root_layers_follow_depends_on(self):
+        result = self.root_layers()
+        self.assert_success(result)
+        order = result.stdout.split()
+        self.assertEqual(sorted(order), sorted(line.split()[0] for line in ROOT_CHILDREN.splitlines()))
+        for line in ROOT_CHILDREN.splitlines():
+            name, _, *deps = line.split(" ")
+            for dep in filter(None, "".join(deps).split(",")):
+                with self.subTest(name=name, dep=dep):
+                    self.assertLess(order.index(dep), order.index(name))
+
+    def test_root_layers_ignore_outside_dependencies_and_the_root(self):
+        children = ROOT_CHILDREN + "flux-system GitRepository/flux-system \n" \
+            "extra GitRepository/flux-system elsewhere,apps,\n"
+        result = self.root_layers(ROOT_CHILDREN=children)
+        self.assert_success(result)
+        order = result.stdout.split()
+        self.assertNotIn("flux-system", order)
+        self.assertGreater(order.index("extra"), order.index("apps"))
+
+    def test_root_layer_discovery_failures(self):
+        cases = {
+            "cycle": ROOT_CHILDREN.replace("infrastructure-controllers GitRepository/flux-system ",
+                                           "infrastructure-controllers GitRepository/flux-system apps,"),
+            "missing apps": "\n".join(l for l in ROOT_CHILDREN.splitlines() if not l.startswith("apps ")),
+            "other source": ROOT_CHILDREN.replace("monitoring-alloy GitRepository/flux-system",
+                                                  "monitoring-alloy OCIRepository/flux-system"),
+            "empty": "",
+        }
+        for case, children in cases.items():
+            with self.subTest(case=case):
+                self.assertNotEqual(self.root_layers(ROOT_CHILDREN=children).returncode, 0)
+        self.assertNotEqual(self.root_layers(BAD="root-discovery").returncode, 0)
+
+    def test_restore_covers_monitoring_layers(self):
+        args = dict(BRANCH="main", ROOT_SUSPENDED="false", INSTANCE_RECONCILE="enabled")
+        result = self.shell("restore", **args)
+        self.assert_success(result)
+        for name in ("monitoring-namespace", "monitoring-loki", "monitoring-prometheus",
+                     "monitoring-alloy", "monitoring-configs"):
+            self.assertIn(f"REQUEST kustomization.kustomize.toolkit.fluxcd.io/{name} ", result.stdout)
+        failed = self.shell("restore", BAD="suspended-layer", **args)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("Refusing to reconcile suspended layer:", failed.stderr)
+
     def test_runner_and_watchdog_use_shared_functions(self):
+        self.assertIn('LAYERS="$(sh gitops-live-control.sh layers)"', TEXT)
+        self.assertIn('for k in ${LAYERS}; do', TEXT)
+        self.assertNotIn('for k in infrastructure-controllers', TEXT)
         self.assertIn('sh gitops-live-control.sh reconcile-layer "$k"', TEXT)
         self.assertIn('reconcile_layer "$layer" "${token}-${layer}" "$main_revision"', CONTROL)
         self.assertIn('(set -e; restore)', CONTROL)

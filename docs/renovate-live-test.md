@@ -44,9 +44,11 @@ this grants the PR workflow access to a privileged live-cluster runner, not a
 sandbox. Do not cancel recovery or merge until main restoration is confirmed.
 
 **The root Kustomization is deliberately suspended during testing.** The workflow
-explicitly reconciles `infrastructure-controllers`, `infrastructure-configs`,
-`apps`, and the direct Flux Kustomizations owned by `apps` in `flux-system` against
-the PR. Changes under `kubernetes/clusters/homelab/` are rejected,
+explicitly reconciles every Kustomization the root owns (`infrastructure-*`,
+`monitoring-*`, `apps`), in `dependsOn` order, and the direct Flux Kustomizations
+owned by `apps` in `flux-system` against the PR. The workflow discovers the root's
+Kustomizations through their Flux ownership labels, so a new owner added to
+`kubernetes/clusters/homelab/` is covered once it is on `main`. Changes under `kubernetes/clusters/homelab/` are rejected,
 including renamed files moved out of that directory. Those manifests need a
 separate root/controller migration test. In particular, this workflow cannot
 validate a FluxInstance, Flux Operator, or Flux controller upgrade while their
@@ -95,7 +97,11 @@ a substitute for the approved data migration and per-app activation steps.
    `refs/heads/<branch>@sha1:<pull-request-head-sha>` in operator mode, or
    `<branch>@sha1:<pull-request-head-sha>` in legacy mode. The SHA must match the
    immutable PR head, not just the current tip of its branch.
-7. Reconcile the three layers in order. While `apps` reconciles, discover its
+7. Discover the root-owned layers and sort them by `dependsOn`. Discovery fails
+   if `infrastructure-controllers`, `infrastructure-configs` or `apps` is
+   missing, a layer uses a source other than GitRepository `flux-system`, or the
+   dependencies form a cycle. A suspended layer fails instead of being skipped.
+   Reconcile the layers in that order. While `apps` reconciles, discover its
    children and request their reconciliation before waiting for `apps` to finish.
    This avoids blocking child requests behind the parent's health wait. Discover
    again after `apps` completes, then explicitly reconcile and check every child.
