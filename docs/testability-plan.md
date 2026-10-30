@@ -159,7 +159,7 @@ the cluster that stack can reboot.
 
 | # | Action | Priority | Depends on |
 |---|---|---|---|
-| 1 | Live test reconciles root-owned monitoring Kustomizations (A2) | P0 | |
+| 1 | Live test reconciles root-owned monitoring Kustomizations (A2), PR open | P0 | |
 | 2 | `validate.yml` static gate (A1) | P0 | |
 | 3 | `mise.toml` toolchain pin (A3) | P0 | |
 | 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |

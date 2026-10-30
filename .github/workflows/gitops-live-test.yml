@@ -85,7 +85,6 @@ jobs:
           instance=fluxinstance.fluxcd.controlplane.io/flux
           source=gitrepository.source.toolkit.fluxcd.io/flux-system
           root=kustomization.kustomize.toolkit.fluxcd.io/flux-system
-          layers="infrastructure-controllers infrastructure-configs apps"
           configure_cluster() {
             # Explicit config avoids kubectl's in-cluster fallback changing when
             # flags such as --request-timeout override the default REST config.
@@ -182,9 +181,75 @@ jobs:
                 test "$(field "$child" '{.status.lastAppliedRevision}')" = "$layer_revision"
               done
             else
+              if [ "$(field "$layer_resource" '{.spec.suspend}')" = true ]; then
+                echo "Refusing to reconcile suspended layer: $layer_resource" >&2
+                return 1
+              fi
               reconcile "$layer_resource" "$layer_token"
               test "$(field "$layer_resource" '{.status.lastAppliedRevision}')" = "$layer_revision"
             fi
+          }
+          root_children() {
+            k get kustomizations.kustomize.toolkit.fluxcd.io \
+              -l 'kustomize.toolkit.fluxcd.io/name=flux-system,kustomize.toolkit.fluxcd.io/namespace=flux-system' \
+              -o 'jsonpath={range .items[*]}{.metadata.name}{" "}{.spec.sourceRef.kind}/{.spec.sourceRef.name}{" "}{range .spec.dependsOn[*]}{.name}{","}{end}{"\n"}{end}'
+          }
+          order_layers() {
+            # stdin lines: "name kind/source dep1,dep2,". Prints names so each one
+            # follows its dependsOn. Dependencies outside the set don't block.
+            pending="$(cat)"
+            names=" $(printf '%s\n' "$pending" | cut -d' ' -f1 | tr '\n' ' ')"
+            placed=' '
+            while [ -n "$pending" ]; do
+              rest=''
+              progress=0
+              while read -r name source deps; do
+                [ -n "$name" ] || continue
+                ok=1
+                for dep in $(printf '%s' "$deps" | tr ',' ' '); do
+                  case "$names" in *" $dep "*) ;; *) continue ;; esac
+                  case "$placed" in *" $dep "*) ;; *) ok=0 ;; esac
+                done
+                if [ "$ok" = 1 ]; then
+                  printf '%s\n' "$name"
+                  placed="$placed$name "
+                  progress=1
+                else
+                  rest="$(printf '%s%s %s %s\n_' "$rest" "$name" "$source" "$deps")"
+                  rest="${rest%_}"
+                fi
+              done <<LAYERS
+          $pending
+          LAYERS
+              if [ "$progress" = 0 ]; then
+                echo "Cannot order root Kustomizations by dependsOn: $rest" >&2
+                return 1
+              fi
+              pending="$rest"
+            done
+          }
+          root_layers() {
+            # Every Kustomization the suspended root owns, so owners outside apps (the
+            # monitoring-* stack) also get tested and restored. PRs can't add or remove
+            # them because changes under kubernetes/clusters/homelab are rejected.
+            children="$(root_children)" || return 1
+            filtered="$(printf '%s\n' "$children" | while read -r name source deps; do
+              [ -n "$name" ] || continue
+              [ "$name" != flux-system ] || continue
+              if [ "$source" != GitRepository/flux-system ]; then
+                echo "Refusing root Kustomization with another source: $name ($source)" >&2
+                exit 1
+              fi
+              printf '%s %s %s\n' "$name" "$source" "$deps"
+            done)" || return 1
+            ordered="$(printf '%s\n' "$filtered" | order_layers)" || return 1
+            for required in infrastructure-controllers infrastructure-configs apps; do
+              case " $(printf '%s' "$ordered" | tr '\n' ' ') " in
+                *" $required "*) ;;
+                *) echo "Root layer discovery is missing $required" >&2; return 1 ;;
+              esac
+            done
+            printf '%s\n' "$ordered"
           }
           pause_instance() {
             if [ "$MODE" = operator ]; then
@@ -244,6 +309,7 @@ jobs:
             k patch "$root" --type=merge -p '{"spec":{"suspend":false}}'
             reconcile "$root" "${token}-root-main"
             test "$(field "$root" '{.status.lastAppliedRevision}')" = "$main_revision"
+            layers="$(root_layers)"
             for layer in $layers; do
               reconcile_layer "$layer" "${token}-${layer}" "$main_revision"
             done
@@ -265,6 +331,7 @@ jobs:
               fi
               set_source "$HEAD_BRANCH"
               ;;
+            layers) root_layers ;;
             revision) printf '%s%s\n' "$(revision_prefix "$HEAD_BRANCH")" "$HEAD_SHA" ;;
             assert-pr) assert_pr ;;
             reconcile-layer)
@@ -412,7 +479,13 @@ jobs:
             echo "::error::Source never reached the expected PR SHA; cannot health-test"
             FAIL=1
           else
-            for k in infrastructure-controllers infrastructure-configs apps; do
+            if ! LAYERS="$(sh gitops-live-control.sh layers)" || [ -z "${LAYERS}" ]; then
+              echo "::error::Could not discover the root-owned Kustomizations"
+              LAYERS=''
+              FAIL=1
+            fi
+            echo "Layers in dependsOn order: $(printf '%s' "${LAYERS}" | tr '\n' ' ')"
+            for k in ${LAYERS}; do
               sh gitops-live-control.sh assert-pr || { FAIL=1; break; }
               echo "::group::reconcile kustomization ${k}"
               sh gitops-live-control.sh reconcile-layer "$k"
