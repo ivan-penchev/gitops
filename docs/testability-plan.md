@@ -87,13 +87,14 @@ fix that if it ever matters.
   `tflint`. `alloy validate` on the Alloy config. A check that every
   `*.sops.yaml` is encrypted and no plaintext `kind: Secret` exists. `pluto`
   for deprecated APIs against the next Kubernetes version.
-  Status: PR open. It uses `flate` instead of `flux-local`, which is
+  Status: done. It uses `flate` instead of `flux-local`, which is
   deprecated. The Alloy check validates the rendered ConfigMap, so D1 needs
   no extraction step.
 - **A2 Close the monitoring gap in the live test.** Reconcile every
   root-owned Kustomization except `flux-system`, in `dependsOn` order, instead
   of the fixed `layers` list. Update `test_gitops_live_test.py` and
   `docs/renovate-live-test.md`.
+  Status: done in #78.
 - **A3 Pin the toolchain.** A `mise.toml` with terraform, talosctl, kubectl,
   helm, flux, used by the laptop and CI. Renovate bumps it.
 
@@ -104,8 +105,8 @@ fix that if it ever matters.
   State holds the Talos CA keys, so the token must not leave the CI
   environment. A `pg` backend on pg-01 was rejected because Terraform manages
   pg-01.
-  Status: PR open. State moved to `homelab-tfstate/homelab/terraform.tfstate`
-  and plans clean. Merged in #85.
+  Status: done in #85. B2 later split the state into
+  `homelab/shared.tfstate` and `homelab/clusters/<name>.tfstate`.
 - **B2 Split into a shared root and one cluster root, as above.** Status:
   done in #86. I merged the three stack states into `homelab/shared.tfstate`
   and `homelab/clusters/homelab-prd.tfstate`, then used `moved` blocks to
@@ -139,8 +140,9 @@ fix that if it ever matters.
   schematic ID to a committed `terraform/talos/versions.auto.tfvars`. Add a
   Renovate regex manager (`github-releases` for `siderolabs/talos` and
   `kubernetes/kubernetes`).
-  Status: PR open. The file is `terraform/talos-versions.auto.tfvars` because
-  the stacks don't exist yet. The schematic ID stays as the variable default.
+  Status: done. After B2 each cluster has
+  `terraform/clusters/<name>/talos-versions.tfvars`. The schematic ID stays as
+  the variable default.
   The upgrade steps are in `docs/talos-k8s-versions.md`.
 - **C2 Cilium on KubePrism** (`k8sServiceHost: localhost`,
   `k8sServicePort: 7445`), shipped with Cilium 1.20.4 through the upgrade guide.
@@ -155,7 +157,7 @@ fix that if it ever matters.
   `talosctl upgrade-k8s --to <next>` and check again. This rehearses
   Kubernetes and Cilium bumps on every C1 Renovate PR. It can't test Talos OS
   upgrades, ISO install or Proxmox.
-  Status: PR open. `.github/workflows/talos-docker-test.yml` runs
+  Status: done in #94. `.github/workflows/talos-docker-test.yml` runs
   `.github/scripts/talos-docker-test.sh` once per cluster on a GitHub-hosted
   runner. It takes about 2.5 minutes, or 8 with an upgrade. A talosctl of the
   contract's minor renders the configs, and a second one that matches
@@ -163,10 +165,12 @@ fix that if it ever matters.
   `cilium-dbg status`, rollouts and a cross-node DNS and service request
   replace `cilium status`. A trial run took homelab-prd's setup from 1.36.2 to
   1.37.1 with Cilium 1.20.4 and passed. That says Cilium works on 1.37 in
-  Docker, not that upstream supports it.
-- **C4 Staging cluster on Proxmox for OS upgrades.** A second cluster
-  under `terraform/clusters/` with 1 small CP and 1 small worker. Create it, run
-  `talosctl upgrade`, destroy it. Needs two reserved IPs below `.50`.
+  Docker, not that upstream supports it. Since #95 it runs on PRs only and
+  skips a cluster whose versions, `talos/` and test script match the base
+  branch.
+- **C4 Staging cluster on Proxmox for OS upgrades.** Dropped. Talos OS
+  upgrades follow the runbook in `docs/talos-k8s-versions.md` with an etcd
+  snapshot first.
 - **C5 Extend `docs/talos-k8s-versions.md`** and run it:
   1. Talos 1.13.7 to 1.13.12, workers first, then cp-1. With one CP the API is
      down while cp-1 reboots.
@@ -177,7 +181,7 @@ fix that if it ever matters.
      eject and the post-checks.
   2. Talos 1.13.12 to 1.14.5, after reading the 1.14 notes. Update the C1
      version and apply so the machine config matches.
-     Status: nodes upgraded, PR open for the tfvars bump. Each node took 83
+     Status: done in #93. Each node took 83
      to 96 seconds, and etcd moved to 3.7.3. The CSI controller recovered on
      its own this time. The machine configs stay on the `v1.13` contract
      through the new `talos_config_contract` variable. A `v1.14` contract
@@ -218,19 +222,19 @@ fix that if it ever matters.
 
 | # | Action | Priority | Depends on |
 |---|---|---|---|
-| 1 | Live test reconciles root-owned monitoring Kustomizations (A2), PR open | P0 | |
-| 2 | `validate.yml` static gate (A1) | P0 | |
+| 1 | Live test reconciles root-owned monitoring Kustomizations (A2), done | P0 | |
+| 2 | `validate.yml` static gate (A1), done | P0 | |
 | 3 | `mise.toml` toolchain pin (A3) | P0 | |
-| 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |
+| 4 | Talos/k8s versions into a committed tfvars + Renovate (C1), done | P1 | |
 | 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2), done | P1 | |
-| 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2), step 1 done, step 2 PR open | P1 | 4 |
+| 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2), done | P1 | 4 |
 | 7 | R2 remote state (B1), done | P1 | |
 | 8 | Split Terraform into a shared root and one cluster root with per-cluster tfvars (B2), done | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3), done | P1 | 2 |
 | 10 | Terraform plan on PR, unignore in Renovate (B4), done | P1 | 7, 8 |
-| 11 | Talos-in-Docker upgrade rehearsal job (C3), PR open | P1 | 4, 5 |
+| 11 | Talos-in-Docker upgrade rehearsal job (C3), done | P1 | 4, 5 |
 | 12 | Extract Alloy config + validate (D1) | P2 | 2 |
 | 13 | Monitoring e2e on kind (D2) and selector check (D3) | P2 | 2 |
-| 14 | Staging cluster for Talos OS upgrades (C4) | P2 | 8 |
+| 14 | Staging cluster for Talos OS upgrades (C4), dropped | P2 | 8 |
 | 15 | Kubernetes 1.37 (C5 steps 3 to 5) | P2 | Cilium 1.21 GA, 6, 11 |
 | 16 | Full-repo kind reconcile (P3) | P3 | 13 |
