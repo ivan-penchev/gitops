@@ -126,6 +126,10 @@ spec:
 
     # ---- Grafana: anonymous admin on LAN + SOPS break-glass login ----
     grafana:
+      # RWO PVC: a rolling update starts the new pod before the old one lets go
+      # of the volume, and on another node it never mounts. Stop first.
+      deploymentStrategy:
+        type: Recreate
       admin:
         existingSecret: grafana-admin
         userKey: admin-user
