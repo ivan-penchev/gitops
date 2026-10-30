@@ -117,6 +117,10 @@ terraform/tf.sh all plan
 terraform/tf.sh homelab-prd apply
 ```
 
+Each root has plan-only tests in `tests/` that mock every provider, so they
+need no credentials. CI runs them, and locally it's
+`terraform -chdir=terraform/cluster test`.
+
 ### Add a cluster
 
 1. Copy `terraform/clusters/homelab-prd` to `terraform/clusters/<name>`.

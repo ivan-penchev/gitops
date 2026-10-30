@@ -127,7 +127,7 @@ jobs:
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
       - run: terraform fmt -check -recursive -diff
-      - name: Validate each root
+      - name: Validate and test each root
         shell: bash
         run: |
           set -euo pipefail
@@ -135,6 +135,7 @@ jobs:
             echo "::group::$root"
             terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly
             terraform -chdir="$root" validate -no-color
+            terraform -chdir="$root" test -no-color
             echo "::endgroup::"
           done
       # Warnings are reported but don't fail the build yet.
