@@ -49,20 +49,24 @@ Versions on 2026-10-30:
 
 ## Should Terraform be split?
 
-Yes, into four stacks, split by the API they need and how much damage a bad
-apply does. Going finer adds remote-state plumbing for no gain.
+Yes, into three stacks, split by the API they need and how much damage a bad
+apply does. I first planned four, with Proxmox and Talos apart. They stay
+together because Talos config apply targets the IPs the VMs report, and
+splitting them adds a remote-state hop for no gain.
 
 | Stack | Owns | Needs | PR plan runs on | Apply |
 |---|---|---|---|---|
-| `terraform/cloudflare` | tunnel, DNS records | Cloudflare API | GitHub-hosted | on merge |
-| `terraform/proxmox` | VMs, LXCs, ISO, CSI user/token | PVE API | ARC runner | manual |
-| `terraform/talos` | machine secrets, config apply, bootstrap | Talos API | ARC runner | manual, laptop only |
+| `terraform/cloudflare` | tunnel, LAN DNS records | Cloudflare API | GitHub-hosted | on merge |
+| `terraform/platform` | ISO, VMs, Talos secrets/config/bootstrap, LXCs, CSI user/token | PVE and Talos APIs | ARC runner | manual, laptop only |
 | `terraform/cluster` | Flux bootstrap, k8s Secrets, pg roles/DBs | k8s API, pg-01 | ARC runner | manual |
 
-Stacks read each other through `terraform_remote_state`. The Cloudflare
-stack only gets a plan on GitHub-hosted runners because it needs nothing on the
-LAN. The talos stack stays laptop-only for apply, since the ARC runner lives in
-the cluster that stack can reboot.
+The cluster stack reads the other two through `terraform_remote_state`;
+cloudflare and platform don't depend on each other. The Cloudflare stack can
+plan on GitHub-hosted runners because it needs nothing on the LAN. Platform
+applies stay laptop-only, since the ARC runner lives in the cluster that stack
+can reboot. All three states share one bucket and token, so any job that can
+plan cloudflare can also read the Talos secrets. Separate buckets fix that if
+it ever matters.
 
 ## Plan
 
@@ -93,10 +97,11 @@ the cluster that stack can reboot.
   environment. A `pg` backend on pg-01 was rejected because Terraform manages
   pg-01.
   Status: PR open. State moved to `homelab-tfstate/homelab/terraform.tfstate`
-  and plans clean. The key gets split per stack in B2.
-- **B2 Split into the four stacks above**, one at a time. Move resources with
-  `removed` plus `import` blocks; each move is done when both sides plan
-  "No changes".
+  and plans clean. Merged in #85.
+- **B2 Split into the three stacks above.** Status: PR open. Done by moving
+  state entries between local copies with `terraform state mv`, then pushing
+  each to its own key. Every stack plans "No changes". The old
+  `homelab/terraform.tfstate` key gets deleted after merge.
 - **B3 `terraform test` with `mock_provider`.** Runs on GitHub-hosted with no
   credentials. Cover the logic that broke before: `postgres_databases` to one
   Secret per namespace, machine config contains the Cilium inline manifest,
@@ -173,8 +178,8 @@ the cluster that stack can reboot.
 | 4 | Talos/k8s versions into a committed tfvars + Renovate (C1) | P1 | |
 | 5 | Cilium 1.20.4 + KubePrism via the upgrade guide (C2) | P1 | |
 | 6 | Talos 1.13.7 to 1.13.12 to 1.14.5 (C5 steps 1, 2) | P1 | 4 |
-| 7 | R2 remote state (B1) | P1 | |
-| 8 | Split Terraform into 4 stacks (B2) | P1 | 7 |
+| 7 | R2 remote state (B1), done | P1 | |
+| 8 | Split Terraform into 3 stacks (B2), PR open | P1 | 7 |
 | 9 | `terraform test` with mock providers (B3) | P1 | 2 |
 | 10 | Terraform plan on PR, unignore in Renovate (B4) | P1 | 7, 8 |
 | 11 | Talos-in-Docker upgrade rehearsal job (C3) | P1 | 4, 5 |

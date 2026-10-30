@@ -8,13 +8,13 @@
 
 resource "local_sensitive_file" "kubeconfig" {
   content         = talos_cluster_kubeconfig.this.kubeconfig_raw
-  filename        = "${path.module}/../kubeconfig"
+  filename        = "${path.module}/../../kubeconfig"
   file_permission = "0600"
 }
 
 resource "local_sensitive_file" "talosconfig" {
   content         = data.talos_client_configuration.this.talos_config
-  filename        = "${path.module}/../talosconfig"
+  filename        = "${path.module}/../../talosconfig"
   file_permission = "0600"
 }
 
@@ -38,21 +38,6 @@ output "node_ips" {
   value       = { for k, v in local.nodes : k => v.ip }
 }
 
-output "cloudflare_tunnel_id" {
-  description = "ID of the Terraform-created Cloudflare Tunnel."
-  value       = cloudflare_zero_trust_tunnel_cloudflared.homelab.id
-}
-
-output "cloudflare_zone_id" {
-  description = "Derived Cloudflare zone id for the domain."
-  value       = data.cloudflare_zone.main.id
-}
-
-output "cloudflare_account_id" {
-  description = "Derived Cloudflare account id for the domain."
-  value       = data.cloudflare_zone.main.account.id
-}
-
 # ---------------------------------------------------------------------------
 # Fileserver LXC / NFS
 # ---------------------------------------------------------------------------
@@ -64,11 +49,6 @@ output "fileserver_ip" {
 output "fileserver_nfs_export" {
   description = "NFS export to mount from k8s (csi-driver-nfs server + share)."
   value       = var.fileserver_enabled ? "${var.fileserver_ip}:${var.fileserver_container_media_path}" : null
-}
-
-output "fileserver_fqdn" {
-  description = "Cloudflare DNS name for the fileserver (DNS-only)."
-  value       = var.fileserver_enabled ? "${var.fileserver_record_name}.${var.cloudflare_domain}" : null
 }
 
 output "fileserver_verify_hint" {
@@ -89,11 +69,6 @@ output "postgres_ip" {
   value       = var.postgres_enabled ? var.postgres_ip : null
 }
 
-output "postgres_fqdn" {
-  description = "Internal DNS name (Cloudflare DNS-only) for PostgreSQL — use this as the connection host."
-  value       = var.postgres_enabled ? local.postgres_fqdn : null
-}
-
 output "postgres_host_mount_command" {
   description = "REQUIRED one-time root@pam host step: create the ZFS data dataset + bind-mount it, then reboot (both root@pam-only on a privileged CT). Run this between phase 1 and phase 2 (see postgres.tf header)."
   value       = var.postgres_enabled ? local.postgres_mount_command : null
@@ -105,12 +80,22 @@ output "postgres_superuser_password" {
   sensitive   = true
 }
 
-output "postgres_databases_provisioned" {
-  description = "Databases created and the namespaces each credential Secret was injected into."
-  value = var.postgres_enabled ? {
-    for db in var.postgres_databases : db.name => {
-      secret_name = "postgres-${db.name}"
-      namespaces  = db.namespaces
-    }
-  } : null
+# ---------------------------------------------------------------------------
+# Read by the cluster stack through terraform_remote_state.
+# ---------------------------------------------------------------------------
+output "kubernetes_client_configuration" {
+  description = "API host and client certificates for the cluster stack's kubernetes/helm providers."
+  value       = talos_cluster_kubeconfig.this.kubernetes_client_configuration
+  sensitive   = true
+}
+
+output "csi_cloud_config" {
+  description = "Rendered proxmox-csi-plugin cloud-config (contains the CSI token)."
+  value       = local.csi_cloud_config
+  sensitive   = true
+}
+
+output "postgres_ready" {
+  description = "PostgreSQL is up on its ZFS dataset, so the cluster stack can create databases."
+  value       = local.postgres_ready
 }

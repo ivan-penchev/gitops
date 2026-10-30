@@ -128,7 +128,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
 
    ```bash
    export SOPS_AGE_KEY_FILE=$PWD/age.key
-   sops exec-env secrets.sops.env 'cd terraform && terraform plan'
+   terraform/tf.sh platform plan
    ```
 
    Expect an in-place update to the control-plane
@@ -138,7 +138,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
    `inlineManifests` doesn't reboot the node or touch live objects.
 
    ```bash
-   sops exec-env secrets.sops.env 'cd terraform && terraform apply'
+   terraform/tf.sh platform apply
    ```
 
 ## Rolling back

@@ -149,60 +149,6 @@ variable "workers" {
 }
 
 # ---------------------------------------------------------------------------
-# Flux syncs this public repository over HTTPS.
-# ---------------------------------------------------------------------------
-variable "flux_git_url" {
-  description = "Public HTTPS Git URL Flux syncs from. Must match the FluxInstance sync URL."
-  type        = string
-  default     = "https://github.com/ivan-penchev/gitops.git"
-}
-
-variable "flux_path" {
-  description = "Path in the monorepo Flux reconciles for this cluster."
-  type        = string
-  default     = "kubernetes/clusters/homelab"
-}
-
-variable "sops_age_public_key" {
-  description = "age public key (age1...) matching .sops.yaml. Used to remind operators; the private key seeds the sops-age secret."
-  type        = string
-  default     = ""
-}
-
-variable "sops_age_key_file" {
-  description = "Path to the age PRIVATE key file used to create the in-cluster sops-age secret for Flux decryption."
-  type        = string
-  default     = ""
-}
-
-# ---------------------------------------------------------------------------
-# Cloudflare
-# ---------------------------------------------------------------------------
-# zone id + account id are DERIVED from the domain at apply time
-# (data.cloudflare_zone) and the tunnel is CREATED by Terraform
-# (cloudflare_zero_trust_tunnel_cloudflared). All three are written into the `cluster-config-tf`
-# ConfigMap that Flux substitutes, so they are no longer hand-copied magic
-# strings. Requires CLOUDFLARE_API_TOKEN with Zone:Read + Account /
-# Cloudflare Tunnel:Edit.
-variable "cloudflare_domain" {
-  description = "Apex domain / Cloudflare zone name (used to derive zone id + account id)."
-  type        = string
-  default     = "17072021.xyz"
-}
-
-variable "cloudflare_tunnel_name" {
-  description = "Name of the Cloudflare Tunnel Terraform creates for the cluster."
-  type        = string
-  default     = "homelab-k8s"
-}
-
-variable "internal_ingress_ip" {
-  description = "LAN IP assigned to the ingress-nginx LoadBalancer (Cilium LB pool)."
-  type        = string
-  default     = "192.168.68.40"
-}
-
-# ---------------------------------------------------------------------------
 # Fileserver LXC (shared media over NFS)
 #
 # A privileged Debian 12 LXC that bind-mounts the host's ZFS media dir and
@@ -211,7 +157,7 @@ variable "internal_ingress_ip" {
 # alias; NFS is configured over container-SSH (host stays API-only).
 # ---------------------------------------------------------------------------
 variable "fileserver_enabled" {
-  description = "Create the fileserver LXC + its Cloudflare record. Set false for cluster-only applies (then root@pam creds are not needed)."
+  description = "Create the fileserver LXC. Its DNS record is in the cloudflare stack (lan_records)."
   type        = bool
   default     = true
 }
@@ -314,24 +260,17 @@ variable "fileserver_ssh_private_key_path" {
   default     = "~/.ssh/id_rsa"
 }
 
-variable "fileserver_record_name" {
-  description = "Cloudflare DNS record name (relative to the zone) for the fileserver."
-  type        = string
-  default     = "fileserver.int.home"
-}
-
 # ===========================================================================
 # PostgreSQL LXC (pg-01) — shared homelab database server
 # ===========================================================================
 # A single privileged Debian LXC running PostgreSQL, provisioned like the
 # fileserver (API-token create + SSH provisioner; the data-dir bind mount is the
-# one root@pam-only host step). Databases + their k8s connection Secrets are
-# declared in `postgres_databases` and reconciled by the cyrilgdn/postgresql +
-# hashicorp/kubernetes providers.
+# one root@pam-only host step). Databases and their k8s Secrets are declared in
+# the cluster stack (terraform/cluster/variables.tf).
 # ===========================================================================
 
 variable "postgres_enabled" {
-  description = "Create the PostgreSQL LXC + its databases/roles/secrets + Cloudflare record. Set false for cluster-only applies."
+  description = "Create the PostgreSQL LXC. With it off, the cluster stack creates no databases."
   type        = bool
   default     = true
 }
@@ -413,12 +352,6 @@ variable "postgres_data_mounted" {
   default     = false
 }
 
-variable "postgres_record_name" {
-  description = "Cloudflare DNS record name (relative to the zone) for the PostgreSQL LXC. DNS-only, LAN IP."
-  type        = string
-  default     = "pg-01.int.home"
-}
-
 variable "postgres_client_cidr" {
   description = "CIDR allowed to connect to PostgreSQL (pg_hba scram-sha-256). LAN-only by default."
   type        = string
@@ -444,28 +377,3 @@ variable "postgres_ssh_private_key_path" {
   default     = "~/.ssh/id_rsa"
 }
 
-variable "postgres_create_namespaces" {
-  description = "If true, Terraform ensures every namespace referenced in postgres_databases exists (kubernetes_namespace_v1). Set false when the namespace is already Flux-managed to avoid double ownership."
-  type        = bool
-  default     = true
-}
-
-variable "postgres_databases" {
-  description = <<-EOT
-    Databases to provision. For each entry Terraform creates a login role
-    (owner == db name) with a generated password, the database, and an Opaque
-    Secret `postgres-<name>` in every listed namespace carrying discrete
-    connection keys plus a DATABASE_URL. Removing an entry does NOT drop the
-    database (prevent_destroy) — you delete data manually.
-  EOT
-  type = list(object({
-    name       = string
-    namespaces = list(string)
-  }))
-  default = [
-    {
-      name       = "landingzone"
-      namespaces = ["db-landing-zone"]
-    }
-  ]
-}

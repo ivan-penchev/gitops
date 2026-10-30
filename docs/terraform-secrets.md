@@ -1,7 +1,7 @@
 # Terraform provider secrets (SOPS)
 
 Terraform's `bpg/proxmox` and `cloudflare` providers read their credentials from
-**environment variables** (see `terraform/providers.tf`). The Proxmox credentials
+**environment variables** (see `terraform/platform/providers.tf`). The Proxmox credentials
 live encrypted in the repo root at [`secrets.sops.env`](../secrets.sops.env),
 encrypted with the same age key as the Kubernetes SOPS secrets
 (recipient in [`.sops.yaml`](../.sops.yaml)).
@@ -15,23 +15,28 @@ encrypted with the same age key as the Kubernetes SOPS secrets
   `AWS_ACCESS_KEY_ID` is the token ID and `AWS_SECRET_ACCESS_KEY` is the SHA-256
   of the token value. Rotating the token means updating all three.
   `AWS_ENDPOINT_URL_S3` is the account's R2 endpoint. It lives here and not in
-  `terraform/backend.tf` because the repo is public.
+  the `backend.tf` files because the repo is public.
 
 ## Terraform state
 
-State is in R2 (`homelab-tfstate/homelab/terraform.tfstate`), configured in
-`terraform/backend.tf`. Terraform takes a lock by writing a `.tflock` object
-next to it, so two runs can't apply at once. It needs Terraform 1.10 or newer;
+Each stack has its own state in R2: `homelab-tfstate/homelab/<stack>.tfstate`
+for `cloudflare`, `platform` and `cluster`, configured in each stack's
+`backend.tf`. Terraform takes a lock by writing a `.tflock` object next to the
+state, so two runs can't apply the same stack at once. The cluster stack reads
+the other two through `terraform_remote_state`. It needs Terraform 1.10 or newer;
 Homebrew's `terraform` is stuck at 1.5.7, so install it from
 `hashicorp/tap/terraform` or the release zip.
 
-The state holds the Talos machine secrets and the age key. R2 has no object
-versioning, so keep an age-encrypted copy offline after big changes:
+The platform state holds the Talos machine secrets and the cluster state
+holds the age key. R2 has no object versioning, so keep an age-encrypted copy
+offline after big changes:
 
 ```bash
-sops exec-env secrets.sops.env 'cd terraform && terraform state pull' \
-  | age -r "$(grep -o 'age1[0-9a-z]*' .sops.yaml | head -1)" \
-  > ~/tfstate-backups/homelab-terraform.tfstate.$(date +%F).age
+for s in cloudflare platform cluster; do
+  terraform/tf.sh $s state pull \
+    | age -r "$(age-keygen -y age.key)" \
+    > ~/tfstate-backups/$s.tfstate.$(date +%F).age
+done
 ```
 
 If the lock gets stuck after a crashed run, use `terraform force-unlock <id>`
@@ -58,21 +63,20 @@ sops -d secrets.sops.env
 
 ## Load into your shell for a Terraform run
 
-Two equivalent ways — run from the repo root with `SOPS_AGE_KEY_FILE` exported.
-
-**Option A — wrap the command (nothing leaks into your shell):**
+`terraform/tf.sh` wraps `sops exec-env`, so the credentials exist only for that
+one command. It uses `age.key` in the repo root unless `SOPS_AGE_KEY_FILE` is
+set:
 
 ```bash
-# Runs terraform with Proxmox + Cloudflare env injected, then discards it:
-sops exec-env secrets.sops.env 'cd terraform && terraform plan'
-sops exec-env secrets.sops.env 'cd terraform && terraform apply'
+terraform/tf.sh platform plan
+terraform/tf.sh all apply
 ```
 
-**Option B — export into the current shell:**
+To export them into your shell instead (they stay until you close it):
 
 ```bash
 set -a; eval "$(sops -d secrets.sops.env)"; set +a
-cd terraform && terraform apply
+terraform -chdir=terraform/platform plan
 ```
 
 ## Edit the secrets

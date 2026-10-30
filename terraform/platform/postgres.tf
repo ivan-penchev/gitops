@@ -7,9 +7,9 @@
 # Some apps (Immich, Paperless, Authentik, …) need a real PostgreSQL, not the
 # SQLite the *arr stack uses. Running ONE Postgres as an LXC (not in-cluster)
 # means the databases survive Talos cluster rebuilds — same reasoning as the
-# fileserver. Databases and the k8s Secrets that carry their credentials are
-# declared once in `var.postgres_databases`; Terraform reconciles the roles,
-# the databases, and one `postgres-<db>` Secret per target namespace.
+# fileserver. This stack owns the LXC, the PostgreSQL install and the superuser
+# password. Databases, roles and their k8s Secrets are in the cluster stack
+# (terraform/cluster/postgres.tf); the DNS record is in the cloudflare stack.
 #
 # ---------------------------------------------------------------------------
 # ⚠️  ONE REQUIRED MANUAL HOST STEP  (same root@pam limitation as fileserver)
@@ -30,44 +30,19 @@
 # ---------------------------------------------------------------------------
 # APPLY (phased — the DB provider can't connect until Postgres is up):
 #   1) Create just the LXC:
-#        terraform apply -target=proxmox_virtual_environment_container.postgres
+#        terraform/tf.sh platform apply -target=proxmox_virtual_environment_container.postgres
 #   2) On the PVE HOST run the printed `zfs create … && pct set … && pct reboot`.
-#   3) Set `postgres_data_mounted = true` (tfvars) and re-apply:
-#        terraform apply
-#      -> provisioner installs PostgreSQL onto the dataset, then the roles,
-#         databases and k8s Secrets are created.
+#   3) Set `postgres_data_mounted = true` (homelab.auto.tfvars) and re-apply:
+#        terraform/tf.sh platform apply
+#      -> provisioner installs PostgreSQL onto the dataset.
+#   4) terraform/tf.sh cluster apply
+#      -> roles, databases and k8s Secrets.
 # ===========================================================================
 
 locals {
-  # Internal DNS name (Cloudflare DNS-only A record), e.g. pg-01.int.home.17072021.xyz.
-  postgres_fqdn = "${var.postgres_record_name}.${var.cloudflare_domain}"
-
-  # DB/secret resources only make sense once PostgreSQL is actually reachable on
-  # the mounted dataset. Until then these maps are empty, so a first-phase apply
-  # (LXC only) never tries to talk to a Postgres that isn't up yet.
+  # The cluster stack only creates databases once PostgreSQL is reachable on
+  # the mounted dataset (exported as output.postgres_ready).
   postgres_ready = var.postgres_enabled && var.postgres_data_mounted
-
-  postgres_db_map = local.postgres_ready ? {
-    for db in var.postgres_databases : db.name => db
-  } : {}
-
-  # One (database, namespace) pair per Secret to inject.
-  postgres_secret_pairs = local.postgres_ready ? {
-    for pair in flatten([
-      for db in var.postgres_databases : [
-        for ns in db.namespaces : {
-          key = "${db.name}/${ns}"
-          db  = db.name
-          ns  = ns
-        }
-      ]
-    ]) : pair.key => pair
-  } : {}
-
-  # Distinct namespaces to ensure exist (when postgres_create_namespaces = true).
-  postgres_namespaces = local.postgres_ready && var.postgres_create_namespaces ? toset(
-    flatten([for db in var.postgres_databases : db.namespaces])
-  ) : toset([])
 
   # The single root@pam host command: create the dataset + bind-mount it, reboot.
   postgres_mount_command = join(" ", [
@@ -80,20 +55,11 @@ locals {
   postgres_data_dir = "${var.postgres_container_data_path}/${var.postgres_version}/main"
 }
 
-# Generated superuser password — always created so the provider config resolves
-# even on a first-phase (LXC-only) apply. Constrained specials keep it safe in
+# Generated superuser password. The cluster stack's postgresql provider logs
+# in with it. Constrained specials keep it safe in
 # both a psql string literal and a DSN.
 resource "random_password" "postgres_superuser" {
   length           = 28
-  special          = true
-  override_special = "_-"
-}
-
-# Per-database login role passwords.
-resource "random_password" "postgres_db" {
-  for_each = local.postgres_ready ? { for db in var.postgres_databases : db.name => db } : {}
-
-  length           = 24
   special          = true
   override_special = "_-"
 }
@@ -231,98 +197,4 @@ resource "null_resource" "postgres_setup" {
       "echo 'PostgreSQL ${var.postgres_version} ready on ${var.postgres_ip}:5432 (data: ${local.postgres_data_dir})'",
     ]
   }
-}
-
-# ---------------------------------------------------------------------------
-# Roles + databases (cyrilgdn/postgresql). One login role per database, owner
-# == role. Removing an entry from var.postgres_databases will NOT drop the
-# database (prevent_destroy) — delete data by hand, deliberately.
-# ---------------------------------------------------------------------------
-resource "postgresql_role" "db" {
-  for_each = local.postgres_db_map
-
-  name     = each.value.name
-  login    = true
-  password = random_password.postgres_db[each.key].result
-
-  depends_on = [null_resource.postgres_setup]
-}
-
-resource "postgresql_database" "db" {
-  for_each = local.postgres_db_map
-
-  name              = each.value.name
-  owner             = postgresql_role.db[each.key].name
-  encoding          = "UTF8"
-  lc_collate        = "C"
-  lc_ctype          = "C"
-  template          = "template0"
-  connection_limit  = -1
-  allow_connections = true
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  depends_on = [null_resource.postgres_setup]
-}
-
-# ---------------------------------------------------------------------------
-# k8s Secrets: `postgres-<db>` in every target namespace. Terraform is the
-# source of truth for these (the passwords are TF-generated), so they live in
-# state, not git.
-# ---------------------------------------------------------------------------
-resource "kubernetes_namespace_v1" "db" {
-  for_each = local.postgres_namespaces
-
-  metadata {
-    name = each.value
-  }
-
-  depends_on = [talos_cluster_kubeconfig.this]
-}
-
-resource "kubernetes_secret_v1" "db" {
-  for_each = local.postgres_secret_pairs
-
-  metadata {
-    name      = "postgres-${each.value.db}"
-    namespace = each.value.ns
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "app.kubernetes.io/component"  = "postgres-credentials"
-    }
-  }
-
-  data = {
-    POSTGRES_HOST     = local.postgres_fqdn
-    POSTGRES_PORT     = "5432"
-    POSTGRES_DB       = each.value.db
-    POSTGRES_USER     = each.value.db
-    POSTGRES_PASSWORD = random_password.postgres_db[each.value.db].result
-    DATABASE_URL      = "postgresql://${each.value.db}:${random_password.postgres_db[each.value.db].result}@${local.postgres_fqdn}:5432/${each.value.db}?sslmode=disable"
-  }
-
-  type = "Opaque"
-
-  depends_on = [
-    postgresql_database.db,
-    kubernetes_namespace_v1.db,
-  ]
-}
-
-# ---------------------------------------------------------------------------
-# Cloudflare DNS record — DNS-only (grey). Postgres is not internet-safe and the
-# CF proxy only handles HTTP(S); this just points the internal name at the LAN IP.
-# ---------------------------------------------------------------------------
-resource "cloudflare_dns_record" "postgres" {
-  count = var.postgres_enabled ? 1 : 0
-
-  zone_id = data.cloudflare_zone.main.id
-  name    = var.postgres_record_name
-  type    = "A"
-  content = var.postgres_ip
-  proxied = false
-  ttl     = 60
-  comment = "Terraform: PostgreSQL LXC (DNS-only, LAN)"
 }

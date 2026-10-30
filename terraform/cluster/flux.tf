@@ -1,13 +1,5 @@
-removed {
-  from = flux_bootstrap_git.this
-
-  lifecycle {
-    destroy = false
-  }
-}
-
 locals {
-  flux_manifest_path    = "${path.module}/../${var.flux_path}/flux-system"
+  flux_manifest_path    = "${path.module}/../../${var.flux_path}/flux-system"
   flux_instance         = yamldecode(file("${local.flux_manifest_path}/flux-instance.yaml"))
   flux_operator_source  = yamldecode(file("${local.flux_manifest_path}/flux-operator-source.yaml"))
   flux_operator_release = yamldecode(file("${local.flux_manifest_path}/flux-operator.yaml"))
@@ -26,16 +18,6 @@ resource "kubernetes_namespace_v1" "flux_system" {
       condition     = local.flux_instance.spec.sync.url == var.flux_git_url
       error_message = "flux_git_url must match spec.sync.url in flux-instance.yaml."
     }
-  }
-
-  depends_on = [talos_cluster_kubeconfig.this]
-}
-
-removed {
-  from = kubernetes_secret_v1.flux_git
-
-  lifecycle {
-    destroy = false
   }
 }
 

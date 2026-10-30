@@ -3,7 +3,7 @@
 Cilium is the cluster CNI. It is **owned here**, not by Flux: it must exist
 before Flux's own controllers can schedule (they are ordinary pods needing a
 CNI). It is embedded into the control-plane machine config as
-`cluster.inlineManifests` (see `terraform/talos.tf` -> `local.cilium_inline_patch`).
+`cluster.inlineManifests` (see `terraform/platform/talos.tf` -> `local.cilium_inline_patch`).
 
 `cilium.yaml` is rendered from the Cilium Helm chart with `values.yaml` as the
 single source of Talos-specific values. Regenerate it with:

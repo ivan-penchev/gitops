@@ -58,12 +58,10 @@
 #
 # ---------------------------------------------------------------------------
 # APPLY (nothing special — your normal token/env works as-is):
-#     cd terraform
-#     export PROXMOX_VE_ENDPOINT=... PROXMOX_VE_API_TOKEN=...   # your usual vars
-#     export CLOUDFLARE_API_TOKEN=...
-#     terraform apply -target=proxmox_virtual_environment_container.fileserver \
-#                     -target=null_resource.fileserver_nfs \
-#                     -target=cloudflare_record.fileserver
+#     terraform/tf.sh platform apply \
+#       -target=proxmox_virtual_environment_container.fileserver \
+#       -target=null_resource.fileserver_nfs
+#     # the DNS record is in the cloudflare stack (var.lan_records)
 #     # then run the printed `pct set ... && pct reboot ...` on the PVE host
 #     # verify:  showmount -e 192.168.68.11
 # ===========================================================================
@@ -244,30 +242,4 @@ resource "null_resource" "fileserver_nfs" {
       "echo '----------------------------------------------------------------'",
     ]
   }
-}
-
-# ---------------------------------------------------------------------------
-# Cloudflare DNS record — DNS-only (grey). NFS is not internet-safe and the CF
-# proxy only handles HTTP(S), so this MUST NOT be proxied. It just points a
-# friendly name at the LAN IP; k8s csi-driver-nfs uses the IP directly.
-#
-# external-dns won't fight this: it only deletes records carrying its ownership
-# TXT registry entry, and nothing in-cluster owns this name.
-# ---------------------------------------------------------------------------
-resource "cloudflare_dns_record" "fileserver" {
-  count = var.fileserver_enabled ? 1 : 0
-
-  zone_id = data.cloudflare_zone.main.id
-  name    = var.fileserver_record_name
-  type    = "A"
-  content = var.fileserver_ip
-  proxied = false
-  ttl     = 60
-  comment = "Terraform: fileserver LXC NFS (DNS-only, LAN)"
-}
-
-# cloudflare v4->v5 rename (cloudflare_record -> cloudflare_dns_record, value -> content).
-moved {
-  from = cloudflare_record.fileserver[0]
-  to   = cloudflare_dns_record.fileserver[0]
 }

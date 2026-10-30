@@ -5,7 +5,7 @@
 
 locals {
   # Cluster-wide patch shared by control-plane and worker configs.
-  cluster_patch = templatefile("${path.module}/../talos/patches/cluster.yaml.tmpl", {
+  cluster_patch = templatefile("${path.module}/../../talos/patches/cluster.yaml.tmpl", {
     install_disk = "/dev/sda" # virtio-scsi boot disk (scsi0)
     nameserver   = var.nameserver
     # Install the Image Factory schematic installer (NOT the provider's bundled
@@ -27,7 +27,7 @@ locals {
       inlineManifests = [
         {
           name     = "cilium"
-          contents = file("${path.module}/../talos/cilium/cilium.yaml")
+          contents = file("${path.module}/../../talos/cilium/cilium.yaml")
         },
       ]
     }
@@ -89,7 +89,7 @@ resource "talos_machine_configuration_apply" "this" {
   endpoint = local.node_maintenance_ip[each.key]
 
   config_patches = [
-    templatefile("${path.module}/../talos/patches/node.yaml.tmpl", {
+    templatefile("${path.module}/../../talos/patches/node.yaml.tmpl", {
       hostname = "${var.cluster_name}-${each.key}"
       ip       = each.value.ip
       cidr     = var.network_cidr_bits

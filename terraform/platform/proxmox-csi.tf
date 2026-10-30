@@ -3,9 +3,9 @@
 #
 # The CSI controller provisions/attaches/detaches VM disks on Proxmox, so it
 # needs its own least-privilege API token. We create a dedicated role, user and
-# token here, then inject the rendered cloud-config straight into a Kubernetes
-# secret (same pattern as the sops-age secret). The HelmRelease consumes it via
-# `existingConfigSecret: proxmox-csi-plugin`.
+# token here and render the cloud-config. The cluster stack writes it into the
+# `proxmox-csi-plugin` Secret that the HelmRelease consumes via
+# `existingConfigSecret`.
 #
 # region MUST match the topology.kubernetes.io/region node label (var.proxmox_region)
 # and the Proxmox node name is used as the topology zone (var.proxmox_node).
@@ -64,20 +64,4 @@ locals {
       }
     ]
   })
-}
-
-# Inject the cloud-config directly as the secret the HelmRelease expects.
-resource "kubernetes_secret_v1" "proxmox_csi" {
-  metadata {
-    name      = "proxmox-csi-plugin"
-    namespace = "kube-system"
-  }
-
-  data = {
-    "config.yaml" = local.csi_cloud_config
-  }
-
-  type = "Opaque"
-
-  depends_on = [talos_cluster_kubeconfig.this]
 }

@@ -1,7 +1,7 @@
 # proxmox-talos-flux
 
 IaC for a Talos-based, HA Kubernetes cluster on a single Proxmox host, managed by
-Flux (GitOps). One imperative boundary: `terraform apply`. Everything else is Git.
+Flux (GitOps). One imperative boundary: `terraform/tf.sh all apply`. Everything else is Git.
 
 See [`plan.md`](./plan.md) for the full design, decisions, and rationale.
 For standing a fresh host up step-by-step, see [`docs/bootstrap.md`](./docs/bootstrap.md).
@@ -9,7 +9,7 @@ For standing a fresh host up step-by-step, see [`docs/bootstrap.md`](./docs/boot
 ## Layout
 
 ```
-terraform/    # Proxmox VMs, Talos and one-time Flux Operator bootstrap
+terraform/    # three stacks: cloudflare, platform (VMs, Talos, LXCs), cluster (Flux, k8s Secrets, DBs)
 talos/        # Talos machineconfig patches (control-plane / worker)
 kubernetes/   # Flux-managed cluster state (infrastructure + apps)
 ```
@@ -88,18 +88,26 @@ export TALOSCONFIG=$PWD/talosconfig
 
 ## Usage
 
-```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars   # fill in — DO NOT COMMIT
-export PROXMOX_VE_ENDPOINT='https://192.168.68.2:8006/'
-export PROXMOX_VE_API_TOKEN='terraform-prov@pve!mytoken=<secret>'   # rotate after bring-up
+Terraform is split into three stacks, each with its own state in R2:
 
-terraform init
-terraform fmt -check
-terraform validate
-terraform plan      # review — creates real VMs on apply
-# terraform apply   # provisions VMs, bootstraps Talos + Flux
+| Stack | Owns | Reads |
+|---|---|---|
+| `terraform/cloudflare` | tunnel, LAN DNS records | |
+| `terraform/platform` | Talos ISO, VMs, Talos config and bootstrap, fileserver and pg-01 LXCs, CSI Proxmox user | |
+| `terraform/cluster` | Flux bootstrap, Terraform-made k8s Secrets and ConfigMap, pg roles and databases | both |
+
+`terraform/tf.sh` runs Terraform in a stack with the credentials from
+`secrets.sops.env`. `all` runs the stacks in the order above.
+
+```bash
+terraform/tf.sh all init
+terraform/tf.sh all plan
+terraform/tf.sh platform apply
 ```
+
+Settings are tracked in `variables.tf` defaults and `*.auto.tfvars`; there is
+no local `terraform.tfvars`. See [docs/bootstrap.md](docs/bootstrap.md) for a
+rebuild from zero.
 
 After apply, Flux reconciles `kubernetes/` into the cluster.
 
