@@ -10,7 +10,7 @@ set -euo pipefail
 DIR=/mnt/backup-browse
 CT=${FILESERVER_CT:-110}
 # Datasets under this one on the backup pool get mounted, each as its own folder.
-BROWSE=${BROWSE:-$SOURCE/media}
+BROWSE=${BROWSE:-$SOURCE}
 
 case "${1:-}" in
   on)

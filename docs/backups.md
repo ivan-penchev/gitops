@@ -102,8 +102,10 @@ backup-browse on
 ```
 
 This powers the drive on, imports the pool read only and mounts the newest
-backup of every dataset under `tank/media` in `/mnt/backup-browse`. Each one
-is its own folder, like `movies`, `tv` or `audiobooks`. The fileserver LXC
+backup of every filesystem dataset of `tank` in `/mnt/backup-browse`. Each
+one is its own folder, like `media_movies`, `media_tv`, `postgres` or
+`subvol-110-disk-0` for an LXC disk. VM disks are zvols, raw block devices
+with no files to show, so they're left out. Restore them as described below. The fileserver LXC
 sees that directory as `/srv/backup`, so the folders show up in the Samba
 share `backup`, `\\fileserver.int.home.17072021.xyz\backup` on Windows.
 Only users with `backup = true` in `samba_users` see it.
@@ -113,8 +115,7 @@ forget, it turns itself off after 4 hours. It takes the same lock as
 `tank-backup`, so it won't start during a backup, and a backup that starts
 during a session ends the session first.
 
-Set `BROWSE=tank` in `/etc/default/tank-backup` to see every dataset,
-including the LXC disks and pg-01's data, not only media.
+Set `BROWSE=tank/media` in `/etc/default/tank-backup` to show only media.
 
 ## Restore
 
