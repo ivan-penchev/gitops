@@ -187,4 +187,5 @@ the ARC runner lives in the cluster an apply can reboot.
   manager.
 - Terraform state holds the Talos CA keys. Keep the R2 token private and an
   encrypted offline copy of the state.
-- No backups yet for PVs or PostgreSQL beyond ZFS on the mirror.
+- The only copy off the mirror is a weekly USB drive backup on the same
+  host, see [backups.md](backups.md). PostgreSQL has no dumps yet.

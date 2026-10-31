@@ -1,0 +1,10 @@
+[Unit]
+Description=Power off the USB backup drive at boot
+After=zfs-import.target systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/usb-drive off
+
+[Install]
+WantedBy=multi-user.target
