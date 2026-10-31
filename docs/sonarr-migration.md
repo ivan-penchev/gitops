@@ -4,7 +4,7 @@ Move Sonarr off CasaOS and into the cluster, next to Radarr and Prowlarr in the
 `downloads` namespace. Radarr is the template. Same image family, same non-root
 uid, same storage pattern, same cold copy.
 
-Status: manifests and the fileserver change are in this PR. Nothing is applied yet.
+Status: the fileserver exports `tv` (applied 2026-10-31). The Sonarr manifests wait for the merge.
 
 ## What runs today
 
@@ -77,12 +77,8 @@ the fileserver is an empty, root owned directory on the parent dataset.
 4. I apply `terraform/shared` and check from the fileserver that `/srv/media/tv`
    shows the series.
 
-Ownership is the main risk. Docker containers on CasaOS usually run with
-PUID 1000. Inside an unprivileged LXC, that is host uid 101000, not 100000. If
-the tv files belong to 101000, Sonarr on uid 100000 can read but cannot import
-or rename. I check this from the fileserver after step 2. The fix is a one-time
-`chown -R 100000:100000` on the fileserver, done while the CasaOS container is
-stopped.
+The tv files belong to uid and gid 100000, the same as movies, so Sonarr can
+write them without a chown. The dataset holds 195G.
 
 ## Cutover
 
@@ -106,5 +102,4 @@ stopped.
 
 ## Still to check
 
-1. Owner of the files in `tank/media/tv`, after the fileserver mounts it.
-2. Host path of the container's `/config` on CasaOS, during the cold copy.
+1. Host path of the container's `/config` on CasaOS, during the cold copy.
