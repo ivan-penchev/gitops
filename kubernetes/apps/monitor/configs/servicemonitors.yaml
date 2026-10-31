@@ -25,6 +25,10 @@ spec:
   endpoints:
     - port: metrics
       interval: 30s
+      # Keep Traefik's own `service` label, such as downloads-sonarr-8989.
+      # Without this Prometheus overwrites it with traefik-metrics, and the
+      # Grafana dashboard's service filter breaks.
+      honorLabels: true
 ---
 # cert-manager: certificate expiry, renewal success/failure.
 apiVersion: monitoring.coreos.com/v1
