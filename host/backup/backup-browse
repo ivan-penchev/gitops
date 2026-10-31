@@ -1,0 +1,64 @@
+#!/bin/bash
+# Show the USB backup drive, read only, in the fileserver's Samba share "backup".
+#   backup-browse on       power the drive on and mount it. Turns off after 4 hours.
+#   backup-browse off      unmount and power the drive off
+#   backup-browse status
+#   backup-browse serve    what backup-browse.service runs
+set -euo pipefail
+# shellcheck source=tank-backup.default
+. /etc/default/tank-backup
+DIR=/mnt/backup-browse
+CT=${FILESERVER_CT:-110}
+# Datasets under this one on the backup pool get mounted, each as its own folder.
+BROWSE=${BROWSE:-$SOURCE}
+
+case "${1:-}" in
+  on)
+    systemctl start backup-browse.service
+    echo "backup-browse: on until $(date -d '+4 hours' +%H:%M). Folders:"
+    ls "$DIR"
+    ;;
+  off)
+    systemctl stop backup-browse.service
+    echo "backup-browse: off"
+    ;;
+  status)
+    systemctl is-active backup-browse.service || true
+    ;;
+  serve)
+    exec 9>/run/tank-backup.lock
+    flock -n 9 || { echo "backup-browse: tank-backup is running, try later" >&2; exit 1; }
+
+    cleanup() {
+      pct exec "$CT" -- smbcontrol smbd close-share backup >/dev/null 2>&1 || true
+      findmnt -rn -o TARGET | grep "^$DIR/" | sort -r | while read -r m; do
+        umount "$m" || umount -l "$m"
+      done
+      if zpool list "$POOL" >/dev/null 2>&1; then zpool export -f "$POOL" || true; fi
+      usb-drive off || true
+    }
+    trap cleanup EXIT
+    trap 'exit 0' TERM INT
+
+    usb-drive on
+    zpool import -d /dev/disk/by-id -o cachefile=none -o readonly=on -N "$POOL"
+
+    # Snapshots mount without changing any property, which a read-only pool
+    # wouldn't allow. Each dataset gets a flat folder, like movies or tv,
+    # because a read-only snapshot can't get new mount point dirs.
+    zfs list -H -r -t filesystem -o name "$POOL/$BROWSE" | while read -r ds; do
+      snap=$(zfs list -H -d 1 -t snapshot -o name -s creation "$ds" | grep '@bk-' | tail -1)
+      [ -n "$snap" ] || continue
+      rel=${ds#"$POOL/$BROWSE"}
+      name=${rel#/}; name=${name//\//_}; name=${name:-$(basename "$BROWSE")}
+      mkdir -p "$DIR/$name"
+      mount -t zfs "$snap" "$DIR/$name"
+      echo "backup-browse: $DIR/$name is $snap"
+    done
+
+    systemd-notify --ready
+    sleep infinity &
+    wait
+    ;;
+  *) echo "usage: backup-browse on|off|status" >&2; exit 2 ;;
+esac

@@ -8,10 +8,10 @@ apt-get install -y -qq sanoid >/dev/null
 # The sanoid package brings a timer we don't use.
 systemctl disable --now sanoid.timer 2>/dev/null || true
 
-for f in usb-drive tank-backup; do
+for f in usb-drive tank-backup backup-browse; do
   curl -fsSL "$BASE/$f" -o "/usr/local/sbin/$f"; chmod 755 "/usr/local/sbin/$f"
 done
-for u in usb-drive-off.service tank-backup.service tank-backup.timer; do
+for u in usb-drive-off.service tank-backup.service tank-backup.timer backup-browse.service; do
   curl -fsSL "$BASE/$u" -o "/etc/systemd/system/$u"
 done
 [ -e /etc/default/tank-backup ] || curl -fsSL "$BASE/tank-backup.default" -o /etc/default/tank-backup
