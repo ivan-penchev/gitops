@@ -197,7 +197,7 @@ run "per_cluster_names_come_from_variables" {
   }
 
   assert {
-    condition     = proxmox_virtual_environment_user.pve_exporter.user_id == "test-pve-exporter@pve" && proxmox_acl.pve_exporter.role_id == "PVEAuditor"
+    condition     = proxmox_virtual_environment_user.pve_exporter[0].user_id == "test-pve-exporter@pve" && proxmox_acl.pve_exporter[0].role_id == "PVEAuditor"
     error_message = "The pve-exporter user must come from tfvars and stay read-only."
   }
 
@@ -223,6 +223,19 @@ run "per_cluster_names_come_from_variables" {
   assert {
     condition     = length(kubernetes_secret_v1.sops_age) == 0
     error_message = "No sops-age Secret without a key file."
+  }
+}
+
+run "pve_exporter_is_off_unless_the_cluster_opts_in" {
+  command = plan
+
+  variables {
+    pve_exporter_proxmox_user = ""
+  }
+
+  assert {
+    condition     = length(proxmox_virtual_environment_user.pve_exporter) == 0 && length(kubernetes_secret_v1.pve_exporter) == 0
+    error_message = "Only the cluster that sets pve_exporter_proxmox_user may create the exporter user and Secret."
   }
 }
 

@@ -223,8 +223,9 @@ variable "talosconfig_file" {
 }
 
 variable "pve_exporter_proxmox_user" {
-  description = "Proxmox user for this cluster's prometheus-pve-exporter. Global on the PVE host."
+  description = "Proxmox user for prometheus-pve-exporter. Global on the PVE host. Set it in one cluster only, since all clusters share the host. Empty creates nothing."
   type        = string
+  default     = ""
 }
 
 variable "pve_exporter_token_name" {
