@@ -1,0 +1,128 @@
+# Sonarr, LinuxServer image, pinned. The CasaOS container ran 4.0.16. Sonarr
+# migrates the copied sonarr.db forward on first start and never down, so the
+# stopped CasaOS container stays as the rollback.
+#
+# Runs as uid and gid 100000, the owner of the media tree on the fileserver. The
+# NFS export ignores supplemental groups, so only the owner can import into /tv.
+#
+# A root init container chowns the block config PVC. There is no pod fsGroup,
+# because nfs.csi would then chown the whole NFS mount. PUID and PGID match
+# runAsUser so the s6 init skips its own chown. s6 needs a writable /run and
+# Sonarr writes scratch files to /tmp, so both are emptyDir.
+#
+# One replica with Recreate, because the RWO config PVC can attach to one pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarr
+  namespace: downloads
+  labels:
+    app: sonarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100000
+        runAsGroup: 100000
+      initContainers:
+        - name: init-chown-config
+          image: busybox:1.38.0
+          command:
+            - sh
+            - -c
+            - chown 100000:100000 /config
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      containers:
+        - name: sonarr
+          image: lscr.io/linuxserver/sonarr:4.0.20.3014-ls2
+          ports:
+            - name: http
+              containerPort: 8989
+          env:
+            - name: PUID
+              value: "100000"
+            - name: PGID
+              value: "100000"
+            - name: TZ
+              value: Europe/Copenhagen
+            - name: UMASK
+              value: "022"
+            # .NET server GC sizes its heaps to the cgroup limit and OOMed Radarr
+            # during library scans. Workstation GC keeps memory small.
+            - name: DOTNET_gcServer
+              value: "0"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: tv
+              mountPath: /tv
+            - name: downloads
+              mountPath: /downloads
+            - name: run
+              mountPath: /run
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: sonarr-config
+        - name: tv
+          persistentVolumeClaim:
+            claimName: sonarr-tv-nfs
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: sonarr-downloads-nfs
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarr
+  namespace: downloads
+spec:
+  selector:
+    app: sonarr
+  ports:
+    - name: http
+      port: 8989
+      targetPort: http

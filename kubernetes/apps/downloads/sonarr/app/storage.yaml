@@ -1,0 +1,97 @@
+# Sonarr config volume: sonarr.db and config.xml, which holds the API key. This is
+# all of Sonarr's state and is what we cold-copy from CasaOS.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-config
+  namespace: downloads
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-tank
+  resources:
+    requests:
+      storage: 2Gi
+---
+# One static NFS PV per ZFS dataset, mounted at the paths the CasaOS container
+# used, so the migrated database needs no path edits. Root folder is /tv and the
+# qBittorrent remote path mapping is /downloads/ to /downloads/. tv and
+# torrent-download are separate datasets, so imports copy and never hardlink.
+# Retain means deleting a claim never touches the library.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: sonarr-tv-nfs
+spec:
+  capacity:
+    storage: 1Ti # nominal, NFS ignores it
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-media
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - noatime
+  claimRef:
+    namespace: downloads
+    name: sonarr-tv-nfs
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: fileserver.int.home.17072021.xyz#srv/media/tv#sonarr
+    volumeAttributes:
+      server: "fileserver.int.home.17072021.xyz"
+      share: /srv/media/tv
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-tv-nfs
+  namespace: downloads
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-media
+  resources:
+    requests:
+      storage: 1Ti
+  volumeName: sonarr-tv-nfs
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: sonarr-downloads-nfs
+spec:
+  capacity:
+    storage: 1Ti # nominal, NFS ignores it
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-media
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - noatime
+  claimRef:
+    namespace: downloads
+    name: sonarr-downloads-nfs
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: fileserver.int.home.17072021.xyz#srv/media/torrent-download#sonarr
+    volumeAttributes:
+      server: "fileserver.int.home.17072021.xyz"
+      share: /srv/media/torrent-download
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonarr-downloads-nfs
+  namespace: downloads
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-media
+  resources:
+    requests:
+      storage: 1Ti
+  volumeName: sonarr-downloads-nfs

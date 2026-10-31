@@ -4,7 +4,7 @@ Move Sonarr off CasaOS and into the cluster, next to Radarr and Prowlarr in the
 `downloads` namespace. Radarr is the template. Same image family, same non-root
 uid, same storage pattern, same cold copy.
 
-Status: draft. The open questions below block the build.
+Status: manifests and the fileserver change are in this PR. Nothing is applied yet.
 
 ## What runs today
 
@@ -63,16 +63,19 @@ on the LXC root disk. We find the exact path during the cold copy.
 The fileserver LXC 110 does not expose the `tv` dataset yet. `/srv/media/tv` on
 the fileserver is an empty, root owned directory on the parent dataset.
 
-1. Add `tv` to `fileserver.child_datasets` in `terraform/shared/shared.auto.tfvars`.
-   Terraform then writes the export line.
+1. `terraform/shared/shared.auto.tfvars` lists `tv` in
+   `fileserver.child_datasets`. Terraform writes the export line and prints the
+   new `fileserver_host_mount_command`.
 2. You run the bind mount on the Proxmox host as root@pam, because the API token
    cannot set bind mounts:
-   `pct set 110 -mp3 /tank/media/tv,mp=/srv/media/tv` and `pct reboot 110`.
-   The exact command comes from the `fileserver_host_mount_command` output.
-3. Remove the empty `/srv/media/tv` directory on the parent dataset first, or the
-   bind mount hides it. Do not `rmdir` while anything is mounted there. That is
-   how `movies` got detached during the Radarr work.
-4. Check from a pod that `/srv/media/tv` shows the series and is owned by 100000.
+   `pct set 110 -mp3 /tank/media/tv,mp=/srv/media/tv && pct reboot 110`.
+   The reboot pauses the Radarr and Audiobookshelf NFS mounts for a few seconds.
+   They use `hard` mounts, so they wait and resume.
+3. Leave the empty `/srv/media/tv` directory alone. The bind mount covers it. Do
+   not `rmdir` anything under `/srv/media`. That is how `movies` got detached
+   during the Radarr work.
+4. I apply `terraform/shared` and check from the fileserver that `/srv/media/tv`
+   shows the series.
 
 Ownership is the main risk. Docker containers on CasaOS usually run with
 PUID 1000. Inside an unprivileged LXC, that is host uid 101000, not 100000. If
@@ -83,8 +86,9 @@ stopped.
 
 ## Cutover
 
-1. Merge the fileserver change, apply `terraform/shared`, run the host command.
-2. Merge the Sonarr manifests. Flux starts an empty Sonarr.
+1. Run the host command, then I apply `terraform/shared` from this branch. The
+   Sonarr PVs need the `tv` export before Flux creates them.
+2. Merge this PR. Flux starts an empty Sonarr.
 3. Stop the Sonarr container on CasaOS. You tar `sonarr.db` and `config.xml`
    from its `/config` volume and serve the tarball over HTTP on the LAN.
 4. I scale Sonarr to 0, load the files into the PVC with a root helper pod,

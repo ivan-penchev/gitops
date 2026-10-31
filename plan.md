@@ -367,6 +367,11 @@ non-root, behind a stable internal ingress. Same cold-copy pattern as Prowlarr.
   qBittorrent's Share Ratio Limiting is set to *Remove them* (pre-existing) —
   switch to *Pause them* so torrents aren't deleted before Radarr imports.
 
+## Sonarr (2026-10-31), in progress
+Moving Sonarr from Docker on CasaOS LXC 200 into `downloads`, same pattern as
+Radarr. The `tv` dataset joins the fileserver exports. Steps and status live in
+`docs/sonarr-migration.md`.
+
 ## PostgreSQL LXC (pg-01, 2026-08-19) — LIVE
 Deployed & verified 2026-08-19: PostgreSQL 17.11 online, PGDATA on `/mnt/pgdata/17/main`
 (dataset `tank/postgres`), `landingzone` DB/role created, `postgres-landingzone`

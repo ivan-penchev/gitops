@@ -1,0 +1,32 @@
+# Internal only. LAN DNS sends *.int.home to the ingress LB, and ingress-nginx
+# serves the wildcard cert. Prowlarr uses this hostname as Sonarr's base URL.
+# Long timeouts keep the SignalR websocket open.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sonarr-internal
+  namespace: downloads
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Sonarr
+    gethomepage.dev/pod-selector: app=sonarr
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: sonarr.png
+    gethomepage.dev/description: TV library
+    gethomepage.dev/href: https://sonarr.${lan_domain}
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: sonarr.${lan_domain}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarr
+                port:
+                  number: 8989
