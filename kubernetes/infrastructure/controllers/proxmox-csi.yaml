@@ -1,6 +1,6 @@
 ---
 # Proxmox CSI (sergelogvinov). Provisions PVs as Proxmox disks on `tank`.
-# Requires a `proxmox-csi-plugin` config secret (see infrastructure/configs).
+# Reads its cloud-config from the `proxmox-csi-plugin` Secret in proxmox-csi-secret.yaml.
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
@@ -24,7 +24,6 @@ spec:
     name: proxmox-csi
     namespace: kube-system
   values:
-    # Cluster config is supplied via the existingConfigSecret created in configs.
     existingConfigSecret: proxmox-csi-plugin
     storageClass:
       - name: proxmox-tank

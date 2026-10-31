@@ -64,7 +64,7 @@ resource "kubernetes_secret_v1" "cluster_secrets_tf" {
     namespace = "flux-system"
   }
 
-  data = local.pve_exporter_secrets
+  data = merge(local.csi_secrets, local.pve_exporter_secrets)
 
   type = "Opaque"
 

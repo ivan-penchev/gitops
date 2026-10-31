@@ -7,7 +7,8 @@ Rules:
 - every secrets.sops.env value is ENC[...] (sops_* metadata keys excepted)
 - no other tracked YAML holds a Secret with data or stringData, unless every
   stringData value is a Flux ${var} placeholder that Flux fills in from the
-  Terraform-written cluster-secrets-tf Secret
+  Terraform-written cluster-secrets-tf Secret. A value may also be a YAML
+  document, such as a config file, whose every leaf is such a placeholder
 """
 import re
 import subprocess
@@ -28,12 +29,39 @@ def enc(v):
 PLACEHOLDER = re.compile(r"\$\{[a-z0-9_]+\}")
 
 
+def leaves(node):
+    if isinstance(node, dict):
+        for v in node.values():
+            yield from leaves(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from leaves(v)
+    else:
+        yield node
+
+
+def placeholder_value(v):
+    if not isinstance(v, str):
+        return False
+    if PLACEHOLDER.fullmatch(v):
+        return True
+    if "\n" not in v:
+        return False
+    try:
+        parsed = yaml.safe_load(v)
+    except yaml.YAMLError:
+        return False
+    if not isinstance(parsed, (dict, list)):
+        return False
+    return all(isinstance(x, str) and PLACEHOLDER.fullmatch(x) for x in leaves(parsed))
+
+
 def placeholders_only(doc):
     string_data = doc.get("stringData") or {}
     return (
         not doc.get("data")
         and bool(string_data)
-        and all(isinstance(v, str) and PLACEHOLDER.fullmatch(v) for v in string_data.values())
+        and all(placeholder_value(v) for v in string_data.values())
     )
 
 

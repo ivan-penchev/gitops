@@ -207,6 +207,15 @@ run "per_cluster_names_come_from_variables" {
   }
 
   assert {
+    condition = alltrue([
+      kubernetes_config_map_v1.cluster_config_tf.data.proxmox_csi_url == "https://192.0.2.3:8006/api2/json",
+      kubernetes_config_map_v1.cluster_config_tf.data.proxmox_insecure == "true",
+      contains(keys(kubernetes_secret_v1.cluster_secrets_tf.data), "proxmox_csi_token_secret"),
+    ])
+    error_message = "Flux needs the CSI URL in cluster-config-tf and the CSI token in cluster-secrets-tf."
+  }
+
+  assert {
     condition     = proxmox_virtual_environment_vm.this["cp-1"].name == "test-cp-1" && proxmox_virtual_environment_vm.this["cp-1"].vm_id == 901
     error_message = "VM names must use cluster_name."
   }

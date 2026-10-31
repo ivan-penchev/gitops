@@ -86,7 +86,7 @@ variable "workers" {
 }
 
 variable "proxmox_region" {
-  description = "CSI topology region label. Must match the `region` field in the proxmox-csi cloud-config secret."
+  description = "CSI topology region label. Flux writes it into the proxmox-csi cloud-config Secret."
   type        = string
 }
 

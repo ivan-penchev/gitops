@@ -6,6 +6,7 @@ resources:
   - azure-dns.sops.yaml
   - cert-manager.yaml
   - metrics-server.yaml
+  - proxmox-csi-secret.yaml
   - proxmox-csi.yaml
   - csi-driver-nfs.yaml
   - traefik.yaml
