@@ -5,8 +5,11 @@ Rules:
 - every *.sops.yaml / *.sops.yml has a sops block, and every value under
   data/stringData is an ENC[...] string
 - every secrets.sops.env value is ENC[...] (sops_* metadata keys excepted)
-- no other tracked YAML holds a Secret with data or stringData
+- no other tracked YAML holds a Secret with data or stringData, unless every
+  stringData value is a Flux ${var} placeholder that Flux fills in from the
+  Terraform-written cluster-secrets-tf Secret
 """
+import re
 import subprocess
 import sys
 
@@ -20,6 +23,18 @@ def tracked():
 
 def enc(v):
     return isinstance(v, str) and v.startswith("ENC[")
+
+
+PLACEHOLDER = re.compile(r"\$\{[a-z0-9_]+\}")
+
+
+def placeholders_only(doc):
+    string_data = doc.get("stringData") or {}
+    return (
+        not doc.get("data")
+        and bool(string_data)
+        and all(isinstance(v, str) and PLACEHOLDER.fullmatch(v) for v in string_data.values())
+    )
 
 
 def check_sops_yaml(path, errors):
@@ -61,7 +76,7 @@ def check_plain_yaml(path, errors):
         return
     for i, doc in enumerate(docs):
         if isinstance(doc, dict) and doc.get("kind") == "Secret":
-            if doc.get("data") or doc.get("stringData"):
+            if (doc.get("data") or doc.get("stringData")) and not placeholders_only(doc):
                 errors.append(f"{path}[{i}]: Secret with data outside a *.sops.yaml file")
 
 

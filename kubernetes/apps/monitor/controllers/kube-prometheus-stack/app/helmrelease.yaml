@@ -167,6 +167,13 @@ spec:
               editable: false
               options:
                 path: /var/lib/grafana/dashboards/grafana-com
+            - name: proxmox
+              folder: Proxmox
+              type: file
+              disableDeletion: true
+              editable: false
+              options:
+                path: /var/lib/grafana/dashboards/proxmox
       dashboards:
         grafana-com:
           traefik:
@@ -176,6 +183,15 @@ spec:
             datasource:
               - name: DS_PROMETHEUS
                 # The datasource uid, since panels reference it by uid.
+                value: prometheus
+        proxmox:
+          proxmox:
+            # Proxmox via Prometheus. Needs pve-exporter, which only the cluster
+            # that scrapes the shared Proxmox host runs. Elsewhere it is empty.
+            gnetId: 10347
+            revision: 5
+            datasource:
+              - name: DS_PROMETHEUS
                 value: prometheus
       ingress:
         enabled: true

@@ -58,5 +58,6 @@ locals {
       dns_owner_id  = var.dns_owner_id
     },
     { for k, z in data.cloudflare_zone.extra : "${k}_cf_zone_id" => z.id },
+    local.pve_exporter_config,
   )
 }

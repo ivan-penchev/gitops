@@ -1,0 +1,84 @@
+---
+# prometheus-pve-exporter reads host, guest and storage status from the Proxmox
+# API with a read-only PVEAuditor token. Terraform creates the user and token
+# (terraform/cluster/pve-exporter.tf). Prometheus passes the host to scrape as
+# the ?target= parameter, see servicemonitor.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pve-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: pve-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pve-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pve-exporter
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pve-exporter
+          image: prompve/prometheus-pve-exporter:3.10.2
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http-metrics
+              containerPort: 9221
+          # PVE_USER switches the exporter from pve.yml to these variables.
+          env:
+            - name: PVE_USER
+              value: "${pve_exporter_user}"
+            - name: PVE_TOKEN_NAME
+              value: "${pve_exporter_token_name}"
+            - name: PVE_TOKEN_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: pve-exporter
+                  key: PVE_TOKEN_VALUE
+            # Proxmox serves a self-signed certificate.
+            - name: PVE_VERIFY_SSL
+              value: "false"
+          readinessProbe:
+            tcpSocket:
+              port: http-metrics
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http-metrics
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pve-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: pve-exporter
+spec:
+  selector:
+    app.kubernetes.io/name: pve-exporter
+  ports:
+    - name: http-metrics
+      port: 9221
+      targetPort: http-metrics

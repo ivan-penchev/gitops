@@ -55,26 +55,27 @@ variables {
   workers = {
     work-1 = { vmid = 902, ip = "192.0.2.12", cpu = 2, memory = 4096, disk = 20 }
   }
-  proxmox_node           = "pve"
-  proxmox_region         = "test"
-  proxmox_csi_endpoint   = "https://192.0.2.3:8006/api2/json"
-  iso_datastore          = "local"
-  vm_datastore           = "tank"
-  network_bridge         = "vmbr0"
-  cloudflare_zone        = "example.test"
-  public_domain          = "test.example.test"
-  lan_domain             = "int.example.test"
-  dns_owner_id           = "test"
-  cloudflare_tunnel_name = "test"
-  flux_git_url           = "https://github.com/ivan-penchev/gitops.git"
-  flux_path              = "kubernetes/clusters/homelab"
-  iso_name_prefix        = "test-talos"
-  kubeconfig_file        = "kubeconfig-test"
-  talosconfig_file       = "talosconfig-test"
-  csi_proxmox_role       = "test-CSI"
-  csi_proxmox_user       = "test-csi@pve"
-  sops_age_key_file      = ""
-  extra_zones            = { other = "other.test" }
+  proxmox_node              = "pve"
+  proxmox_region            = "test"
+  proxmox_csi_endpoint      = "https://192.0.2.3:8006/api2/json"
+  iso_datastore             = "local"
+  vm_datastore              = "tank"
+  network_bridge            = "vmbr0"
+  cloudflare_zone           = "example.test"
+  public_domain             = "test.example.test"
+  lan_domain                = "int.example.test"
+  dns_owner_id              = "test"
+  cloudflare_tunnel_name    = "test"
+  flux_git_url              = "https://github.com/ivan-penchev/gitops.git"
+  flux_path                 = "kubernetes/clusters/homelab"
+  iso_name_prefix           = "test-talos"
+  kubeconfig_file           = "kubeconfig-test"
+  talosconfig_file          = "talosconfig-test"
+  csi_proxmox_role          = "test-CSI"
+  csi_proxmox_user          = "test-csi@pve"
+  pve_exporter_proxmox_user = "test-pve-exporter@pve"
+  sops_age_key_file         = ""
+  extra_zones               = { other = "other.test" }
   postgres_databases = [
     { name = "app", namespaces = ["app-a", "app-b"] },
     { name = "wiki", namespaces = ["wiki"] },
@@ -196,6 +197,16 @@ run "per_cluster_names_come_from_variables" {
   }
 
   assert {
+    condition     = proxmox_virtual_environment_user.pve_exporter[0].user_id == "test-pve-exporter@pve" && proxmox_acl.pve_exporter[0].role_id == "PVEAuditor"
+    error_message = "The pve-exporter user must come from tfvars and stay read-only."
+  }
+
+  assert {
+    condition     = kubernetes_config_map_v1.cluster_config_tf.data["pve_exporter_target"] == "192.0.2.3"
+    error_message = "The exporter must scrape the host from proxmox_csi_endpoint."
+  }
+
+  assert {
     condition     = proxmox_virtual_environment_vm.this["cp-1"].name == "test-cp-1" && proxmox_virtual_environment_vm.this["cp-1"].vm_id == 901
     error_message = "VM names must use cluster_name."
   }
@@ -217,6 +228,19 @@ run "per_cluster_names_come_from_variables" {
   assert {
     condition     = length(kubernetes_secret_v1.sops_age) == 0
     error_message = "No sops-age Secret without a key file."
+  }
+}
+
+run "pve_exporter_is_off_unless_the_cluster_opts_in" {
+  command = plan
+
+  variables {
+    pve_exporter_proxmox_user = ""
+  }
+
+  assert {
+    condition     = length(proxmox_virtual_environment_user.pve_exporter) == 0 && !contains(keys(kubernetes_config_map_v1.cluster_config_tf.data), "pve_exporter_target")
+    error_message = "Only the cluster that sets pve_exporter_proxmox_user may create the exporter user or hand Flux its values."
   }
 }
 
