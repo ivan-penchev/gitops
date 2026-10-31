@@ -106,6 +106,19 @@ need it.
   The quotas stop a stuck download or an upload loop from filling the pool
   that also holds pg-01 and every PVC. Photos and documents are the only
   data here you can't download again.
+- The same LXC runs Samba for Windows PCs on the LAN, see
+  `terraform/shared/samba.tf`. The `media` share is the whole tree. Each
+  person in `samba_users` has their own login, and Samba writes every file
+  as uid 100000, the same owner the apps use. Windows needs the DNS name, not
+  the IP, because signing is mandatory:
+
+  ```powershell
+  net use M: \\fileserver.int.home.17072021.xyz\media /user:ivan /persistent:yes
+  ```
+
+  Tick "Remember my credentials" or run `cmdkey` once, and the drive comes
+  back after every login. The read-only `backup` share shows the USB backup
+  drive while it's mounted for browsing.
 - pg-01 runs PostgreSQL 17 with data on `tank/postgres`. It sits outside the
   cluster so databases survive a cluster rebuild. `postgres_databases` in the
   cluster tfvars creates a role, a database and a `postgres-<db>` Secret in

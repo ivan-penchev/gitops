@@ -9,6 +9,7 @@ mock_provider "random" {}
 variables {
   ssh_public_key_path  = "tests/fake-ssh-key"
   ssh_private_key_path = "tests/fake-ssh-key"
+  samba_passwords      = { ivan = "test" }
 }
 
 run "fileserver_mounts_every_child_dataset" {
@@ -70,6 +71,39 @@ run "fileserver_without_child_datasets" {
     condition     = output.fileserver_host_mount_command == "pct set 110 -mp0 /tank/media,mp=/srv/media --features nesting=1 && pct reboot 110"
     error_message = "Unexpected fileserver mount command: ${output.fileserver_host_mount_command}"
   }
+}
+
+run "samba_shares_per_user" {
+  command = plan
+
+  variables {
+    samba_users = {
+      ivan = { backup = true }
+      gf   = { read_only = true }
+    }
+    samba_passwords = { ivan = "a", gf = "b" }
+  }
+
+  assert {
+    condition     = strcontains(local.samba_conf, "  valid users = gf ivan\n  read only = yes\n  write list = ivan\n")
+    error_message = "media share must list both users and let only ivan write:\n${local.samba_conf}"
+  }
+
+  assert {
+    condition     = strcontains(local.samba_conf, "[backup]\n  path = /srv/backup\n  valid users = ivan\n")
+    error_message = "backup share must be ivan only:\n${local.samba_conf}"
+  }
+}
+
+run "samba_needs_a_password_per_user" {
+  command = plan
+
+  variables {
+    samba_users     = { ivan = {}, gf = {} }
+    samba_passwords = { ivan = "a" }
+  }
+
+  expect_failures = [null_resource.fileserver_samba_users]
 }
 
 run "postgres_mount_command" {

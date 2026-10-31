@@ -17,6 +17,13 @@ diffs show which key changed. It holds:
   SHA-256 of the token value. Rotating the R2 token means updating all three.
 - `AWS_ENDPOINT_URL_S3`, the account's R2 endpoint. It sits here instead of in
   `backend.tf` because the repo is public.
+- `TF_VAR_samba_passwords`, a JSON map from each user in `samba_users` to their
+  Samba password, like `{"ivan":"..."}`. To add a person, give the whole map
+  again, JSON-quoted:
+
+  ```bash
+  sops set secrets.sops.env '["TF_VAR_samba_passwords"]' '"{\"ivan\":\"...\",\"anna\":\"...\"}"'
+  ```
 
 ## Use the secrets
 

@@ -41,3 +41,9 @@ postgres = {
   ip       = "192.168.68.12"
   dns_name = "pg-01.int.home"
 }
+
+# Samba logins for Windows. Passwords live in secrets.sops.env.
+# A second person: add `name = {}`, or `name = { read_only = true }`.
+samba_users = {
+  ivan = { backup = true }
+}
