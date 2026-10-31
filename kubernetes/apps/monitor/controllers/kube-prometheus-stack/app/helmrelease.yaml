@@ -8,7 +8,7 @@
 #   * Control-plane components (scheduler/controller-manager/etcd/kube-proxy) are
 #     DISABLED on purpose — Talos doesn't expose them without machineconfig
 #     patches and we run Cilium's kube-proxy replacement, so scraping them just
-#     produces permanent "down" targets. See plan.md / the observability grill.
+#     produces permanent "down" targets. See docs/architecture.md.
 #   * Grafana is anonymous-Admin on the LAN (login form off) with a SOPS
 #     break-glass admin password (grafana-admin secret). Grafana, Prometheus and
 #     Alertmanager are each served on *.int.home over Traefik's default

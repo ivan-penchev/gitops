@@ -15,17 +15,17 @@ one is available. Major updates stay separate and require manual review; no
 updates auto-merge. Minor and patch updates of the same dependency no longer
 create duplicate PRs.
 
-Renovate ignores `*.sops.yaml`, `terraform/**`, and
-`kubernetes/clusters/homelab/flux-system/**`. Terraform provider/lockfile PRs
-were being created despite the live test not running `terraform plan` or
-applying Terraform (including lockfile-only PRs). Terraform upgrades now need
-an intentional local plan and manual PR. Flux Operator/FluxInstance bootstrap
-files are also outside the live test: it suspends the owning root Kustomization,
-so distribution and operator upgrades must follow the separate
-[Flux transition test](flux-upgrade-test.md) and a manual rollout. Renovate
-still tracks the deployable child Kustomizations and their app charts/images.
-Closing a Renovate PR without merging suppresses that *specific* release, not
-future releases; the exclusions prevent another untestable upgrade PR.
+Renovate ignores `*.sops.yaml` and `kubernetes/clusters/homelab/flux-system/**`.
+Flux Operator and FluxInstance files are outside the live test, because it
+suspends the root Kustomization that owns them. Upgrade those through the
+[Flux transition test](flux-upgrade-test.md) and a manual rollout.
+
+Terraform provider bumps get one PR per root. The live test skips them. The
+Terraform plan workflow comments on the PR instead, and you apply by hand after
+the merge. Talos and Kubernetes bumps edit `talos-versions.tfvars` and follow
+[talos-k8s-versions.md](talos-k8s-versions.md).
+
+Closing a Renovate PR without merging suppresses that release, not future ones.
 
 `.github/workflows/gitops-live-test.yml` accepts same-repository PRs targeting
 `main`: `renovate/*` branches run automatically; other branches require a
@@ -67,16 +67,13 @@ not prove workload behavior changed.
 
 Child discovery selects both Flux ownership labels:
 `kustomize.toolkit.fluxcd.io/name=apps` and
-`kustomize.toolkit.fluxcd.io/namespace=flux-system`. This covers the per-app
-`prowlarr`, `radarr`, and `audiobookshelf` Kustomizations without hard-coding their
-names. It does not recurse into grandchildren or discover Kustomizations outside
-`flux-system`. Wattbill remains a direct resource of `apps`, not a separately
-reconciled Flux Kustomization.
+`kustomize.toolkit.fluxcd.io/namespace=flux-system`. This covers every per-app
+Kustomization without hard-coding their names. It does not recurse into
+grandchildren or discover Kustomizations outside `flux-system`. Wattbill has no
+`ks.yaml`, so `apps` applies it directly.
 
 The workflow fails on a suspended child. It never unsuspends or skips one, in
-both the PR verdict and recovery. The staged namespace migration therefore cannot
-pass this test while its children have `spec.suspend: true`. This workflow is not
-a substitute for the approved data migration and per-app activation steps.
+both the PR verdict and recovery.
 
 ## Branch switching
 

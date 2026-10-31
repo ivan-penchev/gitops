@@ -4,9 +4,7 @@
 # proxied CNAME to the cluster tunnel (same pattern as whoami). No tls block:
 # TLS terminates at the Cloudflare edge; tunnel -> origin is plain HTTP.
 #
-# This file is included in kustomization.yaml. Keep the app's Flux Kustomization
-# suspended until existing data and authentication have been verified privately.
-# See docs/app-namespace-migration.md before resuming it.
+# Check the app's authentication before adding a public Ingress like this one.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
