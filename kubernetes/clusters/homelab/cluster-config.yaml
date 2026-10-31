@@ -26,5 +26,8 @@ data:
   # ingress-nginx LoadBalancer IP (target of the lan_domain A records). It is the
   # first address of the Cilium LB pool below.
   ingress_lb_ip: "192.168.68.40"
+  # Traefik LoadBalancer IP. Traefik replaces ingress-nginx, and external-dns
+  # moves the lan_domain A records here as each Ingress switches class.
+  traefik_lb_ip: "192.168.68.41"
   lb_pool_start: "192.168.68.40"
   lb_pool_stop: "192.168.68.49"

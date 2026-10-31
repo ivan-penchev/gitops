@@ -11,6 +11,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: traefik
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: external-dns
 ---
 apiVersion: v1

@@ -26,6 +26,27 @@ spec:
     - port: metrics
       interval: 30s
 ---
+# Traefik: request rates, latency and status codes per entrypoint, router and
+# service. The HelmRelease enables the traefik-metrics Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: traefik
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: traefik
+spec:
+  namespaceSelector:
+    matchNames:
+      - traefik
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/component: metrics
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
 # cert-manager: certificate expiry, renewal success/failure.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

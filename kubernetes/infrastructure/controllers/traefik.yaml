@@ -1,0 +1,88 @@
+---
+# Traefik replaces ingress-nginx, which stopped getting fixes in March 2026.
+# Both entry paths end here:
+#   * Public: internet -> Cloudflare edge -> tunnel (cloudflared pod) -> the
+#     Traefik Service on port 80 -> app Service.
+#   * Internal: LAN client -> DNS (*.lan_domain -> the LB IP below) -> Traefik
+#     on 443 with the wildcard cert -> app Service.
+# Apps keep using plain Kubernetes Ingress objects with ingressClassName traefik.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 24h
+  url: https://traefik.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: traefik
+      version: "42.2.0"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: traefik
+  values:
+    deployment:
+      replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    ingressClass:
+      enabled: true
+      # ingress-nginx is still the default class. This flips once every Ingress
+      # has moved, because two default classes make new Ingresses ambiguous.
+      isDefaultClass: false
+    providers:
+      kubernetesIngress:
+        # Writes the LB IP into each Ingress status. external-dns reads it for
+        # the *.lan_domain A records.
+        publishedService:
+          enabled: true
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
+    ports:
+      web:
+        # No HTTP to HTTPS redirect. Cloudflare already terminates TLS for public
+        # hosts, and the tunnel sends plain HTTP to this port.
+        forwardedHeaders:
+          # Only cloudflared, a pod, sets X-Forwarded-*. LAN clients can't.
+          trustedIPs:
+            - 10.244.0.0/16
+        transport:
+          respondingTimeouts:
+            # Traefik's default 60s read timeout cuts off large uploads, for
+            # example audiobooks. 0 means no limit, like ingress-nginx's
+            # proxy-body-size 0.
+            readTimeout: 0
+      websecure:
+        transport:
+          respondingTimeouts:
+            readTimeout: 0
+    tlsStore:
+      default:
+        defaultCertificate:
+          # Issued by cert-manager in infrastructure/configs/internal-cert.yaml.
+          secretName: int-home-tls
+    service:
+      annotations:
+        lbipam.cilium.io/ips: "${traefik_lb_ip}"
+    metrics:
+      prometheus:
+        service:
+          enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
