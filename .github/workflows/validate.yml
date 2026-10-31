@@ -50,8 +50,10 @@ jobs:
           tar -xzf pluto.tgz -C bin pluto
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Stub the Terraform-owned ConfigMap
-        run: cp .github/ci/cluster-config-tf.yaml kubernetes/clusters/homelab/zz-ci-cluster-config-tf.yaml
+      - name: Stub the Terraform-owned ConfigMap and Secret
+        run: |
+          cp .github/ci/cluster-config-tf.yaml kubernetes/clusters/homelab/zz-ci-cluster-config-tf.yaml
+          cp .github/ci/cluster-secrets-tf.yaml kubernetes/clusters/homelab/zz-ci-cluster-secrets-tf.yaml
 
       - name: Reconcile every Kustomization and HelmRelease offline
         run: flate test all --path ./kubernetes --kube-version "$KUBE_VERSION" --no-progress

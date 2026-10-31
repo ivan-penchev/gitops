@@ -202,6 +202,11 @@ run "per_cluster_names_come_from_variables" {
   }
 
   assert {
+    condition     = kubernetes_config_map_v1.cluster_config_tf.data["pve_exporter_target"] == "192.0.2.3"
+    error_message = "The exporter must scrape the host from proxmox_csi_endpoint."
+  }
+
+  assert {
     condition     = proxmox_virtual_environment_vm.this["cp-1"].name == "test-cp-1" && proxmox_virtual_environment_vm.this["cp-1"].vm_id == 901
     error_message = "VM names must use cluster_name."
   }
@@ -234,8 +239,8 @@ run "pve_exporter_is_off_unless_the_cluster_opts_in" {
   }
 
   assert {
-    condition     = length(proxmox_virtual_environment_user.pve_exporter) == 0 && length(kubernetes_secret_v1.pve_exporter) == 0
-    error_message = "Only the cluster that sets pve_exporter_proxmox_user may create the exporter user and Secret."
+    condition     = length(proxmox_virtual_environment_user.pve_exporter) == 0 && !contains(keys(kubernetes_config_map_v1.cluster_config_tf.data), "pve_exporter_target")
+    error_message = "Only the cluster that sets pve_exporter_proxmox_user may create the exporter user or hand Flux its values."
   }
 }
 

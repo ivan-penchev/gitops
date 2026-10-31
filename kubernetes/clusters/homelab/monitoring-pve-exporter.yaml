@@ -1,0 +1,28 @@
+# Proxmox host metrics. Only this cluster scrapes the shared Proxmox host, so
+# this Kustomization lives here and not in a shared path. It is the only one
+# that reads cluster-secrets-tf, for the token Terraform creates.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-pve-exporter
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: monitoring-prometheus
+  interval: 1h
+  retryInterval: 2m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./kubernetes/apps/monitor/controllers/pve-exporter/app
+  prune: true
+  wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-config
+      - kind: ConfigMap
+        name: cluster-config-tf
+      - kind: Secret
+        name: cluster-secrets-tf

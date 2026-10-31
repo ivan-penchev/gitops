@@ -1,0 +1,30 @@
+---
+# Scrapes the Proxmox host through the exporter. cluster=1 collects guests and
+# storage, node=1 collects the host itself. The instance label becomes the
+# Proxmox host instead of the exporter pod.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: pve-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: pve-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pve-exporter
+  endpoints:
+    - port: http-metrics
+      path: /pve
+      interval: 60s
+      scrapeTimeout: 30s
+      params:
+        target:
+          - "${pve_exporter_target}"
+        cluster:
+          - "1"
+        node:
+          - "1"
+      relabelings:
+        - targetLabel: instance
+          replacement: "${pve_exporter_target}"

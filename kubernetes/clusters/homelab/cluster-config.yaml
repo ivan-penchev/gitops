@@ -11,8 +11,11 @@
 # live here — Terraform writes them to the `cluster-config-tf` ConfigMap
 # (see terraform/cluster/flux.tf), which is listed second in every substituteFrom.
 #
-# SECRETS DO NOT BELONG HERE — this ConfigMap is plaintext in Git. Secrets stay
-# SOPS-encrypted and are consumed via secretKeyRef, never substitution.
+# SECRETS DO NOT BELONG HERE. This ConfigMap is plaintext in Git. Secrets you
+# write by hand stay SOPS-encrypted and are read via secretKeyRef. Credentials
+# Terraform generates, such as API tokens, go to the `cluster-secrets-tf`
+# Secret instead. Only the Kustomization that needs one lists that Secret in
+# substituteFrom, and substitutes it into a Secret manifest, never a ConfigMap.
 #
 # This is applied by the root `flux-system` Kustomization (path
 # ./kubernetes/clusters/homelab) alongside the infrastructure/apps Kustomizations

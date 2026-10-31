@@ -1,6 +1,6 @@
 # Flux bootstrap. Terraform creates what Flux needs before it starts (the
-# flux-system namespace, the sops-age Secret and the cluster-config-tf
-# ConfigMap), then installs the Flux Operator once.
+# flux-system namespace, the sops-age Secret, the cluster-config-tf ConfigMap
+# and the cluster-secrets-tf Secret), then installs the Flux Operator once.
 
 locals {
   flux_instance         = yamldecode(file("${local.flux_manifests_dir}/flux-instance.yaml"))
@@ -55,6 +55,22 @@ resource "kubernetes_config_map_v1" "cluster_config_tf" {
   depends_on = [kubernetes_namespace_v1.flux_system]
 }
 
+# Credentials Terraform generates, for Flux to substitute into Secret manifests.
+# Only the Kustomizations that need a value list this Secret in substituteFrom.
+# SOPS secrets written by hand stay in Git and never pass through here.
+resource "kubernetes_secret_v1" "cluster_secrets_tf" {
+  metadata {
+    name      = "cluster-secrets-tf"
+    namespace = "flux-system"
+  }
+
+  data = local.pve_exporter_secrets
+
+  type = "Opaque"
+
+  depends_on = [kubernetes_namespace_v1.flux_system]
+}
+
 # Installs the Flux Operator and the FluxInstance once. Flux manages both
 # from Git afterwards. Bump revision to run the bootstrap again.
 module "flux_operator_bootstrap" {
@@ -75,5 +91,6 @@ module "flux_operator_bootstrap" {
     kubernetes_namespace_v1.flux_system,
     kubernetes_secret_v1.sops_age,
     kubernetes_config_map_v1.cluster_config_tf,
+    kubernetes_secret_v1.cluster_secrets_tf,
   ]
 }

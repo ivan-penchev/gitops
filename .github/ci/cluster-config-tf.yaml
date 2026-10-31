@@ -14,3 +14,6 @@ data:
   public_domain: "17072021.xyz"
   lan_domain: "int.home.17072021.xyz"
   dns_owner_id: "homelab-k8s"
+  pve_exporter_user: "homelab-prd-pve-exporter@pve"
+  pve_exporter_token_name: "exporter"
+  pve_exporter_target: "192.0.2.2"
