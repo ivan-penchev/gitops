@@ -4,3 +4,10 @@ resources:
   - grafana-admin.sops.yaml
   - helmrelease.yaml
   - ocirepository.yaml
+configMapGenerator:
+  - name: flux-kube-state-metrics
+    namespace: monitoring
+    files:
+      - flux-kube-state-metrics.yaml
+configurations:
+  - kustomizeconfig.yaml
