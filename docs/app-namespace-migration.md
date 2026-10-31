@@ -211,8 +211,8 @@ one before touching the next. All commands that mutate bindings must be
 reviewed against the fresh inventory, not copied from the table without checks.
 
 1. Leave the child's Git suspension in place. Remove the old app's Ingresses
-   before creating equivalent hosts in the new namespace. This avoids nginx
-   duplicate-host admission errors and prevents public access during checks.
+   before creating equivalent hosts in the new namespace. This avoids duplicate
+   host routes and prevents public access during checks.
    Do not alter blog records or tunnel configuration.
 2. Scale the old app to zero and wait until its pods have terminated. For
    Prowlarr, stop FlareSolverr too. Verify no remaining pod mounts its claims.

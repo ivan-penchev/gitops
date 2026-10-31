@@ -1,5 +1,5 @@
 ---
-# PUBLIC: internet -> Cloudflare edge (TLS) -> tunnel -> ingress-nginx -> ABS.
+# PUBLIC: internet -> Cloudflare edge (TLS) -> tunnel -> Traefik -> ABS.
 # The host audiobookshelf.${public_domain} is auto-registered by external-dns as a
 # proxied CNAME to the cluster tunnel (same pattern as whoami). No tls block:
 # TLS terminates at the Cloudflare edge; tunnel -> origin is plain HTTP.
@@ -13,11 +13,8 @@ metadata:
   name: audiobookshelf-public
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   rules:
     - host: audiobookshelf.${public_domain}
       http:

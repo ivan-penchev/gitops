@@ -8,7 +8,6 @@ resources:
   - metrics-server.yaml
   - proxmox-csi.yaml
   - csi-driver-nfs.yaml
-  - ingress-nginx.yaml
   - traefik.yaml
   - cloudflared.yaml
   - external-dns.yaml

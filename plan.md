@@ -208,11 +208,10 @@ Grafana anonymous-admin was reachable.
   no caches). **Grafana Alloy 1.11.0** DaemonSet tails container logs via the
   K8s API → Loki (no Talos node/system log shipping).
 - **Access:** `grafana` / `prometheus` / `alertmanager`.int.home.17072021.xyz
-  on the ingress-nginx default wildcard cert. Grafana runs anonymous-**Admin**
+  on Traefik's default wildcard cert. Grafana runs anonymous-**Admin**
   (login form off) with a SOPS break-glass secret
   (`kubernetes/apps/monitor/controllers/kube-prometheus-stack/app/grafana-admin.sops.yaml`).
-- **Extra scrape targets:** ServiceMonitors for ingress-nginx (metrics flag
-  flipped on) + cert-manager, PodMonitor for Flux.
+- **Extra scrape targets:** ServiceMonitors for Traefik + cert-manager, PodMonitor for Flux.
 - **Alerting:** default rules evaluate in-cluster only, **no external receiver
   yet** (SMTP2GO email is an easy later add — one SOPS Alertmanager-config
   secret). Only `Watchdog` fires (pipeline healthy).
@@ -429,8 +428,6 @@ fileserver).
 
 ## Open questions (not yet decided)
 - Node counts/sizing (vCPU/RAM/disk per CP and worker) within the 96 GB budget.
-- Ingress controller choice (ingress-nginx vs Traefik) + cert-manager (though
-  Cloudflare can terminate TLS at the edge via Tunnel).
 - Which specific services go public vs internal-only.
 - Talos + Kubernetes version pinning and upgrade strategy.
 - Backup strategy for PVs on `tank` (snapshots / offsite).

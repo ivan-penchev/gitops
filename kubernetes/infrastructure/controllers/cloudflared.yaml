@@ -3,8 +3,8 @@
 # Zero Trust "Tunnel: Edit" permission, we do NOT use the remote (dashboard)
 # config. Instead cloudflared runs in credentials-file mode and reads its
 # ingress rules from this ConfigMap (GitOps-managed). Any hostname CNAME'd to
-# this tunnel (<app>.17072021.xyz) is forwarded to ingress-nginx in-cluster;
-# ingress-nginx then routes by Host header. Only hosts explicitly pointed at
+# this tunnel (<app>.17072021.xyz) is forwarded to Traefik in-cluster;
+# Traefik then routes by Host header. Only hosts explicitly pointed at
 # this tunnel via DNS ever arrive here.
 apiVersion: v1
 kind: ConfigMap
@@ -17,10 +17,10 @@ data:
     credentials-file: /etc/cloudflared/creds/credentials.json
     metrics: 0.0.0.0:2000
     no-autoupdate: true
-    # Origin requests keep their original Host header, so ingress-nginx can
+    # Origin requests keep their original Host header, so Traefik can
     # route by hostname. Catch-all -> ingress; ingress 404s unknown hosts.
     ingress:
-      - service: http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80
+      - service: http://traefik.traefik.svc.cluster.local:80
 ---
 # Cloudflare Tunnel connector — the ONLY inbound path from the internet (no
 # public IP / CGNAT). Runs in credentials-file mode using `credentials.json`
@@ -42,6 +42,10 @@ spec:
     metadata:
       labels:
         app: cloudflared
+      annotations:
+        # cloudflared reads its config only at start. Change this value when the
+        # ConfigMap above changes, so the pods restart and pick it up.
+        config-revision: "traefik"
     spec:
       containers:
         - name: cloudflared

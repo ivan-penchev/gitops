@@ -1,5 +1,5 @@
 ---
-# Public TLS terminates at Cloudflare; the tunnel forwards HTTP to ingress-nginx.
+# Public TLS terminates at Cloudflare; the tunnel forwards HTTP to Traefik.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,7 +8,7 @@ metadata:
   annotations:
     external-dns.alpha.kubernetes.io/target: wattbill.penchev.com.cdn.cloudflare.net
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   rules:
     - host: wattbill.penchev.com
       http:

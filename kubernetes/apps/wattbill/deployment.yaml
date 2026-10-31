@@ -38,7 +38,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: wattbill
-        networking.penchev.com/allow-ingress-nginx: "true"
+        networking.penchev.com/allow-ingress: "true"
     spec:
       automountServiceAccountToken: false
       imagePullSecrets:
@@ -69,7 +69,7 @@ spec:
             - name: WATTBILL_LOG_FORMAT
               value: json
             # NetworkPolicy allows ingress-controller Pods to reach this port.
-            # Client-IP integrity still depends on ingress-nginx's trusted
+            # Client-IP integrity still depends on Traefik's trusted
             # proxy configuration; this setting does not validate the headers.
             - name: WATTBILL_TRUST_PROXY
               value: "true"

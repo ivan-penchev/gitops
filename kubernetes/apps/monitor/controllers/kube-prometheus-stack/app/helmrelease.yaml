@@ -11,7 +11,7 @@
 #     produces permanent "down" targets. See plan.md / the observability grill.
 #   * Grafana is anonymous-Admin on the LAN (login form off) with a SOPS
 #     break-glass admin password (grafana-admin secret). Grafana, Prometheus and
-#     Alertmanager are each served on *.int.home over the ingress-nginx default
+#     Alertmanager are each served on *.int.home over Traefik's default
 #     wildcard cert (no per-Ingress tls block needed).
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -62,7 +62,7 @@ spec:
                   storage: 1Gi
       ingress:
         enabled: true
-        ingressClassName: nginx
+        ingressClassName: traefik
         annotations:
           gethomepage.dev/enabled: "true"
           gethomepage.dev/name: Alertmanager
@@ -87,7 +87,7 @@ spec:
         retention: 30d
         retentionSize: "36GiB"
         # Discover ServiceMonitors/PodMonitors/Rules in ALL namespaces without
-        # requiring the Helm release label (needed for our ingress-nginx,
+        # requiring the Helm release label (needed for our Traefik,
         # cert-manager and Flux monitors that live outside this release).
         serviceMonitorSelectorNilUsesHelmValues: false
         podMonitorSelectorNilUsesHelmValues: false
@@ -110,7 +110,7 @@ spec:
                   storage: 40Gi
       ingress:
         enabled: true
-        ingressClassName: nginx
+        ingressClassName: traefik
         annotations:
           gethomepage.dev/enabled: "true"
           gethomepage.dev/name: Prometheus
@@ -156,7 +156,7 @@ spec:
           org_role: Admin
       ingress:
         enabled: true
-        ingressClassName: nginx
+        ingressClassName: traefik
         annotations:
           gethomepage.dev/enabled: "true"
           gethomepage.dev/name: Grafana

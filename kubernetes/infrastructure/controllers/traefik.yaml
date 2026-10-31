@@ -1,6 +1,6 @@
 ---
-# Traefik replaces ingress-nginx, which stopped getting fixes in March 2026.
-# Both entry paths end here:
+# Traefik is the cluster's only ingress controller. It replaced ingress-nginx,
+# which stopped getting fixes in March 2026. Both entry paths end here:
 #   * Public: internet -> Cloudflare edge -> tunnel (cloudflared pod) -> the
 #     Traefik Service on port 80 -> app Service.
 #   * Internal: LAN client -> DNS (*.lan_domain -> the LB IP below) -> Traefik
@@ -38,9 +38,7 @@ spec:
       minAvailable: 1
     ingressClass:
       enabled: true
-      # ingress-nginx is still the default class. This flips once every Ingress
-      # has moved, because two default classes make new Ingresses ambiguous.
-      isDefaultClass: false
+      isDefaultClass: true
     providers:
       kubernetesIngress:
         # Writes the LB IP into each Ingress status. external-dns reads it for
@@ -61,8 +59,7 @@ spec:
         transport:
           respondingTimeouts:
             # Traefik's default 60s read timeout cuts off large uploads, for
-            # example audiobooks. 0 means no limit, like ingress-nginx's
-            # proxy-body-size 0.
+            # example audiobooks. 0 means no limit.
             readTimeout: 0
       websecure:
         transport:

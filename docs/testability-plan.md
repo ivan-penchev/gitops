@@ -191,7 +191,7 @@ that if it ever matters.
   4. Kubernetes 1.36.2 to 1.37.x with `talosctl upgrade-k8s`. That command
      re-syncs inline manifests from the machine config, so the machine config
      must carry the current Cilium first.
-  5. Before step 4, confirm 1.37 support for proxmox-csi, ingress-nginx,
+  5. Before step 4, confirm 1.37 support for proxmox-csi, Traefik,
      Flux, kube-prometheus-stack and ARC. `pluto` from A1 catches removed APIs.
 
 ### P2, Monitoring
