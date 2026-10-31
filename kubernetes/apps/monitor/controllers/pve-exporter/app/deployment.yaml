@@ -67,6 +67,15 @@ spec:
               memory: 64Mi
             limits:
               memory: 128Mi
+          # The root filesystem is read-only, and Python needs a temp dir at start.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
 ---
 apiVersion: v1
 kind: Service
