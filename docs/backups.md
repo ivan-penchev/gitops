@@ -108,7 +108,9 @@ one is its own folder, like `media_movies`, `media_tv`, `postgres` or
 with no files to show, so they're left out. Restore them as described below. The fileserver LXC
 sees that directory as `/srv/backup`, so the folders show up in the Samba
 share `backup`, `\\fileserver.int.home.17072021.xyz\backup` on Windows.
-Only users with `backup = true` in `samba_users` see it.
+Only users with `backup = true` in `samba_users` see it. Samba reads that
+share as root, so private files in LXC disks open too. Only give
+`backup = true` to people allowed to read everything.
 
 `backup-browse off` unmounts everything and powers the drive off. If you
 forget, it turns itself off after 4 hours. It takes the same lock as

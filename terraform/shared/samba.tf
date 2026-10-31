@@ -43,8 +43,9 @@ locals {
     "  path = /srv/backup",
     "  valid users = ${join(" ", local.samba_backup_users)}",
     "  read only = yes",
-    "  force user = media",
-    "  force group = media",
+    # Root so LXC disks with private files (postgres data, /root) open too.
+    # Safe only because the share and the snapshots are both read-only.
+    "  force user = root",
   ])
 
   samba_conf = join("\n\n", compact([
