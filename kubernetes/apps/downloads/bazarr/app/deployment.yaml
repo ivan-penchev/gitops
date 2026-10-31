@@ -1,0 +1,118 @@
+# Bazarr finds subtitles for what Radarr and Sonarr download and saves them as
+# .srt files next to the video. It reads the libraries through the Radarr and
+# Sonarr APIs, so it mounts movies and tv at the same paths they use and needs
+# no path mapping.
+#
+# Runs as uid and gid 100000, the owner of the media tree, so it can write the
+# subtitle files. Same init container and emptyDir setup as Sonarr.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bazarr
+  namespace: downloads
+  labels:
+    app: bazarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bazarr
+  template:
+    metadata:
+      labels:
+        app: bazarr
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100000
+        runAsGroup: 100000
+      initContainers:
+        - name: init-chown-config
+          image: busybox:1.38.0
+          command:
+            - sh
+            - -c
+            - chown 100000:100000 /config
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      containers:
+        - name: bazarr
+          image: lscr.io/linuxserver/bazarr:v1.6.2-ls370
+          ports:
+            - name: http
+              containerPort: 6767
+          env:
+            - name: PUID
+              value: "100000"
+            - name: PGID
+              value: "100000"
+            - name: TZ
+              value: Europe/Copenhagen
+            - name: UMASK
+              value: "022"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: movies
+              mountPath: /media/movies
+            - name: tv
+              mountPath: /tv
+            - name: run
+              mountPath: /run
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /api/system/ping
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /api/system/ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: bazarr-config
+        - name: movies
+          persistentVolumeClaim:
+            claimName: bazarr-movies-nfs
+        - name: tv
+          persistentVolumeClaim:
+            claimName: bazarr-tv-nfs
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bazarr
+  namespace: downloads
+spec:
+  selector:
+    app: bazarr
+  ports:
+    - name: http
+      port: 6767
+      targetPort: http

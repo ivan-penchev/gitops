@@ -1,0 +1,28 @@
+# Internal only. LAN DNS sends *.int.home to the ingress LB, and Traefik serves
+# the wildcard cert.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bazarr-internal
+  namespace: downloads
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Bazarr
+    gethomepage.dev/pod-selector: app=bazarr
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: bazarr.png
+    gethomepage.dev/description: Subtitles for movies and TV
+    gethomepage.dev/href: https://bazarr.${lan_domain}
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: bazarr.${lan_domain}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bazarr
+                port:
+                  number: 6767
