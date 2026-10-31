@@ -25,9 +25,18 @@ I read this from the Sonarr API on 2026-10-31.
 
 Prowlarr reaches Sonarr at `http://192.168.68.10:8989/`.
 
-Sonarr shows `/tv` at 1410 GB total and `/downloads` at 1350 GB. Different
-totals fit the ZFS layout, where `tank/media/tv` and `tank/media/torrent-download`
-are separate datasets. I have not confirmed the CasaOS bind mounts yet.
+CasaOS is an unprivileged LXC. The Proxmox API shows its bind mounts:
+
+| LXC mount | Host path |
+|-----------|-----------|
+| mp0 `/downloads` | `/tank/media/torrent-download` |
+| mp2 `/media/tv` | `/tank/media/tv` |
+| mp3 `/tank` | `/tank/media` |
+
+Docker then maps the LXC paths into the container. Sonarr shows `/tv` at
+1410 GB total and `/downloads` at 1350 GB, so they are different datasets. That
+fits `/tv` coming from `tank/media/tv`. The container's `/config` sits somewhere
+on the LXC root disk. We find the exact path during the cold copy.
 
 ## Target
 
@@ -65,8 +74,12 @@ the fileserver is an empty, root owned directory on the parent dataset.
    how `movies` got detached during the Radarr work.
 4. Check from a pod that `/srv/media/tv` shows the series and is owned by 100000.
 
-If the tv files are owned by someone other than 100000, Sonarr can read but not
-import. We would need a one-time chown on the host.
+Ownership is the main risk. Docker containers on CasaOS usually run with
+PUID 1000. Inside an unprivileged LXC, that is host uid 101000, not 100000. If
+the tv files belong to 101000, Sonarr on uid 100000 can read but cannot import
+or rename. I check this from the fileserver after step 2. The fix is a one-time
+`chown -R 100000:100000` on the fileserver, done while the CasaOS container is
+stopped.
 
 ## Cutover
 
@@ -81,17 +94,13 @@ import. We would need a one-time chown on the host.
 6. Point Prowlarr's Sonarr app at `https://sonarr.${lan_domain}` and run a sync.
 7. Leave the CasaOS container stopped for a week as the rollback, then remove it.
 
-## Open questions
+## Decisions
 
-1. Which host paths does CasaOS bind into the container for `/tv`, `/downloads`
-   and `/config`? I need `pct config 200` from the host and
-   `docker inspect sonarr` from CasaOS. If `/tv` is not `tank/media/tv`, the
-   fileserver step changes.
-2. Who owns the files under `tank/media/tv`? `ls -ln /tank/media/tv | head` on
-   the host answers it.
-3. Does anything else on CasaOS use Sonarr, for example Jellyseerr or Overseerr?
-   Those need the new URL too.
-4. Should Sonarr keep its own Flux Kustomization, like Radarr, or share one?
-   I suggest its own.
-5. Jellyfin still runs on LXC 102. The notification keeps working by IP. Fine for
-   now?
+- Sonarr gets its own Flux Kustomization, like Radarr.
+- Nothing else uses Sonarr, so only Prowlarr needs the new URL.
+- Jellyfin stays on LXC 102 for now. The notification keeps working by IP.
+
+## Still to check
+
+1. Owner of the files in `tank/media/tv`, after the fileserver mounts it.
+2. Host path of the container's `/config` on CasaOS, during the cold copy.
