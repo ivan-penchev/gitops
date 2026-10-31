@@ -25,7 +25,7 @@ spec:
         name: cluster-config
       - kind: ConfigMap
         name: cluster-config-tf
-      # Token for the proxmox-csi-plugin Secret.
+      # Tokens for the proxmox-csi-plugin and cloudflared-token Secrets.
       - kind: Secret
         name: cluster-secrets-tf
 ---

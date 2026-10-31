@@ -1,4 +1,26 @@
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflared
+---
+# credentials.json for credentials-file mode. Flux fills the tunnel secret from
+# the Terraform-written cluster-secrets-tf Secret, and the ids from
+# cluster-config-tf.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflared-token
+  namespace: cloudflared
+type: Opaque
+stringData:
+  credentials.json: |
+    {
+      "AccountTag": "${cf_account_id}",
+      "TunnelID": "${tunnel_id}",
+      "TunnelSecret": "${cloudflared_tunnel_secret}"
+    }
+---
 # Locally-managed tunnel config. Because our Cloudflare API token lacks the
 # Zero Trust "Tunnel: Edit" permission, we do NOT use the remote (dashboard)
 # config. Instead cloudflared runs in credentials-file mode and reads its
@@ -24,8 +46,7 @@ data:
 ---
 # Cloudflare Tunnel connector — the ONLY inbound path from the internet (no
 # public IP / CGNAT). Runs in credentials-file mode using `credentials.json`
-# from the `cloudflared-token` Secret, which Terraform creates in the
-# Terraform-owned `cloudflared` namespace (see terraform/cluster/cloudflared.tf).
+# from the `cloudflared-token` Secret above.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

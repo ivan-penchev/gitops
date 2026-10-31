@@ -1,25 +1,28 @@
-# Namespace and credentials Secret for the cloudflared Deployment Flux runs.
+# Flux owns the cloudflared namespace and renders the cloudflared-token Secret
+# from kubernetes/infrastructure/controllers/cloudflared.yaml. Terraform only
+# writes the tunnel secret to cluster-secrets-tf (see flux.tf). The account id
+# and tunnel id are already in cluster-config-tf.
 
-resource "kubernetes_namespace_v1" "cloudflared" {
-  metadata {
-    name = "cloudflared"
+locals {
+  cloudflared_secrets = {
+    cloudflared_tunnel_secret = random_id.tunnel_secret.b64_std
   }
 }
 
-# Same name + key as the old SOPS `cloudflared-token`, so cloudflared.yaml's
-# volume mount is unchanged.
-resource "kubernetes_secret_v1" "cloudflared_token" {
-  metadata {
-    name      = "cloudflared-token"
-    namespace = kubernetes_namespace_v1.cloudflared.metadata[0].name
-  }
+# Terraform used to create both. Forget them without deleting them, so the
+# tunnel stays up while Flux takes over.
+removed {
+  from = kubernetes_namespace_v1.cloudflared
 
-  data = {
-    "credentials.json" = local.cloudflared_credentials
+  lifecycle {
+    destroy = false
   }
-
-  type = "Opaque"
 }
 
-# Terraform-managed half of the Flux substitution config. Static values
-# (domains, LB IPs) stay in Git at kubernetes/clusters/homelab/cluster-config.yaml.
+removed {
+  from = kubernetes_secret_v1.cloudflared_token
+
+  lifecycle {
+    destroy = false
+  }
+}
