@@ -86,13 +86,34 @@ need it.
   Apps mount them through static PVs from `csi-driver-nfs`. Each ZFS child
   dataset needs its own bind mount and export, which
   `fileserver.child_datasets` drives.
+
+  Every media type gets its own dataset under `tank/media`, never a plain
+  folder. That gives each one its own snapshots, quota and `zfs list` line.
+  The parent sets `recordsize=1M compression=lz4 atime=off xattr=sa` and the
+  children inherit it.
+
+  | Dataset | Used by | Overrides |
+  |---|---|---|
+  | `movies` | Radarr | |
+  | `tv` | Sonarr | |
+  | `torrent-download` | torrent client | `recordsize=128K`, quota 300G |
+  | `audiobooks` | Audiobookshelf | |
+  | `ebooks` | nothing yet | |
+  | `photos` | Immich uploads, #119 | quota 500G |
+  | `home-videos` | Immich, read only | |
+  | `documents` | nothing yet | `recordsize=128K compression=zstd`, quota 50G |
+
+  The quotas stop a stuck download or an upload loop from filling the pool
+  that also holds pg-01 and every PVC. Photos and documents are the only
+  data here you can't download again.
 - pg-01 runs PostgreSQL 17 with data on `tank/postgres`. It sits outside the
   cluster so databases survive a cluster rebuild. `postgres_databases` in the
   cluster tfvars creates a role, a database and a `postgres-<db>` Secret in
   each listed namespace.
 
-Media files belong to uid 100000, because the unprivileged fileserver LXC maps
-its root to that uid. The NFS export ignores supplemental groups, so apps that
+Media files belong to uid 100000. The fileserver LXC is privileged, so uids
+pass through unchanged, and 100000 is simply what the apps write as. The NFS
+export ignores supplemental groups, so apps that
 write media run as uid 100000. They skip `fsGroup`, which would make kubelet
 chown the whole NFS mount, and use a root init container to chown only their
 config volume.

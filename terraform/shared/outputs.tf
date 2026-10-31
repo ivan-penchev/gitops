@@ -20,6 +20,11 @@ output "fileserver_host_mount_command" {
   value       = local.fileserver_mount_command
 }
 
+output "fileserver_dataset_command" {
+  description = "Host commands that create the media datasets. Run before the mount command."
+  value       = local.fileserver_dataset_command
+}
+
 output "postgres_ip" {
   description = "Static IP of pg-01."
   value       = var.postgres.ip

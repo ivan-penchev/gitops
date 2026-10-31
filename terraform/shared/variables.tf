@@ -64,11 +64,23 @@ variable "fileserver" {
     hostname = string
     ip       = string
     dns_name = string
-    # ZFS child datasets under host_media_path (e.g. /tank/media/movies) that
-    # are separate filesystems. The bind mount of the parent doesn't include
-    # them, so each gets its own mpN and export line. Order sets the mp index.
-    # A plain folder like audiobooks needs nothing here.
-    child_datasets       = list(string)
+    # ZFS child datasets under host_media_path, one per media type. Each is a
+    # separate filesystem, so the parent bind mount doesn't include it and it
+    # gets its own mpN and export line. Order sets the mp index, so append new
+    # ones at the end. properties are ZFS properties set on that dataset only.
+    child_datasets = list(object({
+      name       = string
+      properties = optional(map(string), {})
+    }))
+    # Set on the parent dataset. Children inherit them unless they override.
+    media_properties = optional(map(string), {
+      recordsize  = "1M"
+      compression = "lz4"
+      atime       = "off"
+      xattr       = "sa"
+    })
+    # Owner of every media dataset. The apps write as this uid.
+    media_owner          = optional(string, "100000:100000")
     host_media_path      = optional(string, "/tank/media")
     container_media_path = optional(string, "/srv/media")
     cores                = optional(number, 2)

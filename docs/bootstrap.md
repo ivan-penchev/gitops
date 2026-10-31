@@ -75,17 +75,23 @@ until phase 2 is done, then start on their own.
 ## Phase 2, fileserver LXC
 
 ```bash
+terraform/tf.sh shared output -raw fileserver_dataset_command
 terraform/tf.sh shared output -raw fileserver_host_mount_command
 ```
 
-Run the printed `pct set 110 ... && pct reboot 110` on the host as `root@pam`.
-Each ZFS child dataset in `fileserver.child_datasets` gets its own `-mpN`.
-Plain folders come along with the parent.
+On the host as `root@pam`, run the dataset commands first. They create one
+dataset per media type and are safe to run again. Then run the printed
+`pct set 110 ... && pct reboot 110`. Each ZFS child dataset in
+`fileserver.child_datasets` gets its own `-mpN`.
 
 Check it with `showmount -e <fileserver ip>`.
 
 If nfsd won't start, the provisioner prints an AppArmor fix. Add
 `lxc.apparmor.profile: unconfined` to `/etc/pve/lxc/110.conf` and reboot the LXC.
+
+For browsing the USB backup drive from the fileserver, also add the
+`/mnt/backup-browse` mount entry from the header of
+`terraform/shared/fileserver.tf`.
 
 ## Phase 3, PostgreSQL LXC
 

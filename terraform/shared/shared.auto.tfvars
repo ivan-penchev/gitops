@@ -16,11 +16,23 @@ network = {
 }
 
 fileserver = {
-  vm_id          = 110
-  hostname       = "fileserver"
-  ip             = "192.168.68.11"
-  dns_name       = "fileserver.int.home"
-  child_datasets = ["movies", "torrent-download", "tv"]
+  vm_id    = 110
+  hostname = "fileserver"
+  ip       = "192.168.68.11"
+  dns_name = "fileserver.int.home"
+  # The table in docs/architecture.md says what each one is for.
+  child_datasets = [
+    { name = "movies" },
+    # Torrents write small random pieces. The quota keeps a stuck download
+    # from filling the pool that also holds pg-01 and every PVC.
+    { name = "torrent-download", properties = { recordsize = "128K", quota = "300G" } },
+    { name = "tv" },
+    { name = "audiobooks" },
+    { name = "ebooks" },
+    { name = "photos", properties = { quota = "500G" } },
+    { name = "home-videos" },
+    { name = "documents", properties = { recordsize = "128K", compression = "zstd", quota = "50G" } },
+  ]
 }
 
 postgres = {
