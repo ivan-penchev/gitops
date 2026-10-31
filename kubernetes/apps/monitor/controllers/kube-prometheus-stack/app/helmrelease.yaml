@@ -154,6 +154,29 @@ spec:
         "auth.anonymous":
           enabled: true
           org_role: Admin
+      # Dashboards from grafana.com, fetched by an init container at pod start.
+      # Pin the revision so an upstream edit can't change the dashboard silently.
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+            - name: grafana-com
+              folder: Ingress
+              type: file
+              disableDeletion: true
+              editable: false
+              options:
+                path: /var/lib/grafana/dashboards/grafana-com
+      dashboards:
+        grafana-com:
+          traefik:
+            # Traefik Official Kubernetes Dashboard, by Traefik Labs.
+            gnetId: 17347
+            revision: 9
+            datasource:
+              - name: DS_PROMETHEUS
+                # The datasource uid, since panels reference it by uid.
+                value: prometheus
       ingress:
         enabled: true
         ingressClassName: traefik
