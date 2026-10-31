@@ -37,8 +37,18 @@ case "${1:-}" in
     mkdir -p "$(dirname "$STATE")"; ports_of_drive > "$STATE"
     read -r p peer < "$STATE"
     sync
-    [ -n "$peer" ] && echo 1 > "$peer/disable"
-    echo 1 > "$p/disable"
+    # Cut on a USB 3 link, the enclosure keeps the disk spinning. Drop it to
+    # USB 2 first by disabling the USB 3 port, then disable the USB 2 port.
+    if [ -n "$peer" ] && [ "$(cat "$(usb_device_dir)/speed")" -ge 5000 ]; then
+      echo 1 > "$p/disable"
+      wait_for absent || { echo "usb-drive: drive is still on the bus" >&2; exit 1; }
+      wait_for present || echo "usb-drive: drive did not reconnect on USB 2" >&2
+      sleep 3
+      echo 1 > "$peer/disable"
+    else
+      [ -n "$peer" ] && echo 1 > "$peer/disable"
+      echo 1 > "$p/disable"
+    fi
     wait_for absent || { echo "usb-drive: drive is still on the bus" >&2; exit 1; }
     echo "usb-drive: off"
     ;;

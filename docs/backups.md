@@ -39,6 +39,12 @@ A USB 3 socket shows up as two kernel ports, a USB 3 one and a USB 2
 peer. The script disables both. With only one disabled, the drive
 reconnects through the other.
 
+Order matters. If the drive loses a USB 3 link, it drops off the bus but
+the disk keeps spinning. So when the drive is on USB 3, `usb-drive off`
+disables the USB 3 port first, waits for the drive to reconnect on USB 2,
+then disables the USB 2 port. Losing a USB 2 link makes the enclosure
+stop the disk.
+
 The port is found from the drive itself, by its serial in `/dev/disk/by-id`.
 `usb-drive off` writes the port to `/var/lib/usb-drive/ports` so `on` knows
 which one to enable. If you move the drive to another socket while it's off,
