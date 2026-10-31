@@ -33,6 +33,14 @@ class PlainSecretTest(unittest.TestCase):
     def test_data_fails_even_next_to_placeholders(self):
         self.assertTrue(errors_for("kind: Secret\ndata:\n  A: aGk=\nstringData:\n  B: ${b}\n"))
 
+    def test_config_file_of_placeholders_passes(self):
+        text = "kind: Secret\nstringData:\n  config.yaml: |\n    clusters:\n      - url: ${url}\n        token: ${token}\n"
+        self.assertEqual(errors_for(text), [])
+
+    def test_config_file_with_a_literal_fails(self):
+        text = "kind: Secret\nstringData:\n  config.yaml: |\n    clusters:\n      - url: ${url}\n        token: hunter2\n"
+        self.assertTrue(errors_for(text))
+
 
 if __name__ == "__main__":
     unittest.main()

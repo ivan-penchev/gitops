@@ -25,6 +25,9 @@ spec:
         name: cluster-config
       - kind: ConfigMap
         name: cluster-config-tf
+      # Token for the proxmox-csi-plugin Secret.
+      - kind: Secret
+        name: cluster-secrets-tf
 ---
 # Layer 2: infrastructure configs (issuers, storage classes, secrets).
 apiVersion: kustomize.toolkit.fluxcd.io/v1

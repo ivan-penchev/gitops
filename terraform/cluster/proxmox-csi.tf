@@ -3,10 +3,10 @@
 #
 # The CSI controller provisions/attaches/detaches VM disks on Proxmox, so it
 # needs its own least-privilege API token. We create a dedicated role, user and
-# token here, render the cloud-config and write it into the
-# `proxmox-csi-plugin` Secret that the HelmRelease consumes via
-# `existingConfigSecret`. Role and user names are global on the PVE host,
-# so each cluster passes its own.
+# token here. Terraform writes the token to cluster-secrets-tf and the URL and
+# region to cluster-config-tf. Flux fills them into the `proxmox-csi-plugin`
+# Secret template in kubernetes/infrastructure/controllers. Role and user names
+# are global on the PVE host, so each cluster passes its own.
 #
 # region MUST match the topology.kubernetes.io/region node label (var.proxmox_region)
 # and the Proxmox node name is used as the topology zone (var.proxmox_node).
@@ -49,36 +49,27 @@ resource "proxmox_user_token" "csi" {
 }
 
 locals {
-  # token_value is "user@realm!token-name=uuid"; split into id + secret.
-  csi_token_parts  = split("=", proxmox_user_token.csi.value)
-  csi_token_id     = local.csi_token_parts[0]
-  csi_token_secret = local.csi_token_parts[1]
+  # Plain values for cluster-config-tf.
+  csi_config = {
+    proxmox_csi_url  = var.proxmox_csi_endpoint
+    proxmox_insecure = tostring(var.proxmox_insecure)
+    proxmox_region   = var.proxmox_region
+  }
 
-  csi_cloud_config = yamlencode({
-    clusters = [
-      {
-        url          = var.proxmox_csi_endpoint
-        insecure     = var.proxmox_insecure
-        token_id     = local.csi_token_id
-        token_secret = local.csi_token_secret
-        region       = var.proxmox_region
-      }
-    ]
-  })
+  # token value is "user@realm!token-name=uuid". Split it into id and secret.
+  csi_secrets = {
+    proxmox_csi_token_id     = split("=", proxmox_user_token.csi.value)[0]
+    proxmox_csi_token_secret = split("=", proxmox_user_token.csi.value)[1]
+  }
 }
 
-# The Secret the HelmRelease reads (`existingConfigSecret: proxmox-csi-plugin`).
-resource "kubernetes_secret_v1" "proxmox_csi" {
-  metadata {
-    name      = "proxmox-csi-plugin"
-    namespace = "kube-system"
-  }
+# Flux owns the Secret now. Forget it without deleting it from the cluster.
+removed {
+  from = kubernetes_secret_v1.proxmox_csi
 
-  data = {
-    "config.yaml" = local.csi_cloud_config
+  lifecycle {
+    destroy = false
   }
-
-  type = "Opaque"
 }
 
 # bpg/proxmox renamed these types. Keep the moves until every cluster has applied.
