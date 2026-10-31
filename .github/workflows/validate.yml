@@ -53,7 +53,11 @@ jobs:
       - name: Stub the Terraform-owned ConfigMap and Secret
         run: |
           cp .github/ci/cluster-config-tf.yaml kubernetes/clusters/homelab/zz-ci-cluster-config-tf.yaml
-          cp .github/ci/cluster-secrets-tf.yaml kubernetes/clusters/homelab/zz-ci-cluster-secrets-tf.yaml
+          # Generated here, since check_sops.py rejects a tracked Secret with values.
+          # Keep the keys in sync with cluster_secrets_tf in terraform/cluster/flux.tf.
+          kubectl create secret generic cluster-secrets-tf -n flux-system --dry-run=client -o yaml \
+            --from-literal=pve_exporter_token=00000000-0000-0000-0000-000000000000 \
+            > kubernetes/clusters/homelab/zz-ci-cluster-secrets-tf.yaml
 
       - name: Reconcile every Kustomization and HelmRelease offline
         run: flate test all --path ./kubernetes --kube-version "$KUBE_VERSION" --no-progress
@@ -154,3 +158,5 @@ jobs:
         with:
           python-version: '3.14'
       - run: python3 -B .github/tests/test_gitops_live_test.py
+      - run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - run: python3 -B .github/tests/test_check_sops.py
