@@ -4,8 +4,8 @@
 # automatically on first start (Radarr never migrates down — the old LXC DB stays
 # as our rollback).
 #
-# Runs FULLY NON-ROOT as uid/gid 100000 — the owner the fileserver assigns to the
-# media tree (the unprivileged fileserver LXC 110 maps its root to host 100000).
+# Runs FULLY NON-ROOT as uid/gid 100000, the owner of the media tree. The
+# fileserver LXC 110 is privileged, so uids on disk pass through unchanged.
 # The NFS export is sec=sys and ignores the client's supplemental group list, so
 # group membership grants NO media write; only the file OWNER does. Radarr
 # atomically moves imports into /media/movies, so it MUST run as 100000.

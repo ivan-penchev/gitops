@@ -25,9 +25,8 @@ spec:
         app: audiobookshelf
     spec:
       securityContext:
-        # ABS runs non-root as uid/gid 100000 — the owner the fileserver assigns
-        # to the media tree (the unprivileged fileserver LXC maps its root to host
-        # 100000). That NFS export (sec=sys) ignores the client's supplemental
+        # ABS runs non-root as uid/gid 100000, the owner of the media tree. The
+        # fileserver LXC is privileged, so uids pass through unchanged. That NFS export (sec=sys) ignores the client's supplemental
         # group list, so group-0 membership does NOT grant media write; only the
         # file owner does. Running as 100000 gives read/write on the NFS media,
         # and supplementalGroups [0] gives read/write on the group-0-owned block

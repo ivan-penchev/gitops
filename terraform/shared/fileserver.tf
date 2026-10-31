@@ -33,11 +33,13 @@
 # flag, and you add BOTH once by hand on the Proxmox host (root@pam on the host
 # shell is allowed):
 #
-#     pct set 110 -mp0 /tank/media,mp=/srv/media -mp1 /tank/media/movies,mp=/srv/media/movies -mp2 /tank/media/torrent-download,mp=/srv/media/torrent-download --features nesting=1 && pct reboot 110
+#     pct set 110 -mp0 /tank/media,mp=/srv/media -mp1 /tank/media/movies,mp=/srv/media/movies ... --features nesting=1 && pct reboot 110
 #
-# (mp1/mp2 attach the separate ZFS child datasets — see var.fileserver.child_datasets;
-# the exact command is generated and printed by null_resource.fileserver_nfs and
-# exposed as output.fileserver_host_mount_command.)
+# (mp1, mp2, … attach the separate ZFS child datasets, one per media type — see
+# var.fileserver.child_datasets; the exact command is generated and printed by
+# null_resource.fileserver_nfs and exposed as output.fileserver_host_mount_command.
+# The datasets themselves come from output.fileserver_dataset_command, which
+# runs first.)
 #
 # (`nesting=1` is likewise root@pam-only for a privileged CT on PVE 9 — verified
 # HTTP 403 — and nfsd needs it to mount nfsd/rpc_pipefs.)
@@ -57,10 +59,23 @@
 #     echo 'lxc.apparmor.profile: unconfined' >> /etc/pve/lxc/110.conf && pct reboot 110
 #
 # ---------------------------------------------------------------------------
+# Backup drive mount (a THIRD host command, for issue #120)
+# ---------------------------------------------------------------------------
+# The USB backup pool gets mounted read-only on the host under
+# /mnt/backup-browse while someone browses it. A recursive slave bind makes
+# those mounts show up in the container at /srv/backup without a reboot.
+# Raw lxc.* key, so also by hand:
+#
+#     mkdir -p /mnt/backup-browse
+#     echo 'lxc.mount.entry: /mnt/backup-browse srv/backup none rbind,ro,rslave,create=dir 0 0' >> /etc/pve/lxc/110.conf
+#     pct reboot 110
+#
+# ---------------------------------------------------------------------------
 # APPLY (nothing special — your normal token/env works as-is):
 #     terraform/tf.sh shared apply
 #     # the DNS record is cloudflare_dns_record.lan in dns.tf
-#     # then run the printed `pct set ... && pct reboot ...` on the PVE host
+#     # then on the PVE host run `terraform/tf.sh shared output -raw fileserver_dataset_command`
+#     # and after it the printed `pct set ... && pct reboot ...`
 #     # verify:  showmount -e 192.168.68.11
 # ===========================================================================
 
@@ -72,10 +87,25 @@ locals {
   fileserver_child_mounts = [
     for i, d in var.fileserver.child_datasets : {
       index     = i + 1 # mp0 is the parent; children start at mp1
-      host      = "${var.fileserver.host_media_path}/${d}"
-      container = "${var.fileserver.container_media_path}/${d}"
+      host      = "${var.fileserver.host_media_path}/${d.name}"
+      container = "${var.fileserver.container_media_path}/${d.name}"
     }
   ]
+
+  # Host commands that create the media datasets and set their properties.
+  # Safe to run again: existing datasets are skipped, properties are re-set.
+  # Assumes the dataset name matches its mount point, as tank/media does.
+  fileserver_media_dataset = trimprefix(var.fileserver.host_media_path, "/")
+  fileserver_dataset_command = join("\n", concat(
+    ["zfs set ${join(" ", [for k, v in var.fileserver.media_properties : "${k}=${v}"])} ${local.fileserver_media_dataset}"],
+    flatten([
+      for d in var.fileserver.child_datasets : concat(
+        ["zfs list -H -o name ${local.fileserver_media_dataset}/${d.name} >/dev/null 2>&1 || zfs create ${local.fileserver_media_dataset}/${d.name}"],
+        length(d.properties) == 0 ? [] : ["zfs set ${join(" ", [for k, v in d.properties : "${k}=${v}"])} ${local.fileserver_media_dataset}/${d.name}"],
+      )
+    ]),
+    ["chown ${var.fileserver.media_owner} ${join(" ", [for m in local.fileserver_child_mounts : m.host])}"],
+  ))
 
   # Every path that gets exported over NFS: the parent, then each child dataset.
   fileserver_export_paths = concat(
