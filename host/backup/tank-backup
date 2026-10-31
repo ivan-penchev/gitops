@@ -6,6 +6,9 @@ set -euo pipefail
 # shellcheck source=tank-backup.default
 . /etc/default/tank-backup
 
+# A browse session holds the drive. The backup wins, so end it first.
+systemctl stop backup-browse.service 2>/dev/null || true
+
 exec 9>/run/tank-backup.lock
 flock -n 9 || { echo "tank-backup: already running" >&2; exit 1; }
 

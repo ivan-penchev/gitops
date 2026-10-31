@@ -1,0 +1,12 @@
+[Unit]
+Description=Show the USB backup drive in the fileserver's backup share
+After=zfs-import.target usb-drive-off.service
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=/usr/local/sbin/backup-browse serve
+TimeoutStartSec=3min
+TimeoutStopSec=2min
+# Off by itself after 4 hours, so a forgotten session doesn't keep the drive spinning.
+RuntimeMaxSec=4h

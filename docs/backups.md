@@ -95,6 +95,27 @@ usb-drive status                          # should say off
 
 Nothing alerts on a failed run yet.
 
+## Browse it from Windows or a Mac
+
+```sh
+backup-browse on
+```
+
+This powers the drive on, imports the pool read only and mounts the newest
+backup of every dataset under `tank/media` in `/mnt/backup-browse`. Each one
+is its own folder, like `movies`, `tv` or `audiobooks`. The fileserver LXC
+sees that directory as `/srv/backup`, so the folders show up in the Samba
+share `backup`, `\\fileserver.int.home.17072021.xyz\backup` on Windows.
+Only users with `backup = true` in `samba_users` see it.
+
+`backup-browse off` unmounts everything and powers the drive off. If you
+forget, it turns itself off after 4 hours. It takes the same lock as
+`tank-backup`, so it won't start during a backup, and a backup that starts
+during a session ends the session first.
+
+Set `BROWSE=tank` in `/etc/default/tank-backup` to see every dataset,
+including the LXC disks and pg-01's data, not only media.
+
 ## Restore
 
 Turn the drive on and import the pool. It's read-only, so nothing changes
