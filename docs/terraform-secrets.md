@@ -1,38 +1,83 @@
-# Terraform provider secrets (SOPS)
+# Terraform secrets and state
 
-Terraform's `bpg/proxmox` and `cloudflare` providers read their credentials from
-**environment variables**, which each root's `providers.tf` reads. The Proxmox credentials
-live encrypted in the repo root at [`secrets.sops.env`](../secrets.sops.env),
-encrypted with the same age key as the Kubernetes SOPS secrets
-(recipient in [`.sops.yaml`](../.sops.yaml)).
+The Proxmox and Cloudflare providers and the R2 state backend read their
+credentials from environment variables. Those live in
+[`secrets.sops.env`](../secrets.sops.env) at the repo root, encrypted with the
+same age key as the Kubernetes SOPS files. The recipient is in
+[`.sops.yaml`](../.sops.yaml).
 
-- Format: **dotenv** — SOPS encrypts every value, keys stay in cleartext (so the
-  file diffs cleanly). Rule: `path_regex: (^|/)secrets\.sops\.env$` in `.sops.yaml`.
-- Contains: `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN`, `PROXMOX_VE_INSECURE`,
-  `CLOUDFLARE_API_TOKEN` — everything both providers need.
-- R2 state backend: `R2_ACCOUNT_ID`, `R2_API_TOKEN` (Object Read & Write on the
-  `homelab-tfstate` bucket only), and the S3 keys derived from it.
-  `AWS_ACCESS_KEY_ID` is the token ID and `AWS_SECRET_ACCESS_KEY` is the SHA-256
-  of the token value. Rotating the token means updating all three.
-  `AWS_ENDPOINT_URL_S3` is the account's R2 endpoint. It lives here and not in
-  the `backend.tf` files because the repo is public.
+The file is dotenv. SOPS encrypts each value and leaves the keys readable, so
+diffs show which key changed. It holds:
+
+- `PROXMOX_VE_ENDPOINT`, `PROXMOX_VE_API_TOKEN` and `PROXMOX_VE_INSECURE`.
+- `CLOUDFLARE_API_TOKEN`.
+- `R2_ACCOUNT_ID` and `R2_API_TOKEN`, with Object Read & Write on the state
+  bucket only.
+- `AWS_ACCESS_KEY_ID`, the R2 token ID, and `AWS_SECRET_ACCESS_KEY`, the
+  SHA-256 of the token value. Rotating the R2 token means updating all three.
+- `AWS_ENDPOINT_URL_S3`, the account's R2 endpoint. It sits here instead of in
+  `backend.tf` because the repo is public.
+
+## Use the secrets
+
+Point SOPS at the age key, which is gitignored:
+
+```bash
+export SOPS_AGE_KEY_FILE=$PWD/age.key   # from the repo root
+```
+
+`terraform/tf.sh` wraps `sops exec-env`, so the credentials exist only for that
+one command. It falls back to `age.key` in the repo root when
+`SOPS_AGE_KEY_FILE` isn't set.
+
+```bash
+terraform/tf.sh homelab-prd plan
+terraform/tf.sh all apply
+```
+
+To load them into your shell instead, where they stay until you close it:
+
+```bash
+set -a; eval "$(sops -d secrets.sops.env)"; set +a
+terraform -chdir=terraform/cluster init -reconfigure -backend-config=key=homelab/clusters/homelab-prd.tfstate
+terraform -chdir=terraform/cluster plan -var-file=../clusters/homelab-prd/cluster.tfvars -var-file=../clusters/homelab-prd/talos-versions.tfvars
+```
+
+Read or edit the file:
+
+```bash
+sops -d secrets.sops.env   # print the values
+sops secrets.sops.env      # edit in $EDITOR, re-encrypts on save
+```
+
+## Rotate a token
+
+Rotate the Proxmox token now and then. Make a new secret for it in Proxmox,
+under Datacenter, Permissions, API Tokens, then put it in the file with
+`sops secrets.sops.env`.
+
+The Cloudflare token has a second copy in
+`kubernetes/infrastructure/controllers/cloudflare.sops.yaml`. That one becomes
+the `cloudflare-api-token` Secret, which cert-manager and external-dns use.
+Update both files when you rotate it.
 
 ## Terraform state
 
-`terraform/shared` keeps its state at
-`homelab-tfstate/homelab/shared.tfstate`, set in its `backend.tf`. Each
-cluster gets `homelab-tfstate/homelab/clusters/<name>.tfstate`. The
-`backend.tf` in `terraform/cluster` has no key, and `terraform/tf.sh` passes
-it at init. Terraform
-takes a lock by writing a `.tflock` object next to the state, so two runs
-can't apply the same state at once. A cluster reads the shared state through
-`terraform_remote_state`. It needs Terraform 1.10 or newer;
-Homebrew's `terraform` is stuck at 1.5.7, so install it from
-`hashicorp/tap/terraform` or the release zip.
+`terraform/shared` keeps its state at `homelab/shared.tfstate`, set in its
+`backend.tf`. Each cluster gets `homelab/clusters/<name>.tfstate`. The
+`backend.tf` in `terraform/cluster` has no key, because `terraform/tf.sh`
+passes it at init.
+
+Terraform locks a state by writing a `.tflock` object next to it, so two runs
+can't apply the same state at once. If a crashed run leaves the lock behind,
+run `terraform force-unlock <id>` with the ID from the error.
+
+The roots need Terraform 1.11 or newer. Homebrew's `terraform` formula stopped
+at 1.5.7, so install from `hashicorp/tap/terraform` or the release zip.
 
 A cluster's state holds its Talos machine secrets and the age key. The shared
-state holds the pg-01 superuser password. R2 has no object versioning, so keep an age-encrypted copy
-offline after big changes:
+state holds the pg-01 superuser password. R2 has no object versioning, so keep
+an encrypted copy offline after big changes:
 
 ```bash
 for s in shared homelab-prd; do
@@ -42,88 +87,54 @@ for s in shared homelab-prd; do
 done
 ```
 
-If the lock gets stuck after a crashed run, use `terraform force-unlock <id>`
-with the ID from the error.
+## Flux bootstrap
 
-> The Cloudflare API token is also stored (independently) inside
-> `kubernetes/infrastructure/controllers/cloudflare.sops.yaml` for the in-cluster
-> `cloudflared`/`external-dns` secret. If you rotate it, update **both** files.
+Flux reads this public repo over HTTPS without Git credentials, and bootstrap
+doesn't push anything to Git.
 
-## Prerequisite
+Terraform creates the `sops-age` Secret from `sops_age_key_file`. Keep the age
+key out of Git and in a password manager. Losing it means losing every SOPS
+secret.
 
-The age **private** key must be available (it is gitignored):
+## Credentials Terraform creates
 
-```bash
-export SOPS_AGE_KEY_FILE=$PWD/age.key   # run from the repo root
-```
+Some credentials only exist after Terraform makes them: the Proxmox CSI token,
+the pve-exporter token and the tunnel secret. Terraform writes them to the
+`flux-system/cluster-secrets-tf` Secret. Git holds the Secret manifests with
+`${var}` placeholders, and Flux fills them in through `postBuild.substituteFrom`.
 
-## Decode / inspect
+To add one:
 
-```bash
-# Print the decrypted Proxmox env (values in cleartext):
-sops -d secrets.sops.env
-```
+1. Add a local map in the Terraform file that creates the credential, and
+   merge it into `data` of `kubernetes_secret_v1.cluster_secrets_tf` in
+   `terraform/cluster/flux.tf`.
+2. Write the Secret manifest in Git with only `${var}` values.
+   `.github/scripts/check_sops.py` rejects anything else in a plaintext Secret.
+3. Add `cluster-secrets-tf` to `substituteFrom` of the Kustomization that
+   applies it, and to no other.
+4. Add the key with a dummy value to the stub Secret in
+   `.github/workflows/validate.yml`.
+5. Apply Terraform before you merge. If Flux reconciles first, it substitutes
+   empty strings.
 
-## Load into your shell for a Terraform run
-
-`terraform/tf.sh` wraps `sops exec-env`, so the credentials exist only for that
-one command. It uses `age.key` in the repo root unless `SOPS_AGE_KEY_FILE` is
-set:
-
-```bash
-terraform/tf.sh homelab-prd plan
-terraform/tf.sh all apply
-```
-
-To export them into your shell instead (they stay until you close it):
-
-```bash
-set -a; eval "$(sops -d secrets.sops.env)"; set +a
-terraform -chdir=terraform/cluster init -reconfigure -backend-config=key=homelab/clusters/homelab-prd.tfstate
-terraform -chdir=terraform/cluster plan -var-file=../clusters/homelab-prd/cluster.tfvars -var-file=../clusters/homelab-prd/talos-versions.tfvars
-```
-
-## Edit the secrets
-
-```bash
-sops secrets.sops.env          # opens $EDITOR on the decrypted content, re-encrypts on save
-```
-
-## Rotate a token
-
-The `terraform-prov@pve!mytoken` Proxmox token should be rotated periodically.
-After issuing a new secret in Proxmox (Datacenter → Permissions → API Tokens),
-or after rotating the Cloudflare token, update this file in place:
-
-```bash
-sops secrets.sops.env          # edit PROXMOX_VE_API_TOKEN / CLOUDFLARE_API_TOKEN, save
-```
-
-If you rotate the Cloudflare token, also update
-`kubernetes/infrastructure/controllers/cloudflare.sops.yaml` (the in-cluster copy).
-
-## Flux bootstrap credentials
-
-Flux reads this public repository over HTTPS without Git credentials.
-Bootstrap does not push generated files to Git.
-
-The `sops-age` Secret comes from `sops_age_key_file`. Keep the age private key
-outside Git and preserve it when migrating Flux. Terraform state contains
-secrets, so encrypt backups and restrict access to plan files.
+If Terraform used to manage that Secret itself, add a `removed` block with
+`destroy = false`. Terraform then forgets the Secret and Flux takes it over
+without a delete.
 
 ## Plans in CI
 
 `.github/workflows/terraform-plan.yml` needs the age key too. It lives in the
-`SOPS_AGE_KEY` secret of the `terraform-plan` GitHub environment, and only
-that job reads it. The job runs only for PRs from this repo. When you rotate
-the age key, update that secret:
+`SOPS_AGE_KEY` secret of the `terraform-plan` GitHub environment, and only that
+job reads it. The job runs only for PRs from this repo, never forks. When you
+rotate the age key, update the secret:
 
 ```bash
 gh secret set SOPS_AGE_KEY --env terraform-plan < age.key
 ```
 
-## Safety
+## What keeps plaintext out of Git
 
-- **Never** commit a plaintext `.env` — `.gitignore` ignores `*.env` and only
-  un-ignores `*.sops.env`, so only the encrypted file can be committed.
-- `age.key` is gitignored; without it the file cannot be decrypted.
+- `.gitignore` ignores `*.env` and un-ignores only `*.sops.env`.
+- `age.key` is gitignored.
+- CI fails on an unencrypted `*.sops.yaml` or a plaintext Secret with real
+  values.
