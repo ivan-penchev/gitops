@@ -1,25 +1,7 @@
----
-# Wildcard TLS for internal apps. cert-manager solves DNS-01 via the Cloudflare
-# API token (Let's Encrypt DOES issue multi-level wildcards). The resulting
-# `int-home-tls` Secret is used by ingress-nginx as its default SSL cert (see
-# controller.extraArgs.default-ssl-certificate), so every *.int.home host is
-# served over valid HTTPS on the LAN without a per-Ingress tls block.
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: int-home-wildcard
-  namespace: ingress-nginx
-spec:
-  secretName: int-home-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  commonName: "*.${lan_domain}"
-  dnsNames:
-    - "*.${lan_domain}"
----
-# Same wildcard for Traefik. Its default TLSStore reads the Secret from its own
-# namespace. The ingress-nginx copy above goes when ingress-nginx does.
+# Wildcard TLS for internal apps. cert-manager solves DNS-01 through the
+# Cloudflare API token. Traefik's default TLSStore serves the `int-home-tls`
+# Secret from its own namespace, so every *.lan_domain host gets valid HTTPS on
+# the LAN without a tls block per Ingress.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:

@@ -119,7 +119,7 @@ INV='.metadata.annotations["config.k8s.io/owning-inventory"] = "talos-bootstrap-
    flux get kustomizations -A
    ```
 
-   Also open an app behind the internal ingress (`192.168.68.40`) and one
+   Also open an app behind the internal ingress (`192.168.68.41`) and one
    behind the Cloudflare tunnel.
 
 ## After the last hop

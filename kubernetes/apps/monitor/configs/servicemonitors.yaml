@@ -5,27 +5,6 @@
 # namespaces via namespaceSelector. Prometheus discovers them because
 # *SelectorNilUsesHelmValues is false in the stack values.
 
-# ingress-nginx: request rates, latency, status codes (needs controller.metrics
-# enabled in the ingress-nginx HelmRelease, which exposes the -metrics service).
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: ingress-nginx
-  namespace: monitoring
-  labels:
-    app.kubernetes.io/name: ingress-nginx
-spec:
-  namespaceSelector:
-    matchNames:
-      - ingress-nginx
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: ingress-nginx
-      app.kubernetes.io/component: controller
-  endpoints:
-    - port: metrics
-      interval: 30s
----
 # Traefik: request rates, latency and status codes per entrypoint, router and
 # service. The HelmRelease enables the traefik-metrics Service.
 apiVersion: monitoring.coreos.com/v1

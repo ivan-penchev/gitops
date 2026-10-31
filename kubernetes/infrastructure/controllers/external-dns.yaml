@@ -9,7 +9,7 @@
 #                the cluster tunnel (<tunnel-id>.cfargotunnel.com). Edge TLS
 #                via CF. Scope: public_domain, excluding lan_domain.
 #   * internal : any <app>.${lan_domain} host -> grey (DNS-only) A record to
-#                the ingress-nginx LoadBalancer IP (LAN only).
+#                the Traefik LoadBalancer IP (LAN only).
 #                Scope: lan_domain.
 #
 # public_domain, lan_domain and dns_owner_id come from the cluster's tfvars
@@ -227,7 +227,7 @@ spec:
     extraArgs:
       - --zone-id-filter=${cf_zone_id}
     # No --default-targets: external-dns uses the Ingress status LB IP
-    # (192.168.68.40) as the A-record target. No --cloudflare-proxied: these
+    # (traefik_lb_ip) as the A-record target. No --cloudflare-proxied: these
     # stay grey-cloud (DNS-only), resolvable/reachable on the LAN only.
     interval: 1m
     resources:

@@ -36,7 +36,7 @@ readiness.
 
 Homepage runs in its own namespace at `https://homepage.${lan_domain}`
 (`homepage.int.home.17072021.xyz` with the current cluster configuration).
-It uses ingress-nginx's internal wildcard DNS and default TLS certificate; no
+It uses Traefik's internal wildcard DNS and default TLS certificate; no
 public DNS record, tunnel hostname, or public Ingress is configured. Its
 `kubernetes/apps/homepage/app/config/` supplies the dark, grouped dashboard,
 search, date, and cluster CPU/memory widgets. Homepage discovers seven LAN-only
@@ -155,7 +155,7 @@ application subdomains through the tunnel. The two ExternalDNS releases manage
 CNAMEs on each side of this partial-zone setup. Neither manages the blog at
 `penchev.com` or `www.penchev.com`.
 
-To expose an app, add a public nginx Ingress for its subdomain with
+To expose an app, add a public Traefik Ingress for its subdomain with
 `external-dns.kubernetes.io/target: <hostname>.cdn.cloudflare.net`. Review its
 authentication first: **Wattbill has no login and is publicly accessible.**
 Cloudflare's edge certificate for a new hostname may take time to become active;
