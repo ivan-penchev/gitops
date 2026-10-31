@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up the tank pool to the USB drive
+After=zfs-import.target usb-drive-off.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tank-backup
+Environment=HOME=/root
+Nice=10
+IOSchedulingClass=idle

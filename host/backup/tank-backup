@@ -1,0 +1,50 @@
+#!/bin/bash
+# Copy the ZFS pool $SOURCE to the USB drive pool $POOL, then power the drive off.
+#   tank-backup        run a backup
+#   tank-backup init   format the USB drive as pool $POOL (erases it)
+set -euo pipefail
+# shellcheck source=tank-backup.default
+. /etc/default/tank-backup
+
+exec 9>/run/tank-backup.lock
+flock -n 9 || { echo "tank-backup: already running" >&2; exit 1; }
+
+done_with_drive() {
+  if zpool list "$POOL" >/dev/null 2>&1; then zpool export "$POOL" || true; fi
+  usb-drive off || true
+}
+trap done_with_drive EXIT
+
+usb-drive on
+
+if [ "${1:-}" = init ]; then
+  zpool list "$POOL" >/dev/null 2>&1 && { echo "pool $POOL already exists"; exit 1; }
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,MODEL "$(readlink -f "$DISK_ID")"
+  read -r -p "This erases everything on the drive above. Type the pool name ($POOL) to go on: " a </dev/tty
+  [ "$a" = "$POOL" ] || { echo "stopped"; exit 1; }
+  # volmode=none keeps the copied VM disks from showing up as block devices on the host.
+  zpool create -f -o ashift=12 -o cachefile=none \
+    -O compression=zstd -O atime=off -O canmount=off -O mountpoint=none \
+    -O readonly=on -O volmode=none "$POOL" "$DISK_ID"
+  zpool status "$POOL"
+  exit 0
+fi
+
+zpool list "$POOL" >/dev/null 2>&1 || zpool import -d /dev/disk/by-id -o cachefile=none "$POOL"
+
+snap="bk-$(date +%Y%m%d-%H%M)"
+zfs snapshot -r "$SOURCE@$snap"
+echo "tank-backup: sending $SOURCE@$snap to $POOL/$SOURCE"
+syncoid --recursive --no-sync-snap --no-privilege-elevation "$SOURCE" "$POOL/$SOURCE"
+
+# Keep the newest $KEEP bk-* snapshots of each dataset on both sides.
+for root in "$SOURCE" "$POOL/$SOURCE"; do
+  zfs list -H -r -t snapshot -o name -s creation "$root" |
+    awk -F@ -v keep="$KEEP" '$2 ~ /^bk-/ { n[$1]++; s[$1, n[$1]] = $0 }
+      END { for (d in n) for (i = 1; i <= n[d] - keep; i++) print s[d, i] }' |
+    while read -r old; do zfs destroy "$old"; done
+done
+
+zpool status -x "$POOL"
+zfs list -o name,used -d 1 "$POOL/$SOURCE"
+echo "tank-backup: done"

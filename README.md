@@ -17,6 +17,7 @@ domains and IPs. Change those and the rest should work for you.
 | [terraform-secrets.md](docs/terraform-secrets.md) | You need Terraform credentials, state or token rotation |
 | [talos-k8s-versions.md](docs/talos-k8s-versions.md) | You're upgrading Talos or Kubernetes |
 | [cilium-upgrade.md](docs/cilium-upgrade.md) | You're upgrading Cilium |
+| [backups.md](docs/backups.md) | You need to set up, check or restore the USB drive backup |
 | [renovate-live-test.md](docs/renovate-live-test.md) | A Renovate PR runs against the live cluster |
 | [flux-upgrade-test.md](docs/flux-upgrade-test.md) | You're bumping Flux or the Flux Operator |
 
@@ -34,6 +35,8 @@ kubernetes/
   infrastructure/  controllers (CSI, Traefik, cert-manager, external-dns, cloudflared, ARC) and their config
   apps/            workloads, one folder per namespace
   components/      shared Kustomize components
+host/
+  backup/          weekly USB drive backup that runs on the Proxmox host
 ```
 
 ## Prerequisites

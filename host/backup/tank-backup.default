@@ -1,0 +1,6 @@
+# Settings for tank-backup and usb-drive. Installed to /etc/default/tank-backup.
+DISK_ID=/dev/disk/by-id/usb-Seagate_Expansion_NA88RWN7-0:0
+SOURCE=tank
+POOL=backup
+# Backup snapshots to keep on both sides. The newest one is the base for the next incremental.
+KEEP=2
