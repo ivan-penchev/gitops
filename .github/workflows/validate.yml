@@ -56,6 +56,7 @@ jobs:
           # Generated here, since check_sops.py rejects a tracked Secret with values.
           # Keep the keys in sync with cluster_secrets_tf in terraform/cluster/flux.tf.
           kubectl create secret generic cluster-secrets-tf -n flux-system --dry-run=client -o yaml \
+            --from-literal=cloudflared_tunnel_secret=AAAA \
             --from-literal=proxmox_csi_token_id='ci@pve!csi' \
             --from-literal=proxmox_csi_token_secret=00000000-0000-0000-0000-000000000000 \
             --from-literal=pve_exporter_token=00000000-0000-0000-0000-000000000000 \

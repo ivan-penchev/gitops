@@ -211,8 +211,9 @@ run "per_cluster_names_come_from_variables" {
       kubernetes_config_map_v1.cluster_config_tf.data.proxmox_csi_url == "https://192.0.2.3:8006/api2/json",
       kubernetes_config_map_v1.cluster_config_tf.data.proxmox_insecure == "true",
       contains(keys(kubernetes_secret_v1.cluster_secrets_tf.data), "proxmox_csi_token_secret"),
+      contains(keys(kubernetes_secret_v1.cluster_secrets_tf.data), "cloudflared_tunnel_secret"),
     ])
-    error_message = "Flux needs the CSI URL in cluster-config-tf and the CSI token in cluster-secrets-tf."
+    error_message = "Flux needs the CSI URL in cluster-config-tf and the CSI and tunnel secrets in cluster-secrets-tf."
   }
 
   assert {

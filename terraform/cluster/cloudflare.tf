@@ -27,16 +27,6 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "tunnel" {
   config_src    = "local"
 }
 
-
-locals {
-  # credentials.json consumed by cloudflared (credentials-file mode).
-  cloudflared_credentials = jsonencode({
-    AccountTag   = data.cloudflare_zone.main.account.id
-    TunnelID     = cloudflare_zero_trust_tunnel_cloudflared.tunnel.id
-    TunnelSecret = random_id.tunnel_secret.b64_std
-  })
-}
-
 # Zones outside cloudflare_zone whose ids Flux needs, keyed by a short name.
 data "cloudflare_zone" "extra" {
   for_each = var.extra_zones
