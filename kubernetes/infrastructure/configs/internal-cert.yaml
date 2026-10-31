@@ -17,3 +17,19 @@ spec:
   commonName: "*.${lan_domain}"
   dnsNames:
     - "*.${lan_domain}"
+---
+# Same wildcard for Traefik. Its default TLSStore reads the Secret from its own
+# namespace. The ingress-nginx copy above goes when ingress-nginx does.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: int-home-wildcard
+  namespace: traefik
+spec:
+  secretName: int-home-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.${lan_domain}"
+  dnsNames:
+    - "*.${lan_domain}"
