@@ -47,6 +47,8 @@ talosconfig_file = "talosconfig"
 csi_proxmox_role = "CSI"
 csi_proxmox_user = "kubernetes-csi@pve"
 
+pve_exporter_proxmox_user = "homelab-prd-pve-exporter@pve"
+
 # penchev.com stays on Azure DNS. Its Cloudflare partial zone id is only
 # handed to the opt-in ExternalDNS release.
 extra_zones = {

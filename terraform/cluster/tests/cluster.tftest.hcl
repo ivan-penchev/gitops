@@ -55,26 +55,27 @@ variables {
   workers = {
     work-1 = { vmid = 902, ip = "192.0.2.12", cpu = 2, memory = 4096, disk = 20 }
   }
-  proxmox_node           = "pve"
-  proxmox_region         = "test"
-  proxmox_csi_endpoint   = "https://192.0.2.3:8006/api2/json"
-  iso_datastore          = "local"
-  vm_datastore           = "tank"
-  network_bridge         = "vmbr0"
-  cloudflare_zone        = "example.test"
-  public_domain          = "test.example.test"
-  lan_domain             = "int.example.test"
-  dns_owner_id           = "test"
-  cloudflare_tunnel_name = "test"
-  flux_git_url           = "https://github.com/ivan-penchev/gitops.git"
-  flux_path              = "kubernetes/clusters/homelab"
-  iso_name_prefix        = "test-talos"
-  kubeconfig_file        = "kubeconfig-test"
-  talosconfig_file       = "talosconfig-test"
-  csi_proxmox_role       = "test-CSI"
-  csi_proxmox_user       = "test-csi@pve"
-  sops_age_key_file      = ""
-  extra_zones            = { other = "other.test" }
+  proxmox_node              = "pve"
+  proxmox_region            = "test"
+  proxmox_csi_endpoint      = "https://192.0.2.3:8006/api2/json"
+  iso_datastore             = "local"
+  vm_datastore              = "tank"
+  network_bridge            = "vmbr0"
+  cloudflare_zone           = "example.test"
+  public_domain             = "test.example.test"
+  lan_domain                = "int.example.test"
+  dns_owner_id              = "test"
+  cloudflare_tunnel_name    = "test"
+  flux_git_url              = "https://github.com/ivan-penchev/gitops.git"
+  flux_path                 = "kubernetes/clusters/homelab"
+  iso_name_prefix           = "test-talos"
+  kubeconfig_file           = "kubeconfig-test"
+  talosconfig_file          = "talosconfig-test"
+  csi_proxmox_role          = "test-CSI"
+  csi_proxmox_user          = "test-csi@pve"
+  pve_exporter_proxmox_user = "test-pve-exporter@pve"
+  sops_age_key_file         = ""
+  extra_zones               = { other = "other.test" }
   postgres_databases = [
     { name = "app", namespaces = ["app-a", "app-b"] },
     { name = "wiki", namespaces = ["wiki"] },
@@ -193,6 +194,11 @@ run "per_cluster_names_come_from_variables" {
   assert {
     condition     = cloudflare_zero_trust_tunnel_cloudflared.tunnel.name == "test" && proxmox_virtual_environment_user.csi.user_id == "test-csi@pve"
     error_message = "Tunnel and CSI user names must come from the cluster's tfvars."
+  }
+
+  assert {
+    condition     = proxmox_virtual_environment_user.pve_exporter.user_id == "test-pve-exporter@pve" && proxmox_acl.pve_exporter.role_id == "PVEAuditor"
+    error_message = "The pve-exporter user must come from tfvars and stay read-only."
   }
 
   assert {

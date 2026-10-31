@@ -222,6 +222,17 @@ variable "talosconfig_file" {
   type        = string
 }
 
+variable "pve_exporter_proxmox_user" {
+  description = "Proxmox user for this cluster's prometheus-pve-exporter. Global on the PVE host."
+  type        = string
+}
+
+variable "pve_exporter_token_name" {
+  description = "Name of the Proxmox API token for prometheus-pve-exporter."
+  type        = string
+  default     = "exporter"
+}
+
 variable "csi_token_name" {
   description = "Name of the Proxmox API token for proxmox-csi."
   type        = string
