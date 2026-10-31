@@ -47,7 +47,7 @@ spec:
       app.kubernetes.io/name: cert-manager
       app.kubernetes.io/component: controller
   endpoints:
-    - port: tcp-prometheus-servicemonitor
+    - port: http-metrics
       interval: 30s
 ---
 # Flux controllers expose metrics on the pod port `http-prom` (8080); scrape all

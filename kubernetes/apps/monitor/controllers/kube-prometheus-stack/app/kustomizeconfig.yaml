@@ -1,0 +1,8 @@
+# Lets the configMapGenerator hash suffix reach HelmRelease valuesFrom, so a
+# values change gets a new ConfigMap name and triggers a Helm upgrade.
+nameReference:
+  - kind: ConfigMap
+    version: v1
+    fieldSpecs:
+      - path: spec/valuesFrom/name
+        kind: HelmRelease

@@ -28,6 +28,11 @@ spec:
     crds: CreateReplace
   upgrade:
     crds: CreateReplace
+  # Flux resource metrics for kube-state-metrics, see flux-kube-state-metrics.yaml.
+  valuesFrom:
+    - kind: ConfigMap
+      name: flux-kube-state-metrics
+      valuesKey: flux-kube-state-metrics.yaml
   values:
     # ---- Control-plane component scrape jobs: OFF (Talos, see header) ----
     kubeControllerManager:
@@ -174,6 +179,20 @@ spec:
               editable: false
               options:
                 path: /var/lib/grafana/dashboards/proxmox
+            - name: flux
+              folder: Flux
+              type: file
+              disableDeletion: true
+              editable: false
+              options:
+                path: /var/lib/grafana/dashboards/flux
+            - name: cert-manager
+              folder: cert-manager
+              type: file
+              disableDeletion: true
+              editable: false
+              options:
+                path: /var/lib/grafana/dashboards/cert-manager
       dashboards:
         grafana-com:
           traefik:
@@ -193,6 +212,18 @@ spec:
             datasource:
               - name: DS_PROMETHEUS
                 value: prometheus
+        flux:
+          # From fluxcd/flux2-monitoring-example, pinned to a commit. cluster
+          # needs gotk_resource_info from flux-kube-state-metrics.yaml.
+          flux-cluster:
+            url: https://raw.githubusercontent.com/fluxcd/flux2-monitoring-example/7ab65dc8b90f7a6751d88f18bbb4e1bee33bf334/monitoring/configs/dashboards/cluster.json
+          flux-control-plane:
+            url: https://raw.githubusercontent.com/fluxcd/flux2-monitoring-example/7ab65dc8b90f7a6751d88f18bbb4e1bee33bf334/monitoring/configs/dashboards/control-plane.json
+        cert-manager:
+          cert-manager:
+            # Cert-manager-Kubernetes. Picks its datasource with a variable.
+            gnetId: 20842
+            revision: 3
       ingress:
         enabled: true
         ingressClassName: traefik
