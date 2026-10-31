@@ -129,3 +129,19 @@ variable "ssh_private_key_path" {
   type        = string
   default     = "~/.ssh/id_rsa"
 }
+
+variable "samba_users" {
+  description = "Samba logins on the fileserver. read_only users can't write to media. backup users see the read-only backup share."
+  type = map(object({
+    read_only = optional(bool, false)
+    backup    = optional(bool, false)
+  }))
+  default = {}
+}
+
+variable "samba_passwords" {
+  description = "Samba password per user in samba_users. Set as TF_VAR_samba_passwords in secrets.sops.env."
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+}
