@@ -15,12 +15,12 @@ run "fileserver_mounts_every_child_dataset" {
   command = plan
 
   assert {
-    condition     = output.fileserver_host_mount_command == "pct set 110 -mp0 /tank/media,mp=/srv/media -mp1 /tank/media/movies,mp=/srv/media/movies -mp2 /tank/media/torrent-download,mp=/srv/media/torrent-download --features nesting=1 && pct reboot 110"
+    condition     = output.fileserver_host_mount_command == "pct set 110 -mp0 /tank/media,mp=/srv/media -mp1 /tank/media/movies,mp=/srv/media/movies -mp2 /tank/media/torrent-download,mp=/srv/media/torrent-download -mp3 /tank/media/tv,mp=/srv/media/tv --features nesting=1 && pct reboot 110"
     error_message = "Unexpected fileserver mount command: ${output.fileserver_host_mount_command}"
   }
 
   assert {
-    condition     = local.fileserver_export_lines == ["/srv/media 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)", "/srv/media/movies 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)", "/srv/media/torrent-download 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)"]
+    condition     = local.fileserver_export_lines == ["/srv/media 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)", "/srv/media/movies 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)", "/srv/media/torrent-download 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)", "/srv/media/tv 192.168.68.0/24(rw,sync,no_subtree_check,no_root_squash)"]
     error_message = "/etc/exports must list the parent and each child dataset for the LAN CIDR."
   }
 }

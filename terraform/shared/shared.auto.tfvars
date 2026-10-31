@@ -20,7 +20,7 @@ fileserver = {
   hostname       = "fileserver"
   ip             = "192.168.68.11"
   dns_name       = "fileserver.int.home"
-  child_datasets = ["movies", "torrent-download"]
+  child_datasets = ["movies", "torrent-download", "tv"]
 }
 
 postgres = {

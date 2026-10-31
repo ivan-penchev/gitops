@@ -23,7 +23,7 @@ bootstraps these resources but does not overwrite them after Git adopts them.
 
 ## Application layout
 
-Prowlarr and Radarr share `downloads`. Audiobookshelf uses `media`.
+Prowlarr, Radarr and Sonarr share `downloads`. Audiobookshelf uses `media`.
 Each has a Flux `ks.yaml` in `kubernetes/apps/<namespace>/<app>/`, with its
 workloads under `app/`. FlareSolverr stays with Prowlarr. Wattbill keeps its
 existing folder, namespace, and direct reconciliation by `apps`.
@@ -31,7 +31,8 @@ existing folder, namespace, and direct reconciliation by `apps`.
 The per-app Flux objects live in `flux-system` so they can use the existing
 SOPS key and substitution ConfigMaps. Their `targetNamespace` selects the
 workload namespace. They wait for infrastructure and check their own workloads;
-Radarr does not depend on Prowlarr. The parent `apps` checks child readiness.
+Radarr and Sonarr do not depend on Prowlarr. The parent `apps` checks child
+readiness.
 
 Homepage runs in its own namespace at `https://homepage.${lan_domain}`
 (`homepage.int.home.17072021.xyz` with the current cluster configuration).
