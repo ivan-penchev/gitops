@@ -4,7 +4,7 @@ Move Sonarr off CasaOS and into the cluster, next to Radarr and Prowlarr in the
 `downloads` namespace. Radarr is the template. Same image family, same non-root
 uid, same storage pattern, same cold copy.
 
-Status: the fileserver exports `tv` (applied 2026-10-31). The Sonarr manifests wait for the merge.
+Status: migrated on 2026-10-31. The CasaOS container is stopped and kept as the rollback.
 
 ## What runs today
 
@@ -94,12 +94,35 @@ write them without a chown. The dataset holds 195G.
 6. Point Prowlarr's Sonarr app at `https://sonarr.${lan_domain}` and run a sync.
 7. Leave the CasaOS container stopped for a week as the rollback, then remove it.
 
+## Result
+
+- Sonarr 4.0.20 migrated the database forward on first start. 15 series and 198
+  episode files survived a full rescan with nothing missing. The API key did not
+  change.
+- Sonarr runs as uid 100000 and can write to `/tv` and `/downloads`.
+- Prowlarr points at `https://sonarr.int.home.17072021.xyz`, its test passes and
+  it synced 6 indexers.
+- The Jellyfin notification failed after the move. The stored API key ended in a
+  tab. Sonarr 4.0.16 sent it in a header that Jellyfin trims, but 4.0.20 sends
+  `Authorization: MediaBrowser Token="..."` and Jellyfin rejects the tab. I
+  saved the trimmed key and the test passes.
+- The qBittorrent test still warns that torrents get removed at the share ratio
+  limit. Radarr shows the same warning. Switch qBittorrent to pause instead.
+
+The `config` folder came from `/DATA/AppData/sonarr/config` on CasaOS. I packed
+it through the CasaOS console over the Proxmox API. For that, the
+`terraform-prov@pve` user got a `ConsoleOnly` role with only `VM.Console` on
+`/vms/200`. Terraform does not manage this grant. Remove it when CasaOS goes:
+`pveum acl delete /vms/200 --users terraform-prov@pve --roles ConsoleOnly` and
+`pveum role delete ConsoleOnly`.
+
 ## Decisions
 
 - Sonarr gets its own Flux Kustomization, like Radarr.
 - Nothing else uses Sonarr, so only Prowlarr needs the new URL.
 - Jellyfin stays on LXC 102 for now. The notification keeps working by IP.
 
-## Still to check
+## Follow-ups
 
-1. Host path of the container's `/config` on CasaOS, during the cold copy.
+1. Remove the stopped Sonarr container on CasaOS after a week.
+2. Remove the `ConsoleOnly` grant once nothing needs the CasaOS console.
