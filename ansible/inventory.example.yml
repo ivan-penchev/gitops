@@ -1,0 +1,23 @@
+---
+# Documentation-only TEST-NET addresses; never run against these examples.
+all:
+  children:
+    pihole:
+      hosts:
+        dns_candidate:
+          ansible_host: 192.0.2.10
+          ansible_user: operator
+          pihole_dns_bind: 192.0.2.10
+          # Replace with your actual trusted LAN subnet; TEST-NET is rejected.
+          pihole_trusted_cidr: 192.0.2.0/24
+          # Reviewed 2026-11-07: official 2026.10.1 multi-arch index (amd64/arm64).
+          # Reconfirm this pin for the actual target; there is no group-wide default.
+          pihole_image: pihole/pihole:2026.10.1@sha256:30f803ad5dd60ff96cc0a63008a2e9271af481c1b0399a182192b2e91152c1f9
+          pihole_password_source: /absolute/private/path/pihole-password
+          pihole_upstreams:
+            - 1.1.1.1
+            - 9.9.9.9
+          # All Pi-hole peer IPs, including this node, to reject forwarding loops.
+          pihole_peer_addresses:
+            - 192.0.2.10
+            - 192.0.2.11

@@ -1,0 +1,13 @@
+---
+- name: Inspect exactly one existing Debian DNS candidate without changing host state
+  hosts: pihole
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/target.yml
+    - ansible.builtin.import_tasks: tasks/probe.yml
+    - name: Report only sanitized observations, never environment or password data
+      ansible.builtin.debug:
+        var: pihole_snapshot

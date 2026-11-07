@@ -1,0 +1,13 @@
+---
+- name: Verify one managed Pi-hole via health and controller-origin TCP and UDP DNS
+  hosts: pihole
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/target.yml
+    - name: Validate DNS verification inputs (no image pin or password required)
+      ansible.builtin.assert:
+        that: vars | pihole_validate(false)
+    - ansible.builtin.import_tasks: tasks/verify.yml

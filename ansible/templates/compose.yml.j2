@@ -1,0 +1,34 @@
+# Managed by Ansible; no secrets are interpolated into this file.
+# Escape dollars before YAML quoting: Compose interpolation is a separate pass.
+name: gitops-pihole
+services:
+  pihole:
+    image: {{ pihole_image | replace('$', '$$') | to_json }}
+    restart: unless-stopped
+    labels:
+      io.gitops.owner: gitops-ansible-pihole-v1
+    ports:
+      - {{ (pihole_dns_bind ~ ':53:53/tcp') | replace('$', '$$') | to_json }}
+      - {{ (pihole_dns_bind ~ ':53:53/udp') | replace('$', '$$') | to_json }}
+      - {{ ('127.0.0.1:' ~ pihole_ui_port ~ ':80/tcp') | replace('$', '$$') | to_json }}
+    environment:
+      TZ: {{ pihole_timezone | replace('$', '$$') | to_json }}
+      FTLCONF_dns_listeningMode: "ALL"
+      FTLCONF_dns_upstreams: {{ (pihole_upstreams | join(';')) | replace('$', '$$') | to_json }}
+      FTLCONF_dns_hosts: {{ (pihole_local_hosts | join(';')) | replace('$', '$$') | to_json }}
+      FTLCONF_dns_cnameRecords: {{ (pihole_local_cnames | join(';')) | replace('$', '$$') | to_json }}
+      FTLCONF_dhcp_active: "false"
+      FTLCONF_ntp_ipv4_active: "false"
+      FTLCONF_ntp_ipv6_active: "false"
+      WEBPASSWORD_FILE: pihole_password
+    volumes:
+      - type: bind
+        source: /opt/pihole-ansible/data
+        target: /etc/pihole
+        bind:
+          create_host_path: false
+    secrets:
+      - pihole_password
+secrets:
+  pihole_password:
+    file: /opt/pihole-ansible/secrets/webpassword
