@@ -33,6 +33,11 @@ key.txt
 /ansible/.ansible/
 /ansible/.cache/
 /ansible/*.retry
+/ansible/.pihole-run-*/
+/ansible/pihole.settings.local.json
+/ansible/maintenance.local.json
+/terraform/servers/*.tfplan
+/terraform/servers/backend.local.hcl
 
 # ---- Terraform ----
 .terraform/

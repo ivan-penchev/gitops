@@ -1,0 +1,61 @@
+---
+- name: Prepare Docker prerequisites on the dedicated Terraform Debian VM
+  hosts: pihole
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    pihole_bootstrap_packages:
+      - docker.io
+      - docker-cli
+      - docker-compose
+      - iproute2
+      - util-linux
+  tasks:
+    - name: Require the Terraform-owned candidate before remote work
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - inventory_hostname == 'dns_candidate'
+          - pihole_target == inventory_hostname
+          - pihole_provisioned_by == 'terraform/servers'
+          - ansible_host != '192.168.68.20'
+    - ansible.builtin.import_tasks: tasks/target.yml
+    - name: Require Debian 13 for the distribution's Compose v2 package
+      ansible.builtin.assert:
+        that: ansible_facts.distribution_major_version == '13'
+    - name: Wait for cloud-init package and account initialization
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      when: not ansible_check_mode
+    - name: Inspect native Pi-hole paths before package installation
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/pihole
+        - /usr/local/bin/pihole
+        - /etc/systemd/system/pihole-FTL.service
+      register: pihole_native_paths
+    - name: Refuse native Pi-hole takeover
+      ansible.builtin.assert:
+        that: not item.stat.exists
+      loop: "{{ pihole_native_paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+    - name: Read installed packages
+      ansible.builtin.package_facts:
+        manager: apt
+    - name: Install only missing distribution packages without upgrading the OS
+      ansible.builtin.apt:
+        name: "{{ pihole_bootstrap_packages | difference(ansible_facts.packages.keys() | list) }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      when: "pihole_bootstrap_packages | difference(ansible_facts.packages.keys() | list) | length > 0"
+    - name: Enable the rootful Docker daemon
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started
+      when: not ansible_check_mode

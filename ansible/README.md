@@ -1,9 +1,92 @@
-# Pi-hole: first Ansible slice
+# Pi-hole: standalone Terraform + Ansible
 
 **Not deployed. Not completion of issue #134.** This foundation configures one fresh,
 dedicated Debian VM or physical device with official Pi-hole v6 Docker Compose.
 It does not convert, adopt, stop, or replace a native Pi-hole/LXC deployment. In
 particular, there is no implicit writable `.20` target.
+
+## Integrated VM workflow (recommended)
+
+[`terraform/servers`](../terraform/servers/README.md) is an independent Linux-server
+root and state, starting with one **fresh Debian 13 VM**. It does not read shared
+or cluster state, move the fileserver/PostgreSQL, or depend on Kubernetes. Terraform
+owns the VM/image/cloud-init; Ansible owns Docker prerequisites and Pi-hole settings.
+There are no Terraform provisioners, destroy/recreate triggers for Ansible changes,
+or automatic applies from Git. Run the operator command again after changing Ansible.
+
+1. Install controller dependencies below and Terraform; prepare the servers root's
+   explicit inputs/backend credentials as documented there. Reserve an actually free
+   VMID/IP and verify the Debian image checksum. Do not use the current primary.
+   Provisioning also requires authorized Proxmox-host SSH access through an agent
+   and a snippets-enabled datastore for cloud-init; API access alone is insufficient.
+   Confirm both before applying. This workflow does not reconfigure host storage.
+2. Copy `pihole.settings.example.json` to `pihole.settings.local.json`, replace TEST-NET
+   addresses (including the candidate in the peer list), and review the image pin and
+   local DNS records. This file contains **application configuration only**, never
+   connection overrides or passwords. Keep your final non-secret desired settings in
+   a reviewed Git file if preferred; the `*.local.json` examples are ignored.
+3. Export the password to a private file as described below. Terraform never receives it.
+4. From the repository root, with the independent backend/Proxmox credentials already
+   in your environment:
+
+   ```sh
+   python3 ansible/pihole.py init --backend-config=terraform/servers/backend.local.hcl
+   python3 ansible/pihole.py plan --var-file=terraform/servers/servers.auto.tfvars
+   python3 ansible/pihole.py apply \
+     --var-file=terraform/servers/servers.auto.tfvars \
+     --settings=ansible/pihole.settings.local.json \
+     --password-file=ansible/secrets/dns-candidate-password
+   ```
+
+   `apply` presents Terraform's plan and **requires its normal approval**. After a
+   successful apply it reads `ansible_inventory` from that root's state, checks its
+   single-target contract, waits up to five minutes for trusted SSH/Python, waits for
+   cloud-init, installs missing Debian Docker/Compose packages, then configures and
+   verifies Pi-hole. It never invokes `terraform/tf.sh all` or accesses cluster state.
+   `--backend-config` can be repeated. Backend **file paths are resolved from your
+   current directory**, and files must contain no plaintext credentials.
+
+**First-boot SSH trust is deliberately not automatic.** Through your trusted
+Proxmox-host SSH connection, run
+`qm guest exec VMID -- /usr/bin/ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
+after cloud-init starts the guest agent. Compare the returned fingerprint with your
+first `ssh operator@CANDIDATE_IP` prompt before accepting it. This avoids needing a
+guest console password; cloud-init configures key-only access.
+The runner uses the controller's known_hosts and SSH key/agent, never
+`StrictHostKeyChecking=no`, blind `ssh-keyscan` trust, or password authentication
+setup. Verify/accept while the first run waits, or rerun `apply` after it times out:
+a successful VM creation is retained, not rolled back. A changed host key requires
+independent verification, not automatic known_hosts deletion.
+
+For day-2 changes, there is **no Terraform apply and no package bootstrap**:
+
+```sh
+python3 ansible/pihole.py check --settings=ansible/pihole.settings.local.json \
+  --maintenance-file=ansible/maintenance.local.json
+python3 ansible/pihole.py configure --settings=ansible/pihole.settings.local.json \
+  --password-file=ansible/secrets/dns-candidate-password \
+  --maintenance-file=ansible/maintenance.local.json
+python3 ansible/pihole.py verify --settings=ansible/pihole.settings.local.json
+```
+
+`inspect` is also available with the same `--settings`. Check/inspect/verify need
+no password. These commands read existing Terraform state to regenerate identity;
+they do not refresh/apply infrastructure. Temporary inventory/settings live in an
+owner-only ignored directory and are removed even on failure; group variables are
+loaded explicitly. No inventory copy becomes a second source of truth.
+
+Maintenance JSON accepts only the three existing attestations (see **Safe day-2
+boundary**), e.g. `pihole_backup_validated`, `pihole_peer_health_validated`, and dated
+`pihole_maintenance_evidence`. Supply true only after actually checking backup and
+peer health; do not permanently enable them. Image/binding changes remain blocked.
+A failure stops the pipeline without cleanup, rollback, DNS cutover or peer writes.
+After a bootstrap failure, rerun `apply` with a reviewed unchanged Terraform plan;
+a partial Pi-hole deployment still requires manual recovery, not a blind retry.
+Use one operator/run at a time: Terraform's state lock does not lock Ansible.
+
+No live deployment or end-to-end idempotence is claimed. Before production, test
+first boot, second-run convergence, firewall reachability and recovery on a
+throwaway VM; review the resulting plan before every infrastructure change.
 
 ## Scope and prerequisites
 
@@ -13,8 +96,11 @@ particular, there is no implicit writable `.20` target.
   is not a supported controller for this pinned Ansible release.
 - Target: dedicated **Debian 12+ VM or physical host**, Python 3, rootful Docker
   Engine, Docker Compose plugin **2.24.0+**, `ip`, `ss`, `findmnt`, and systemd.
-  Install approved Docker/OS versions separately. This slice does **not** install
-  Docker, run a curl installer, apt-upgrade, reboot, or modify host resolvers.
+  For the integrated **Debian 13 VM**, `prepare.yml` installs missing `docker.io`,
+  `docker-cli`, `docker-compose` (v2), `iproute2`, and `util-linux` from signed distribution apt
+  repositories. Direct playbook users must supply prerequisites themselves.
+  Neither path runs a curl installer, apt-upgrade, or reboot. Terraform cloud-init
+  sets initial networking/resolvers; Ansible does not rewrite host resolvers.
 - Reserve a verified-free static **RFC1918 IPv4** address, already assigned to
   the candidate, and explicitly declare its trusted LAN CIDR. DNS binds only to
   that address, not `0.0.0.0`, IPv6, or host networking. Independently verify that
@@ -190,7 +276,7 @@ is included. Verification failure also stops without blind rollback. Re-running
 healthy unchanged desired state with valid attestations should yield no changes;
 **runtime idempotence has not yet been demonstrated on a disposable daemon**.
 
-Deferred: native/LXC migration and `.20` cutover, VM/Terraform provisioning,
+Deferred: native/LXC migration and `.20` cutover,
 router DHCP/IPv6 changes, peer installation/cutover, selective Nebula Sync,
 backup scheduling/encryption/export automation, tested image+state upgrades and
 rollback, offline image archives, OS/Docker maintenance, CNAME/AAAA/PTR and client
@@ -204,7 +290,7 @@ No test below contacts the example/production IPs or any Docker daemon:
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ansible-playbook -i localhost, tests/render.yml
-for playbook in inspect configure verify; do
+for playbook in inspect configure verify ready prepare; do
   .venv/bin/ansible-playbook --syntax-check "playbooks/$playbook.yml" || exit 1
 done
 ```

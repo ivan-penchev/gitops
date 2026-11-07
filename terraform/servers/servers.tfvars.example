@@ -1,0 +1,28 @@
+# Deliberately non-deployable: replace every placeholder after reserving a FRESH
+# VMID and static IPv4 outside DHCP. Do not reuse the existing Pi-hole (.20).
+proxmox_node         = "REPLACE_NODE"
+proxmox_ssh_address  = "REPLACE_PVE_IPV4"
+proxmox_ssh_username = "REPLACE_SSH_USER"
+vm_datastore        = "REPLACE_VM_STORAGE"
+image_datastore     = "REPLACE_IMPORT_STORAGE"
+snippet_datastore   = "REPLACE_SNIPPET_STORAGE"
+network_bridge      = "REPLACE_BRIDGE"
+vm_id               = 0 # invalid until the operator reserves an unused VMID
+ssh_public_key      = "REPLACE_WITH_OPERATOR_PUBLIC_OPENSSH_KEY"
+
+network = {
+  ipv4_cidr   = "REPLACE_UNUSED_IPV4/PREFIX"
+  lan_cidr    = "REPLACE_LAN_NETWORK/PREFIX"
+  gateway     = "REPLACE_GATEWAY_IPV4"
+  dns_servers = ["REPLACE_INDEPENDENT_RESOLVER_IPV4"]
+}
+
+# Select a dated Debian 13 (trixie) genericcloud amd64 release from
+# https://cloud.debian.org/images/cloud/trixie/ — not latest/current.
+# Authenticate its publisher checksums/signature, then calculate its SHA256
+# if Debian publishes a different checksum algorithm. Never invent the digest.
+debian_image_url    = "REPLACE_WITH_DATED_OFFICIAL_DEBIAN_13_QCOW2_URL"
+debian_image_sha256 = "REPLACE_WITH_VERIFIED_64_HEX_SHA256"
+
+# API endpoint/token come from PROXMOX_VE_* inherited by ansible/pihole.py.
+# proxmox_insecure = true # explicit opt-in only if using a self-signed API cert

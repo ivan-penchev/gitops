@@ -138,7 +138,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for root in shared cluster; do
+          for root in shared cluster servers; do
             echo "::group::$root"
             terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly
             terraform -chdir="$root" validate -no-color
@@ -178,11 +178,12 @@ jobs:
         run: |
           set -euo pipefail
           .venv/bin/python -m unittest discover -s tests -v
+          .venv/bin/python -m unittest discover -s ../terraform/servers/tests -v
           .venv/bin/ansible-playbook -i localhost, tests/render.yml
       - name: Check playbook syntax without production access
         run: |
           set -euo pipefail
-          for playbook in inspect configure verify; do
+          for playbook in inspect configure verify ready prepare; do
             .venv/bin/ansible-playbook --syntax-check "playbooks/$playbook.yml"
           done
 

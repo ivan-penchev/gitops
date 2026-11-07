@@ -1,0 +1,13 @@
+{
+  "pihole_image": "pihole/pihole:2026.10.1@sha256:30f803ad5dd60ff96cc0a63008a2e9271af481c1b0399a182192b2e91152c1f9",
+  "pihole_upstreams": ["1.1.1.1", "9.9.9.9"],
+  "pihole_peer_addresses": ["192.0.2.10", "192.168.68.20"],
+  "pihole_timezone": "Etc/UTC",
+  "pihole_ui_port": 8080,
+  "pihole_local_hosts": ["192.0.2.10 dns-candidate.home.arpa"],
+  "pihole_local_cnames": [],
+  "pihole_verify_external": "example.com",
+  "pihole_verify_local_name": "dns-candidate.home.arpa",
+  "pihole_verify_local_address": "192.0.2.10",
+  "pihole_verify_blocked_name": ""
+}

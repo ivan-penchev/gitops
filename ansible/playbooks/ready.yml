@@ -1,0 +1,21 @@
+---
+- name: Validate the Terraform target and wait for trusted SSH
+  hosts: pihole
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Require the single provisioned candidate before contacting it
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - inventory_hostname == 'dns_candidate'
+          - pihole_target == inventory_hostname
+          - pihole_provisioned_by == 'terraform/servers'
+          - ansible_host == pihole_dns_bind
+          - ansible_host != '192.168.68.20'
+          - vars | pihole_validate
+    - name: Wait for Python-enabled SSH with the controller's verified host key
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        sleep: 5

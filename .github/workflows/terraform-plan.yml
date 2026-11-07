@@ -1,5 +1,5 @@
-# Plans every Terraform root on PRs that touch Terraform inputs and posts the
-# result as one PR comment. It never applies.
+# Plans shared and Kubernetes roots on PRs that touch their Terraform inputs.
+# The independent servers root has offline validation only. It never applies.
 #
 # It runs on the ARC runner, because only the LAN reaches Proxmox, pg-01 and
 # the cluster API. The age key comes from the `terraform-plan` environment and
@@ -13,6 +13,7 @@ on:
     branches: [main]
     paths:
       - terraform/**
+      - '!terraform/servers/**'
       - talos/**
       - kubernetes/clusters/*/flux-system/**
       - secrets.sops.env
