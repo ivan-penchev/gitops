@@ -1,0 +1,33 @@
+---
+- name: Re-read sanitized actual container health
+  ansible.builtin.import_tasks: probe.yml
+
+- name: Require one running healthy container with managed provenance
+  ansible.builtin.assert:
+    that:
+      - pihole_managed | length == 1
+      - pihole_managed[0].status == 'running'
+      - pihole_managed[0].health == 'healthy'
+      - pihole_managed[0].labels['com.docker.compose.project'] == 'gitops-pihole'
+      - pihole_managed[0].labels['com.docker.compose.service'] == 'pihole'
+      - pihole_snapshot.marker.owner == 'gitops-ansible-pihole-v1'
+      - pihole_managed[0].image == pihole_snapshot.marker.image
+      - pihole_managed[0].image_id == pihole_snapshot.pinned_image_id
+  vars:
+    pihole_managed: "{{ pihole_snapshot.managed_containers }}"
+
+- name: Query the explicit LAN address from the management controller over both transports
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../files/verify_dns.py') }}"
+      - "{{ pihole_dns_bind }}"
+      - "{{ pihole_verify_external }}"
+      - "{{ pihole_verify_local_name }}"
+      - "{{ pihole_verify_local_address }}"
+      - "{{ pihole_verify_blocked_name }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false

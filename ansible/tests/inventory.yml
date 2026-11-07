@@ -1,0 +1,10 @@
+---
+# Local aliases ONLY: guard tests must fail before gathering any facts.
+all:
+  children:
+    pihole:
+      hosts:
+        one:
+          ansible_connection: local
+        two:
+          ansible_connection: local

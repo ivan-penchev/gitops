@@ -149,6 +149,43 @@ jobs:
       - run: tflint --recursive --format compact --minimum-failure-severity=error
       - run: bash -n tf.sh
 
+  ansible:
+    name: Pi-hole Ansible offline validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ansible
+        shell: bash
+    env:
+      TMPDIR: ${{ github.workspace }}/ansible/.cache
+      ANSIBLE_GALAXY_CACHE_DIR: ${{ github.workspace }}/ansible/.cache/galaxy
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Install pinned Ansible dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p .cache
+          python -m venv .venv
+          .venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt
+          .venv/bin/ansible-galaxy collection install -r requirements.yml -p .collections
+      - name: Test safety guards and Compose rendering
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m unittest discover -s tests -v
+          .venv/bin/ansible-playbook -i localhost, tests/render.yml
+      - name: Check playbook syntax without production access
+        run: |
+          set -euo pipefail
+          for playbook in inspect configure verify; do
+            .venv/bin/ansible-playbook --syntax-check "playbooks/$playbook.yml"
+          done
+
   unit-tests:
     name: CI script unit tests
     runs-on: ubuntu-24.04

@@ -1,0 +1,7 @@
+.venv/
+.cache/
+.collections/
+__pycache__/
+*.pyc
+inventory.local.yml
+secrets/

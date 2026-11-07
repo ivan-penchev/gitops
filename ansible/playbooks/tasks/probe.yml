@@ -1,0 +1,15 @@
+---
+- name: Collect sanitized read-only host and Docker evidence (also in check mode)
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../files/probe.py') }}"
+      - "{{ pihole_ui_port | default(8080) | string }}"
+  register: pihole_probe
+  changed_when: false
+  check_mode: false
+
+- name: Decode sanitized evidence
+  ansible.builtin.set_fact:
+    pihole_snapshot: "{{ pihole_probe.stdout | from_json }}"

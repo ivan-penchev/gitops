@@ -1,0 +1,119 @@
+---
+- name: Configure exactly one dedicated Pi-hole host without image upgrades
+  hosts: pihole
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/target.yml
+    - name: Validate explicit non-secret configuration
+      ansible.builtin.assert:
+        that: vars | pihole_validate
+    - ansible.builtin.import_tasks: tasks/probe.yml
+    - name: Refuse takeover, drift, image updates, unsafe ports or unvalidated maintenance
+      ansible.builtin.assert:
+        that: pihole_snapshot | pihole_preflight(vars)
+    - name: Explain read-only check mode
+      ansible.builtin.debug:
+        msg: Preflight passed. Check mode never reads a password, creates paths, pulls images or runs Compose. Review planned non-secret Compose below; not a runtime test.
+      when: ansible_check_mode
+    - name: Show planned non-secret Compose in check mode
+      ansible.builtin.debug:
+        msg: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../templates/compose.yml.j2') }}"
+      when: ansible_check_mode
+    - name: Apply only outside check mode
+      when: not ansible_check_mode
+      block:
+        - name: Require a private controller password source
+          ansible.builtin.assert:
+            that:
+              - pihole_password_source is defined
+              - pihole_password_source is string
+              - pihole_password_source.startswith('/')
+          no_log: true
+          diff: false
+        - name: Inspect controller password permissions without reading it
+          ansible.builtin.stat:
+            path: "{{ pihole_password_source }}"
+            get_checksum: false
+            get_mime: false
+          delegate_to: localhost
+          become: false
+          register: pihole_password_stat
+          no_log: true
+          diff: false
+        - name: Reject absent, empty, symlinked or exposed source files
+          ansible.builtin.assert:
+            that:
+              - pihole_password_stat.stat.exists
+              - pihole_password_stat.stat.isreg
+              - not pihole_password_stat.stat.islnk
+              - pihole_password_stat.stat.mode in ['0400', '0600']
+              - pihole_password_stat.stat.size > 0
+          no_log: true
+          diff: false
+        - name: Validate password content privately before any target mutation
+          ansible.builtin.assert:
+            that:
+              - pihole_private_password | trim | length > 0
+              - pihole_private_password.splitlines() | length == 1
+          vars:
+            pihole_private_password: "{{ lookup('ansible.builtin.file', pihole_password_source) }}"
+          no_log: true
+          diff: false
+        - name: Create exclusively managed local directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0700'
+          loop:
+            - /opt/pihole-ansible
+            - /opt/pihole-ansible/secrets
+        - name: Create fresh data directory without resetting Pi-hole-owned permissions on later runs
+          ansible.builtin.file:
+            path: /opt/pihole-ansible/data
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+          when: pihole_snapshot.marker is none
+        - name: Copy password without disclosure
+          ansible.builtin.copy:
+            src: "{{ pihole_password_source }}"
+            dest: /opt/pihole-ansible/secrets/webpassword
+            owner: root
+            group: root
+            mode: '0600'
+          no_log: true
+          diff: false
+          register: pihole_password_copy
+        - name: Render the only writer of Git-owned FTL settings
+          ansible.builtin.template:
+            src: ../templates/compose.yml.j2
+            dest: /opt/pihole-ansible/compose.yml
+            owner: root
+            group: root
+            mode: '0600'
+        - name: Converge the pinned official container and wait for image healthcheck
+          community.docker.docker_compose_v2:
+            project_src: /opt/pihole-ansible
+            project_name: gitops-pihole
+            state: present
+            pull: missing
+            remove_orphans: false
+            recreate: "{{ 'always' if pihole_password_copy.changed else 'auto' }}"
+            wait: true
+            wait_timeout: 120
+          no_log: true
+          diff: false
+        - name: Record non-secret provenance only after Compose succeeds
+          ansible.builtin.copy:
+            content: "{{ {'owner': 'gitops-ansible-pihole-v1', 'image': pihole_image, 'dns_bind': pihole_dns_bind, 'ui_port': pihole_ui_port} | to_nice_json }}\n"
+            dest: /opt/pihole-ansible/metadata.json
+            owner: root
+            group: root
+            mode: '0600'
+        - ansible.builtin.import_tasks: tasks/verify.yml
