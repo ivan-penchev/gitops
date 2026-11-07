@@ -1,46 +1,26 @@
 ---
-# Controller-only tests. The fake digest is never passed to Docker or a remote host.
-- name: Validate filters and render non-secret Compose entirely in memory
+- name: Render restricted native settings without contacting a guest
   hosts: localhost
   connection: local
   gather_facts: false
   vars_files:
     - ../group_vars/pihole.yml
+    - ../pihole.settings.example.json
   vars:
     pihole_dns_bind: 10.77.0.10
     pihole_trusted_cidr: 10.77.0.0/24
-    pihole_peer_addresses: ['10.77.0.10', '10.77.0.11']
-    pihole_upstreams: ['1.1.1.1', '9.9.9.9']
-    pihole_image: "pihole/pihole:2026.01.0@sha256:{{ 'a' * 64 }}"
-    rendered: "{{ lookup('ansible.builtin.template', '../templates/compose.yml.j2') | from_yaml }}"
+    pihole_peer_addresses: [10.77.0.10, 10.77.0.11]
   tasks:
-    - name: Validate Ansible-tagged variable types
-      ansible.builtin.assert:
+    - ansible.builtin.set_fact:
+        pihole_peer_addresses: [10.77.0.10, 10.77.0.11]
+    - ansible.builtin.assert:
         that:
           - vars | pihole_validate
-          - rendered.services.pihole.image == pihole_image
-          - rendered.services.pihole.environment.FTLCONF_dns_cnameRecords == ''
-          - rendered.services.pihole.environment.FTLCONF_dhcp_active == 'false'
-          - rendered.services.pihole.environment.FTLCONF_dns_upstreams == '1.1.1.1;9.9.9.9'
-          - rendered.services.pihole.environment.WEBPASSWORD_FILE == 'pihole_password'
-          - rendered.services.pihole.secrets == ['pihole_password']
-          - rendered.secrets.pihole_password.file == '/opt/pihole-ansible/secrets/webpassword'
-          - "'127.0.0.1:8080:80/tcp' in rendered.services.pihole.ports"
-    - name: Empty DNS arrays remain explicit empty strings, never null or absent
-      ansible.builtin.assert:
-        that:
-          - rendered.services.pihole.environment.FTLCONF_dns_hosts == ''
-          - rendered.services.pihole.environment.FTLCONF_dns_cnameRecords == ''
-      vars:
-        pihole_local_hosts: []
-        pihole_local_cnames: []
-    - name: Dollars are escaped for Compose independently of YAML serialization
-      ansible.builtin.assert:
-        that:
-          - rendered.services.pihole.environment.TZ == (dollar_fixture | replace('$', '$$'))
-          - rendered.services.pihole.environment.FTLCONF_dns_hosts == (dollar_fixture | replace('$', '$$'))
-      vars:
-        # Deliberately invalid deployment values exercise serialization in isolation.
-        dollar_fixture: 'literal$PIHOLE_TEST${PIHOLE_TEST:-fallback}$$cash'
-        pihole_timezone: '{{ dollar_fixture }}'
-        pihole_local_hosts: ['{{ dollar_fixture }}']
+          - (vars | pihole_native_config)['webserver.port'] == '127.0.0.1:80,10.77.0.10:80'
+          - (vars | pihole_native_config)['webserver.acl'] == '+127.0.0.1,+10.77.0.0/24'
+          - (vars | pihole_native_config)['misc.dnsmasq_lines'] == ['bind-interfaces', 'listen-address=10.77.0.10,127.0.0.1']
+          - not (vars | pihole_native_config)['dhcp.active']
+          - not (vars | pihole_native_config)['ntp.sync.active']
+    - name: Render non-secret native managed keys
+      ansible.builtin.debug:
+        msg: "{{ vars | pihole_native_config | to_nice_json }}"

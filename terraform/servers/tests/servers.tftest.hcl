@@ -2,17 +2,15 @@
 mock_provider "proxmox" {}
 
 variables {
-  proxmox_node         = "fixture-pve"
-  proxmox_ssh_address  = "192.168.68.2"
-  proxmox_ssh_username = "root"
-  vm_datastore         = "fixture-disks"
-  image_datastore      = "fixture-images"
-  snippet_datastore    = "fixture-snippets"
-  network_bridge       = "vmbr0"
-  vm_id                = 999999
-  ssh_public_key       = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestFixtureOnlyNotARealPublicKey"
-  debian_image_url     = "https://cloud.debian.org/images/cloud/trixie/20260101-9999/debian-13-genericcloud-amd64-20260101-9999.qcow2"
-  debian_image_sha256  = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  proxmox_node           = "fixture-pve"
+  proxmox_host_ipv4      = "192.168.68.2"
+  rootfs_datastore       = "fixture-disks"
+  template_datastore     = "fixture-images"
+  network_bridge         = "vmbr0"
+  vm_id                  = 999999
+  ssh_public_key         = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestFixtureOnlyNotARealPublicKey"
+  debian_template_url    = "https://download.proxmox.com/images/system/debian-13-standard_13.99-999_amd64.tar.zst"
+  debian_template_sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   network = {
     ipv4_cidr   = "192.168.68.250/24"
     lan_cidr    = "192.168.68.0/24"
@@ -21,35 +19,39 @@ variables {
   }
 }
 
-run "fresh_vm_contract" {
+run "fresh_container_contract" {
   command = plan
   assert {
-    condition = (proxmox_virtual_environment_vm.pihole.vm_id == var.vm_id &&
-      proxmox_virtual_environment_vm.pihole.node_name == var.proxmox_node &&
-      proxmox_virtual_environment_vm.pihole.protection &&
-      proxmox_virtual_environment_vm.pihole.on_boot &&
-      proxmox_virtual_environment_vm.pihole.started &&
-      proxmox_virtual_environment_vm.pihole.operating_system[0].type == "l26" &&
-      proxmox_virtual_environment_vm.pihole.disk[0].datastore_id == var.vm_datastore &&
-      proxmox_virtual_environment_vm.pihole.initialization[0].ip_config[0].ipv4[0].address == var.network.ipv4_cidr &&
-    proxmox_virtual_environment_vm.pihole.network_device[0].bridge == var.network_bridge)
-    error_message = "Exactly the explicitly selected protected Linux VM must be bootable on the intended LAN."
+    condition = (proxmox_virtual_environment_container.pihole.vm_id == var.vm_id &&
+      proxmox_virtual_environment_container.pihole.node_name == var.proxmox_node &&
+      proxmox_virtual_environment_container.pihole.protection &&
+      proxmox_virtual_environment_container.pihole.unprivileged &&
+      !proxmox_virtual_environment_container.pihole.start_on_boot &&
+      !proxmox_virtual_environment_container.pihole.started &&
+      proxmox_virtual_environment_container.pihole.operating_system[0].type == "debian" &&
+      proxmox_virtual_environment_container.pihole.disk[0].datastore_id == var.rootfs_datastore &&
+      proxmox_virtual_environment_container.pihole.disk[0].size == 8 &&
+      proxmox_virtual_environment_container.pihole.initialization[0].ip_config[0].ipv4[0].address == var.network.ipv4_cidr &&
+      proxmox_virtual_environment_container.pihole.network_interface[0].enabled &&
+    proxmox_virtual_environment_container.pihole.network_interface[0].bridge == var.network_bridge)
+    error_message = "Exactly the explicitly selected protected unprivileged Debian CT must be staged stopped."
   }
   assert {
-    condition = (proxmox_download_file.debian.checksum == var.debian_image_sha256 &&
+    condition = (proxmox_download_file.debian.checksum == var.debian_template_sha256 &&
       proxmox_download_file.debian.checksum_algorithm == "sha256" &&
-      proxmox_download_file.debian.url == var.debian_image_url &&
+      proxmox_download_file.debian.url == var.debian_template_url &&
+      proxmox_download_file.debian.datastore_id == var.template_datastore &&
       proxmox_download_file.debian.verify &&
       !proxmox_download_file.debian.overwrite &&
       !proxmox_download_file.debian.overwrite_unmanaged &&
-    !proxmox_virtual_environment_file.cloud_init.overwrite)
-    error_message = "Download must verify the explicit SHA256 and TLS, never overwrite unmanaged artifacts."
+    proxmox_download_file.debian.content_type == "vztmpl")
+    error_message = "Template download must verify the explicit SHA256 and never overwrite unmanaged artifacts."
   }
   assert {
     condition = output.ansible_inventory == {
       all = { children = { pihole = { hosts = { dns_candidate = {
         ansible_host          = "192.168.68.250"
-        ansible_user          = "operator"
+        ansible_user          = "root"
         pihole_dns_bind       = "192.168.68.250"
         pihole_trusted_cidr   = "192.168.68.0/24"
         pihole_provisioned_by = "terraform/servers"
@@ -59,51 +61,152 @@ run "fresh_vm_contract" {
   }
   assert {
     condition = (!issensitive(output.ansible_inventory) &&
-      startswith(proxmox_virtual_environment_file.cloud_init.source_raw[0].data, "#cloud-config\n") &&
-      local.cloud_config.users[0].name == "operator" &&
-      local.cloud_config.users[0].sudo == ["ALL=(ALL) NOPASSWD:ALL"] &&
-      local.cloud_config.users[0].ssh_authorized_keys == [var.ssh_public_key] &&
-      local.cloud_config.users[0].lock_passwd &&
-      !local.cloud_config.ssh_pwauth &&
-    alltrue([for package in ["python3", "python3-apt", "sudo", "qemu-guest-agent"] : contains(local.cloud_config.packages, package)]))
-    error_message = "Bootstrap must prepare SSH key-only operator access, Python3 and passwordless sudo; inventory stays non-sensitive."
+      proxmox_virtual_environment_container.pihole.initialization[0].user_account[0].keys == tolist([var.ssh_public_key]) &&
+      (proxmox_virtual_environment_container.pihole.initialization[0].user_account[0].password == null ||
+      proxmox_virtual_environment_container.pihole.initialization[0].user_account[0].password == "") &&
+      !proxmox_virtual_environment_container.pihole.features[0].nesting &&
+      !proxmox_virtual_environment_container.pihole.features[0].keyctl &&
+      !proxmox_virtual_environment_container.pihole.features[0].fuse &&
+      !proxmox_virtual_environment_container.pihole.features[0].mknod &&
+      proxmox_virtual_environment_container.pihole.initialization[0].dns[0].servers == var.network.dns_servers &&
+      proxmox_virtual_environment_container.pihole.initialization[0].ip_config[0].ipv4[0].gateway == var.network.gateway &&
+      proxmox_virtual_environment_container.pihole.console[0].enabled &&
+    proxmox_virtual_environment_container.pihole.console[0].type == "shell")
+    error_message = "API root keys, guest-only console and explicit networking must not enable privileged/nested features."
   }
+}
+
+run "explicit_connected_boot" {
+  command = plan
+  variables { container_started = true }
+  assert {
+    condition = (proxmox_virtual_environment_container.pihole.started &&
+    proxmox_virtual_environment_container.pihole.start_on_boot)
+    error_message = "Connected boot and automatic startup require the explicit start switch."
+  }
+}
+
+run "isolated_guest_boot" {
+  command = plan
+  variables {
+    container_started = true
+    network_link_down = true
+  }
+  assert {
+    condition = (proxmox_virtual_environment_container.pihole.started &&
+      !proxmox_virtual_environment_container.pihole.start_on_boot &&
+      length(proxmox_virtual_environment_container.pihole.network_interface) == 0 &&
+    length(proxmox_virtual_environment_container.pihole.initialization[0].ip_config) == 0)
+    error_message = "Isolated staging must omit all guest NICs/IPs and prohibit host autostart."
+  }
+}
+
+run "dhcp_bootstrap_without_static_identity" {
+  command = plan
+  variables {
+    container_started = true
+    bootstrap_dhcp    = true
+  }
+  assert {
+    condition = (proxmox_virtual_environment_container.pihole.started &&
+      !proxmox_virtual_environment_container.pihole.start_on_boot &&
+      proxmox_virtual_environment_container.pihole.network_interface[0].enabled &&
+      proxmox_virtual_environment_container.pihole.initialization[0].ip_config[0].ipv4[0].address == "dhcp" &&
+      (proxmox_virtual_environment_container.pihole.initialization[0].ip_config[0].ipv4[0].gateway == null ||
+    proxmox_virtual_environment_container.pihole.initialization[0].ip_config[0].ipv4[0].gateway == ""))
+    error_message = "DHCP staging must request a lease with no static gateway and no host autostart."
+  }
+  assert {
+    condition     = output.ansible_inventory == null
+    error_message = "DHCP must never expose the placeholder static address to the integrated runner."
+  }
+}
+
+run "dhcp_stopped_without_inventory" {
+  command = plan
+  variables { bootstrap_dhcp = true }
+  assert {
+    condition = (!proxmox_virtual_environment_container.pihole.started &&
+      !proxmox_virtual_environment_container.pihole.start_on_boot &&
+    output.ansible_inventory == null)
+    error_message = "A stopped DHCP test guest must retain its DHCP flag and suppress inventory."
+  }
+}
+
+run "dhcp_cannot_override_network_isolation" {
+  command = plan
+  variables {
+    container_started = true
+    bootstrap_dhcp    = true
+    network_link_down = true
+  }
+  assert {
+    condition = (length(proxmox_virtual_environment_container.pihole.network_interface) == 0 &&
+      length(proxmox_virtual_environment_container.pihole.initialization[0].ip_config) == 0 &&
+      !proxmox_virtual_environment_container.pihole.start_on_boot &&
+    output.ansible_inventory == null)
+    error_message = "Network isolation takes precedence over DHCP and inventory remains suppressed."
+  }
+}
+
+run "dhcp_still_rejects_existing_ct100" {
+  command = plan
+  variables {
+    bootstrap_dhcp = true
+    vm_id          = 100
+  }
+  expect_failures = [var.vm_id]
+}
+
+run "dhcp_still_rejects_existing_pihole_input" {
+  command = plan
+  variables {
+    bootstrap_dhcp = true
+    network        = { ipv4_cidr = "192.168.68.20/24", lan_cidr = "192.168.68.0/24", gateway = "192.168.68.1", dns_servers = ["1.1.1.1"] }
+  }
+  expect_failures = [var.network]
+}
+
+run "existing_ct100_rejected" {
+  command = plan
+  variables { vm_id = 100 }
+  expect_failures = [var.vm_id]
 }
 
 run "checksum_empty" {
   command = plan
-  variables { debian_image_sha256 = "" }
-  expect_failures = [var.debian_image_sha256]
+  variables { debian_template_sha256 = "" }
+  expect_failures = [var.debian_template_sha256]
 }
 run "checksum_short" {
   command = plan
-  variables { debian_image_sha256 = "abc123" }
-  expect_failures = [var.debian_image_sha256]
+  variables { debian_template_sha256 = "abc123" }
+  expect_failures = [var.debian_template_sha256]
 }
 run "checksum_nonhex" {
   command = plan
-  variables { debian_image_sha256 = "z123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
-  expect_failures = [var.debian_image_sha256]
+  variables { debian_template_sha256 = "z123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
+  expect_failures = [var.debian_template_sha256]
 }
 run "checksum_placeholder" {
   command = plan
-  variables { debian_image_sha256 = "0000000000000000000000000000000000000000000000000000000000000000" }
-  expect_failures = [var.debian_image_sha256]
+  variables { debian_template_sha256 = "0000000000000000000000000000000000000000000000000000000000000000" }
+  expect_failures = [var.debian_template_sha256]
 }
-run "unpinned_image" {
+run "unpinned_template" {
   command = plan
-  variables { debian_image_url = "https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2" }
-  expect_failures = [var.debian_image_url]
+  variables { debian_template_url = "https://download.proxmox.com/images/system/debian-13-standard_latest_amd64.tar.zst" }
+  expect_failures = [var.debian_template_url]
 }
-run "non_debian13_image" {
+run "non_debian13_template" {
   command = plan
-  variables { debian_image_url = "https://cloud.debian.org/images/cloud/bookworm/20260101-9999/debian-12-genericcloud-amd64-20260101-9999.qcow2" }
-  expect_failures = [var.debian_image_url]
+  variables { debian_template_url = "https://download.proxmox.com/images/system/debian-12-standard_12.99-999_amd64.tar.zst" }
+  expect_failures = [var.debian_template_url]
 }
-run "http_image" {
+run "untrusted_template_host" {
   command = plan
-  variables { debian_image_url = "http://cloud.debian.org/images/cloud/trixie/20260101-9999/debian-13-genericcloud-amd64-20260101-9999.qcow2" }
-  expect_failures = [var.debian_image_url]
+  variables { debian_template_url = "http://untrusted.example/images/system/debian-13-standard_13.99-999_amd64.tar.zst" }
+  expect_failures = [var.debian_template_url]
 }
 run "private_key_rejected" {
   command = plan
@@ -254,10 +357,10 @@ run "no_dns_rejected" {
   }
   expect_failures = [var.network]
 }
-run "existing_pihole_ssh_rejected" {
+run "existing_pihole_host_rejected" {
   command = plan
-  variables { proxmox_ssh_address = "192.168.68.20" }
-  expect_failures = [var.proxmox_ssh_address]
+  variables { proxmox_host_ipv4 = "192.168.68.20" }
+  expect_failures = [var.proxmox_host_ipv4]
 }
 run "empty_node_rejected" {
   command = plan
@@ -266,6 +369,21 @@ run "empty_node_rejected" {
 }
 run "empty_storage_rejected" {
   command = plan
-  variables { vm_datastore = "" }
-  expect_failures = [var.vm_datastore]
+  variables { rootfs_datastore = "" }
+  expect_failures = [var.rootfs_datastore]
+}
+
+run "wrong_architecture_rejected" {
+  command = plan
+  variables { debian_template_url = "https://download.proxmox.com/images/system/debian-13-standard_13.99-999_arm64.tar.zst" }
+  expect_failures = [var.debian_template_url]
+}
+
+run "official_http_with_pinned_digest" {
+  command = plan
+  variables { debian_template_url = "http://download.proxmox.com/images/system/debian-13-standard_13.99-999_amd64.tar.zst" }
+  assert {
+    condition     = proxmox_download_file.debian.checksum == var.debian_template_sha256
+    error_message = "Official HTTP archives still require the separately authenticated pinned digest."
+  }
 }

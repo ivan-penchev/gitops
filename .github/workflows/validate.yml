@@ -173,8 +173,7 @@ jobs:
           mkdir -p .cache
           python -m venv .venv
           .venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt
-          .venv/bin/ansible-galaxy collection install -r requirements.yml -p .collections
-      - name: Test safety guards and Compose rendering
+      - name: Test safety guards and native Pi-hole configuration
         run: |
           set -euo pipefail
           .venv/bin/python -m unittest discover -s tests -v

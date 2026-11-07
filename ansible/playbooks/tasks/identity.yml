@@ -1,0 +1,16 @@
+---
+- name: Require the exact provisioned root-SSH candidate before remote work
+  ansible.builtin.assert:
+    that:
+      - pihole_target is defined
+      - pihole_target is string
+      - ansible_play_hosts_all | length == 1
+      - inventory_hostname == 'dns_candidate'
+      - pihole_target == inventory_hostname
+      - inventory_hostname in groups['pihole']
+      - pihole_provisioned_by == 'terraform/servers'
+      - ansible_user == 'root'
+      - ansible_host == pihole_dns_bind
+      - ansible_host != '192.168.68.20'
+      - vars | pihole_validate
+    fail_msg: Require one Terraform-derived dns_candidate with root guest SSH; no adoption or fleet operations.

@@ -1,14 +1,15 @@
-# Deliberately non-deployable: replace every placeholder after reserving a FRESH
-# VMID and static IPv4 outside DHCP. Do not reuse the existing Pi-hole (.20).
-proxmox_node         = "REPLACE_NODE"
-proxmox_ssh_address  = "REPLACE_PVE_IPV4"
-proxmox_ssh_username = "REPLACE_SSH_USER"
-vm_datastore        = "REPLACE_VM_STORAGE"
-image_datastore     = "REPLACE_IMPORT_STORAGE"
-snippet_datastore   = "REPLACE_SNIPPET_STORAGE"
-network_bridge      = "REPLACE_BRIDGE"
-vm_id               = 0 # invalid until the operator reserves an unused VMID
-ssh_public_key      = "REPLACE_WITH_OPERATOR_PUBLIC_OPENSSH_KEY"
+# Intentionally non-deployable. Reserve a NEW guest ID (not CT100) and static
+# IPv4 outside DHCP before connecting. Existing Pi-hole .20 is never touched.
+proxmox_node       = "REPLACE_NODE"
+proxmox_host_ipv4  = "REPLACE_PVE_IPV4"        # collision guard, never SSH
+rootfs_datastore   = "REPLACE_ROOTDIR_STORAGE" # e.g. existing tank
+template_datastore = "REPLACE_VZTMPL_STORAGE"  # e.g. existing local
+network_bridge     = "REPLACE_BRIDGE"
+vm_id              = 0 # invalid until explicitly reserved; shared VM/CT namespace
+container_started  = false
+bootstrap_dhcp     = false # true: temporary DHCP test, inventory suppressed; never production DNS
+network_link_down  = true  # isolated staging: omit NIC/IP, not a native link_down flag
+ssh_public_key     = "REPLACE_WITH_ROOT_AUTHORIZED_PUBLIC_OPENSSH_KEY"
 
 network = {
   ipv4_cidr   = "REPLACE_UNUSED_IPV4/PREFIX"
@@ -17,12 +18,13 @@ network = {
   dns_servers = ["REPLACE_INDEPENDENT_RESOLVER_IPV4"]
 }
 
-# Select a dated Debian 13 (trixie) genericcloud amd64 release from
-# https://cloud.debian.org/images/cloud/trixie/ — not latest/current.
-# Authenticate its publisher checksums/signature, then calculate its SHA256
-# if Debian publishes a different checksum algorithm. Never invent the digest.
-debian_image_url    = "REPLACE_WITH_DATED_OFFICIAL_DEBIAN_13_QCOW2_URL"
-debian_image_sha256 = "REPLACE_WITH_VERIFIED_64_HEX_SHA256"
+# Discover official versioned Debian13 amd64 templates via authenticated PVE
+# aplinfo or http://download.proxmox.com/images/system/ (HTTP index is UNTRUSTED).
+# Observed filename: debian-13-standard_13.6-1_amd64.tar.zst.
+# Authenticate publisher metadata separately; verify its digest, then calculate
+# SHA256 for that exact archive. No checksum is invented or supplied here.
+debian_template_url    = "REPLACE_WITH_PINNED_OFFICIAL_PROXMOX_DEBIAN_13_TEMPLATE_URL"
+debian_template_sha256 = "REPLACE_WITH_VERIFIED_64_HEX_SHA256"
 
-# API endpoint/token come from PROXMOX_VE_* inherited by ansible/pihole.py.
-# proxmox_insecure = true # explicit opt-in only if using a self-signed API cert
+# API endpoint/token: inherited PROXMOX_VE_ENDPOINT / PROXMOX_VE_API_TOKEN.
+# proxmox_insecure = true # explicit opt-in only for a self-signed API certificate

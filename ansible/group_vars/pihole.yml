@@ -1,7 +1,7 @@
 ---
-# Non-secret desired state; host-specific identity and image pins have no defaults.
+# Non-secret desired state; host-specific identity and native release pins have no defaults.
 pihole_timezone: Etc/UTC
-pihole_ui_port: 8080
+pihole_ui_port: 80
 pihole_local_hosts:
   - "192.0.2.123 recovery-check.home.arpa"
 pihole_local_cnames: []
@@ -14,3 +14,5 @@ pihole_verify_blocked_name: ""
 pihole_backup_validated: false
 pihole_peer_health_validated: false
 pihole_maintenance_evidence: ""
+
+pihole_interface: eth0

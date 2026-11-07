@@ -2,7 +2,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import unittest
@@ -16,7 +15,7 @@ from jinja2 import Environment
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'filter_plugins'))
-from pihole import OWNER, PROJECT, ROOT as REMOTE_ROOT, preflight, validate
+from pihole import OWNER, PINS, ROOT as REMOTE_ROOT, native_config, preflight, validate
 
 spec = importlib.util.spec_from_file_location('verify_dns', ROOT / 'files/verify_dns.py')
 verify_dns = importlib.util.module_from_spec(spec)
@@ -28,36 +27,32 @@ spec.loader.exec_module(probe)
 
 def variables():
     values = yaml.safe_load((ROOT / 'group_vars/pihole.yml').read_text())
+    values.update(json.loads((ROOT / 'pihole.settings.example.json').read_text()))
     values.update(pihole_dns_bind='10.77.0.10', pihole_trusted_cidr='10.77.0.0/24',
-                  pihole_peer_addresses=['10.77.0.10', '10.77.0.11'], pihole_upstreams=['1.1.1.1'],
-                  pihole_image='pihole/pihole:2026.01.0@sha256:' + 'a' * 64)
+                  pihole_peer_addresses=['10.77.0.10', '10.77.0.11'], pihole_upstreams=['1.1.1.1'])
     return values
-
-
-def render_compose(values):
-    environment = Environment()
-    environment.filters['to_json'] = json.dumps
-    return environment.from_string((ROOT / 'templates/compose.yml.j2').read_text()).render(values)
 
 
 def snapshot(existing=False):
     values = variables()
-    result = dict(native_paths=[], native_service=False, filesystem='ext4', symlinks=[],
-                  host_ipv4=[values['pihole_dns_bind']], rootless=False, containers=[],
-                  marker=None, root_exists=False, listeners=[], marker_secure=True, pinned_image_id='sha256:local',
-                  data_exists=existing, compose_exists=existing)
+    result = dict(native_paths=[], native_service=False, native_user=False, filesystem='ext4', symlinks=[],
+                  interface_ipv4=[values['pihole_dns_bind']], docker_present=False, unsafe_services=[],
+                  marker=None, root_exists=False, listeners=[], marker_secure=True,
+                  config_exists=existing, service_active=existing)
     if existing:
-        result.update(root_exists=True, marker=dict(owner=OWNER, image=values['pihole_image'],
-                                                   dns_bind=values['pihole_dns_bind'], ui_port=8080))
-        result['containers'] = [dict(name='gitops-pihole-pihole-1', image=values['pihole_image'], image_id='sha256:local',
-                                    labels={'io.gitops.owner': OWNER, 'com.docker.compose.project': PROJECT,
-                                            'com.docker.compose.service': 'pihole', 'com.docker.compose.project.working_dir': REMOTE_ROOT},
-                                    mounts=[dict(source=REMOTE_ROOT+'/data', destination='/etc/pihole', type='bind', rw=True),
-                                            dict(source=REMOTE_ROOT+'/secrets/webpassword', destination='/run/secrets/pihole_password', type='bind', rw=False)],
-                                    bindings={'53/tcp': [{'HostIp': values['pihole_dns_bind'], 'HostPort': '53'}],
-                                              '53/udp': [{'HostIp': values['pihole_dns_bind'], 'HostPort': '53'}],
-                                              '80/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '8080'}]}, host_ports=['53', '8080'])]
+        marker = {pin: values['pihole_' + pin] for pin in PINS}
+        marker.update(owner=OWNER, dns_bind=values['pihole_dns_bind'], ui_port=values['pihole_ui_port'],
+                      interface='eth0', service_sha256='service')
+        result.update(root_exists=True, marker=marker, native_service=True,
+                      core_commit=marker['core_commit'], web_commit=marker['web_commit'],
+                      ftl_sha256=marker['ftl_sha256'], ftl_version=marker['ftl_version'],
+                      repos_clean=True, service_sha256='service', listeners=[{'owned': True}])
     return result
+
+
+def maintenance():
+    return dict(variables(), pihole_backup_validated=True, pihole_peer_health_validated=True,
+                pihole_maintenance_evidence='synthetic unit-test backup restoration and peer evidence')
 
 
 class SafetyTests(unittest.TestCase):
@@ -65,127 +60,98 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(validate(variables()))
         self.assertTrue(preflight(snapshot(), variables()))
 
+    def test_supported_web_ports(self):
+        for port in (80, 1024, 8080, 65535):
+            with self.subTest(port=port):
+                values = dict(variables(), pihole_ui_port=port)
+                self.assertTrue(validate(values))
+                self.assertEqual(native_config(values)['webserver.port'], f'127.0.0.1:{port},10.77.0.10:{port}')
+
     def test_invalid_inputs(self):
-        cases = {'pihole_image': ['pihole/pihole:latest', 'pihole/pihole:2026.01.0', 'evil/image:2026.01.0@sha256:'+'a'*64],
+        cases = {'pihole_core_version': ['latest', 'v5.0', 'v6.5;exit'],
+                 'pihole_core_commit': ['latest', 'a' * 39, 'a' * 40 + ';'],
+                 'pihole_ftl_sha256': ['latest', 'a' * 63], 'pihole_interface': ['eth0;id', '', 'a' * 16],
                  'pihole_dns_bind': ['0.0.0.0', '127.0.0.1', '192.0.2.10', '10.77.0.999'],
                  'pihole_upstreams': [[], '1.1.1.1', ['10.77.0.11'], ['127.0.0.1']],
-                 'pihole_ui_port': ['8080', True, 53], 'pihole_local_hosts': [None, ['1.2.3.4 good;bad']],
+                 'pihole_ui_port': ['80', '8080', True, 0, 22, 53, 443, 65536], 'pihole_local_hosts': [None, ['1.2.3.4 good;bad']],
                  'pihole_local_cnames': [None, ['bad,name,extra']]}
         for key, bad_values in cases.items():
             for bad in bad_values:
                 with self.subTest(key=key, value=bad), self.assertRaises(AnsibleFilterError):
                     validate(dict(variables(), **{key: bad}))
 
-    def test_every_dynamic_compose_field_escapes_dollars(self):
-        value = 'literal$PIHOLE_TEST${PIHOLE_TEST:-fallback}$$cash'
-        settings = dict(variables(), pihole_image=value, pihole_dns_bind=value, pihole_ui_port=value,
-                        pihole_timezone=value, pihole_upstreams=[value], pihole_local_hosts=[value],
-                        pihole_local_cnames=[value])
-        service = yaml.safe_load(render_compose(settings))['services']['pihole']
-        escaped = value.replace('$', '$$')
-        self.assertEqual(service['image'], escaped)
-        self.assertEqual(service['ports'], [escaped + ':53:53/tcp', escaped + ':53:53/udp',
-                                            '127.0.0.1:' + escaped + ':80/tcp'])
-        for field in ('TZ', 'FTLCONF_dns_upstreams', 'FTLCONF_dns_hosts', 'FTLCONF_dns_cnameRecords'):
-            self.assertEqual(service['environment'][field], escaped)
-        for key in settings:
-            if key in ('pihole_image', 'pihole_dns_bind', 'pihole_ui_port', 'pihole_timezone',
-                       'pihole_upstreams', 'pihole_local_hosts', 'pihole_local_cnames'):
-                with self.subTest(key=key), self.assertRaises(AnsibleFilterError):
-                    validate(dict(variables(), **{key: settings[key]}))
+    def test_each_native_pin_required(self):
+        for pin in PINS:
+            values = variables()
+            del values['pihole_' + pin]
+            with self.subTest(pin=pin), self.assertRaises(AnsibleFilterError):
+                validate(values)
 
-    @unittest.skipUnless(shutil.which('docker'), 'Docker CLI unavailable; daemon-free Compose check skipped')
-    def test_compose_cli_keeps_dollars_uninterpolated_without_daemon(self):
-        version = subprocess.run(['docker', 'compose', 'version', '--short'], capture_output=True, text=True)
-        if version.returncode:
-            self.skipTest('Docker Compose CLI plugin unavailable')
-        value = 'literal$PIHOLE_TEST${PIHOLE_TEST:-fallback}$$cash'
-        settings = dict(variables(), pihole_timezone=value, pihole_upstreams=[value],
-                        pihole_local_hosts=[value], pihole_local_cnames=[value])
-        result = subprocess.run(['docker', 'compose', '--env-file', '/dev/null', '--project-directory',
-                                 str(ROOT / 'tests'), '-f', '-', 'config', '--format', 'json'],
-                                input=render_compose(settings), capture_output=True, text=True, timeout=30,
-                                env=dict(os.environ, PIHOLE_TEST='MUST_NOT_INTERPOLATE'))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        service = json.loads(result.stdout)['services']['pihole']
-        self.assertNotIn('MUST_NOT_INTERPOLATE', result.stdout)
-        # Compose re-escapes dollars when serializing its canonical config for reuse.
-        for field in ('TZ', 'FTLCONF_dns_upstreams', 'FTLCONF_dns_hosts', 'FTLCONF_dns_cnameRecords'):
-            self.assertEqual(service['environment'][field], value.replace('$', '$$'))
-        self.assertEqual(service['environment']['WEBPASSWORD_FILE'], 'pihole_password')
-        self.assertNotIn('FTLCONF_webserver_api_password', service['environment'])
-
-    def test_password_secret_matches_upstream_basename_resolution(self):
-        compose = yaml.safe_load(render_compose(variables()))
-        service = compose['services']['pihole']
-        basename = service['environment']['WEBPASSWORD_FILE']
-        self.assertEqual(basename, 'pihole_password')
-        self.assertNotIn('/', basename)
-        self.assertEqual(service['secrets'], [basename])
-        self.assertEqual(compose['secrets'][basename]['file'], REMOTE_ROOT + '/secrets/webpassword')
-        mount = next(mount for mount in snapshot(True)['containers'][0]['mounts']
-                     if mount['source'] == compose['secrets'][basename]['file'])
-        self.assertEqual('/run/secrets/' + basename, mount['destination'])
-        self.assertFalse(mount['rw'])
-
-    def test_verify_does_not_require_pin(self):
-        values = variables()
-        del values['pihole_image']
-        self.assertTrue(validate(values, False))
+    def test_native_configuration_limits_all_listeners(self):
+        config = native_config(variables())
+        self.assertEqual(config['dns.listeningMode'], 'NONE')
+        self.assertEqual(config['misc.dnsmasq_lines'], ['bind-interfaces', 'listen-address=10.77.0.10,127.0.0.1'])
+        self.assertEqual(config['webserver.port'], '127.0.0.1:80,10.77.0.10:80')
+        self.assertEqual(config['webserver.acl'], '+127.0.0.1,+10.77.0.0/24')
+        for key in ('dhcp.active', 'ntp.ipv4.active', 'ntp.ipv6.active', 'ntp.sync.active', 'misc.etc_dnsmasq_d'):
+            self.assertIs(config[key], False)
 
     def test_unmanaged_native_shared_or_occupied(self):
-        for key, bad in [('native_paths', ['/etc/pihole']), ('native_service', True), ('filesystem', 'nfs4'),
-                         ('symlinks', ['/opt/pihole-ansible/data']), ('root_exists', True),
-                         ('listeners', [{'owned': False}]), ('host_ipv4', []), ('rootless', True)]:
+        cases = {'native_paths': ['/etc/pihole'], 'native_service': True, 'native_user': True,
+                 'root_exists': True, 'filesystem': 'nfs', 'symlinks': ['/etc/pihole'],
+                 'listeners': [{'owned': False}], 'docker_present': True,
+                 'unsafe_services': ['systemd-resolved'], 'interface_ipv4': ['10.77.0.11']}
+        for key, value in cases.items():
             with self.subTest(key=key), self.assertRaises(AnsibleFilterError):
-                preflight(dict(snapshot(), **{key: bad}), variables())
+                preflight(dict(snapshot(), **{key: value}), variables())
 
-    def test_existing_requires_gates_and_actual_provenance(self):
-        values = dict(variables(), pihole_backup_validated=True, pihole_peer_health_validated=True,
-                      pihole_maintenance_evidence='Offline restore checked; peer UDP/TCP healthy today')
-        self.assertTrue(preflight(snapshot(True), values))
-        with self.assertRaises(AnsibleFilterError):
-            preflight(snapshot(True), variables())
-        for field, bad in [('image', 'pihole/pihole:latest'), ('image_id', 'sha256:drift'), ('mounts', []), ('bindings', {})]:
-            observed = snapshot(True)
-            observed['containers'][0][field] = bad
-            with self.subTest(field=field), self.assertRaises(AnsibleFilterError):
-                preflight(observed, values)
-        with self.assertRaises(AnsibleFilterError):
-            preflight(snapshot(True), dict(values, pihole_image='pihole/pihole:2026.02.0@sha256:'+'b'*64))
-        observed = snapshot(True)
-        observed['containers'][0]['labels'] = {}
-        with self.assertRaises(AnsibleFilterError):
-            preflight(observed, values)
+    def test_existing_requires_current_maintenance(self):
+        self.assertTrue(preflight(snapshot(True), maintenance()))
+        for changes in ({}, {'pihole_backup_validated': True}, {'pihole_peer_health_validated': True},
+                        {'pihole_backup_validated': True, 'pihole_peer_health_validated': True}):
+            with self.subTest(changes=changes), self.assertRaises(AnsibleFilterError):
+                preflight(snapshot(True), dict(variables(), **changes))
 
-    def test_marker_alone_and_name_alone_are_not_ownership(self):
-        for observed in (dict(snapshot(True), containers=[]), dict(snapshot(True), marker=None)):
-            with self.assertRaises(AnsibleFilterError):
-                preflight(observed, variables())
-        observed = snapshot(True)
-        observed['containers'][0]['labels'] = {}
-        observed['containers'][0]['name'] = 'pihole'
+    def test_marker_alone_does_not_authorize_adoption(self):
+        data = snapshot()
+        data['marker'] = snapshot(True)['marker']
         with self.assertRaises(AnsibleFilterError):
-            preflight(observed, variables())
+            preflight(data, maintenance())
 
-    def test_probe_does_not_report_environment_or_unrelated_labels(self):
-        container = {'Name': '/pihole', 'Image': 'sha256:example',
-                     'Config': {'Image': variables()['pihole_image'], 'Env': ['PASSWORD=sentinel'],
-                                'Labels': {'secret': 'sentinel', 'io.gitops.owner': OWNER}},
-                     'Mounts': [], 'HostConfig': {'PortBindings': {}},
-                     'NetworkSettings': {'Networks': {}}, 'State': {'Status': 'running'}}
-        observed = probe.inspect_container(container)
-        self.assertNotIn('sentinel', json.dumps(observed))
-        self.assertEqual(observed['labels'], {'io.gitops.owner': OWNER})
-        self.assertEqual(observed['health'], 'missing')
-
-    def test_missing_data_and_foreign_listener_block_reconfigure(self):
-        values = dict(variables(), pihole_backup_validated=True, pihole_peer_health_validated=True,
-                      pihole_maintenance_evidence='Current restore and peer-health evidence')
-        for key, bad in [('data_exists', False), ('compose_exists', False), ('marker_secure', False),
-                         ('listeners', [{'owned': False}])]:
+    def test_native_drift_and_missing_runtime_block(self):
+        cases = {'config_exists': False, 'native_service': False, 'service_active': False,
+                 'core_commit': 'b' * 40, 'web_commit': 'b' * 40, 'ftl_sha256': 'b' * 64,
+                 'ftl_version': 'v6.9', 'repos_clean': False, 'service_sha256': 'foreign',
+                 'marker_secure': False, 'listeners': [{'owned': False}]}
+        for key, value in cases.items():
             with self.subTest(key=key), self.assertRaises(AnsibleFilterError):
-                preflight(dict(snapshot(True), **{key: bad}), values)
+                preflight(dict(snapshot(True), **{key: value}), maintenance())
+
+    def test_every_release_or_binding_change_blocked(self):
+        for key in (*PINS, 'dns_bind', 'interface', 'ui_port'):
+            values = maintenance()
+            values['pihole_' + key] = 'changed'
+            with self.subTest(key=key), self.assertRaises(AnsibleFilterError):
+                preflight(snapshot(True), values)
+
+    def test_installer_never_invokes_unsafe_main_or_updater(self):
+        script = (ROOT / 'files/install-native.sh').read_text()
+        self.assertIn('export SKIP_INSTALL=true', script)
+        self.assertNotIn('curl', script)
+        self.assertNotIn('installCron', script)
+        self.assertNotIn('installLogrotate', script)
+        self.assertNotIn('setpassword', script)
+        tasks = (ROOT / 'playbooks/tasks/install.yml').read_text()
+        self.assertIn('checksum: "sha256:{{ pihole_installer_sha256 }}"', tasks)
+        self.assertIn('checksum: "sha256:{{ pihole_ftl_sha256 }}"', tasks)
+        self.assertIn('update: false', tasks)
+
+    def test_marker_written_only_after_verification(self):
+        text = (ROOT / 'playbooks/configure.yml').read_text()
+        self.assertLess(text.index('import_tasks: tasks/verify.yml'), text.index('dest: /opt/pihole-ansible/ownership.json'))
+        self.assertIn('when: pihole_native_change.changed or pihole_service_config.changed', text)
+        self.assertNotIn('state: restarted', text)
+        self.assertNotIn('recurse:', text)
 
     def test_password_content_assertions_reject_blank_and_multiline(self):
         tasks = yaml.safe_load((ROOT / 'playbooks/configure.yml').read_text())[0]['tasks']
@@ -194,7 +160,9 @@ class SafetyTests(unittest.TestCase):
         expressions = [Environment().compile_expression(condition)
                        for condition in task['ansible.builtin.assert']['that']]
         for value, expected in [('', False), ('  ', False), ('\n', False), ('first\nsecond', False),
-                                ('first\rsecond', False), ('synthetic-test-value', True)]:
+                                ('first\rsecond', False), ('first\x00second', False), ('synthetic\n', True),
+                                ('synthetic\n\n', False), ('x' * 4097, False), ('é' * 2049, False),
+                                ('synthetic-test-value', True)]:
             with self.subTest(value=value):
                 self.assertEqual(all(expression(pihole_private_password=value)
                                      for expression in expressions), expected)
@@ -211,14 +179,8 @@ class SafetyTests(unittest.TestCase):
                 result = subprocess.run([str(executable), '-i', 'tests/inventory.yml', 'playbooks/inspect.yml',
                                          '--check', *arguments], cwd=ROOT, capture_output=True, text=True, timeout=30)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn('Require explicit single inventory host', result.stdout)
+                self.assertIn('Require the exact provisioned root-SSH candidate', result.stdout)
                 self.assertNotIn('TASK [Read minimal', result.stdout)
-
-    def test_existing_data_permissions_are_not_reset(self):
-        tasks = yaml.safe_load((ROOT / 'playbooks/configure.yml').read_text())[0]['tasks']
-        block = next(t['block'] for t in tasks if 'block' in t)
-        data = next(t for t in block if t.get('ansible.builtin.file', {}).get('path') == REMOTE_ROOT + '/data')
-        self.assertEqual(data['when'], 'pihole_snapshot.marker is none')
 
     def test_secret_tasks_never_log_or_diff(self):
         tasks = yaml.safe_load((ROOT / 'playbooks/configure.yml').read_text())[0]['tasks']

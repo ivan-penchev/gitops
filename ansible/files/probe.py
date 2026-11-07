@@ -1,108 +1,110 @@
-"""Read-only host inventory. Never return Docker environment or secret contents."""
+#!/usr/bin/python3
+"""Read-only, secret-free evidence for the dedicated native guest."""
+import hashlib
+import grp
 import json
 import os
 from pathlib import Path
-import re
+import stat
 import subprocess
 import sys
+import tomllib
+import pwd
 
 ROOT = Path('/opt/pihole-ansible')
-OWNER = 'gitops-ansible-pihole-v1'
+NATIVE = ['/etc/pihole', '/etc/.pihole', '/opt/pihole', '/var/www/html/admin',
+          '/usr/local/bin/pihole', '/usr/bin/pihole-FTL', '/etc/dnsmasq.d',
+          '/etc/systemd/system/pihole-FTL.service', '/etc/systemd/system/pihole-FTL.service.d',
+          '/etc/logrotate.d/pihole', '/etc/cron.d/pihole', '/etc/init.d/pihole-FTL',
+          '/etc/bash_completion.d/pihole', '/etc/bash_completion.d/pihole-FTL', '/usr/local/bin/pihole-FTL', '/var/lib/pihole', '/var/log/pihole', '/etc/dnsmasq.conf']
 
 
-def run(*args, optional=False):
-    result = subprocess.run(args, capture_output=True, text=True, check=False)
-    if result.returncode and not optional:
-        # Do not leak subprocess output (Docker configuration can contain secrets).
-        raise RuntimeError('Read-only prerequisite command failed: ' + args[0])
-    return result.stdout.strip()
+def required(*args):
+    return subprocess.run(args, text=True, capture_output=True, check=True).stdout.strip()
 
 
-def inspect_container(container):
-    config = container['Config']
-    return {
-        'name': container['Name'].lstrip('/'),
-        'image': config['Image'], 'image_id': container['Image'],
-        'labels': {k: v for k, v in (config.get('Labels') or {}).items()
-                   if k == 'io.gitops.owner' or k.startswith('com.docker.compose.')},
-        'mounts': [{'source': m['Source'], 'destination': m['Destination'],
-                    'type': m['Type'], 'rw': m['RW']} for m in container['Mounts']],
-        'bindings': container['HostConfig'].get('PortBindings') or {},
-        'host_ports': [p['HostPort'] for ports in (container['HostConfig'].get('PortBindings') or {}).values()
-                       for p in (ports or [])],
-        'networks': [n['IPAddress'] for n in container['NetworkSettings']['Networks'].values()],
-        'health': container['State'].get('Health', {}).get('Status', 'missing'),
-        'status': container['State']['Status'],
-    }
+def run(*args):
+    result = subprocess.run(args, text=True, capture_output=True, check=False)
+    return result.stdout.strip() if result.returncode == 0 else ''
 
 
-def collect(ui_port):
-    info = json.loads(run('docker', 'info', '--format', '{{json .}}'))
-    version = run('docker', 'compose', 'version', '--short').lstrip('v')
-    parts = tuple(int(p) for p in version.split('.')[:2])
-    if parts < (2, 24):
-        raise RuntimeError('Docker Compose >= 2.24.0 is required')
-    ids = run('docker', 'ps', '-aq').split()
-    containers = [inspect_container(c) for c in json.loads(run('docker', 'inspect', *ids))] if ids else []
-    marker_path = ROOT / 'metadata.json'
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest() if Path(path).is_file() else ''
+
+
+def probe(bind, interface, port):
+    marker_path = ROOT / 'ownership.json'
+    paths = [ROOT, marker_path, ROOT / 'secrets', ROOT / 'secrets/webpassword', Path('/etc/pihole/pihole.toml'), Path('/etc/systemd/system/pihole-FTL.service.d/10-native-lxc.conf'), *map(Path, NATIVE)]
+    symlinks = sorted({str(p) for path in paths for p in [path, *path.parents] if p.is_symlink()})
+    if symlinks:
+        raise ValueError('Managed paths contain symlinks')
     marker = json.loads(marker_path.read_text()) if marker_path.is_file() else None
-    ancestor = ROOT
-    while not ancestor.exists():
-        ancestor = ancestor.parent
-    # Check the data path separately: it could be its own mount even when /opt is local.
-    data_path = ROOT / 'data'
-    filesystem = run('findmnt', '-n', '-o', 'FSTYPE', '-T', str(data_path if data_path.exists() else ancestor))
-    paths = [Path('/opt'), ROOT, data_path, ROOT / 'secrets', marker_path,
-             ROOT / 'compose.yml', ROOT / 'secrets/webpassword']
+    if marker is not None:
+        allowed = {'owner', 'core_version', 'core_commit', 'installer_sha256', 'web_version', 'web_commit',
+                   'ftl_version', 'ftl_sha256', 'dns_bind', 'ui_port', 'interface', 'service_sha256'}
+        if not isinstance(marker, dict) or set(marker) != allowed:
+            raise ValueError('Invalid ownership fields')
+    rows = json.loads(required('ip', '-j', '-4', 'address', 'show', 'dev', interface))
+    addresses = sorted(a['local'] for row in rows for a in row.get('addr_info', []) if a['family'] == 'inet')
     listeners = []
-    own = [c for c in containers if c['labels'].get('io.gitops.owner') == OWNER]
-    for line in run('ss', '-H', '-lntup').splitlines():
-        fields = line.split()
-        endpoint = fields[4]
-        port = endpoint.rsplit(':', 1)[-1]
-        if port not in ('53', str(ui_port)):
+    for line in required('ss', '-H', '-lntup').splitlines():
+        columns = line.split()
+        if len(columns) < 5:
             continue
-        owned = False
-        pids = re.findall(r'pid=(\d+)', line)
-        for pid in pids:
-            try:
-                args = Path('/proc', pid, 'cmdline').read_bytes().decode().strip('\0').split('\0')
-                options = dict(zip(args[1::2], args[2::2]))
-                if Path(args[0]).name == 'docker-proxy' and len(own) == 1:
-                    owned = (options.get('-container-ip') in own[0]['networks'] and
-                             options.get('-host-port') == port and
-                             options.get('-proto') == fields[0] and
-                             options.get('-host-ip') == endpoint.rsplit(':', 1)[0].strip('[]'))
-            except (OSError, UnicodeError):
-                owned = False
-            if not owned:
-                break
-        listeners.append({'endpoint': endpoint, 'protocol': fields[0], 'owned': owned})
-    addresses = json.loads(run('ip', '-j', '-4', 'address', 'show'))
-    service = run('systemctl', 'show', 'pihole-FTL.service', '--property=LoadState', '--value')
-    pinned_id = None
-    if marker and isinstance(marker.get('image'), str):
-        # This only inspects the local image cache. It never pulls an image.
-        image_json = run('docker', 'image', 'inspect', marker['image'], optional=True)
-        if image_json:
-            image = json.loads(image_json)[0]
-            digest = marker['image'].split('@')[-1]
-            if any(d.endswith('@' + digest) for d in image.get('RepoDigests', [])):
-                pinned_id = image['Id']
+        address, _, number = columns[4].rpartition(':')
+        if number not in ('53', '67', '123', '80', '443', str(port)):
+            continue
+        address = address.strip('[]')
+        owned = '"pihole-FTL"' in line and ((number == '53' and address in (bind, '127.0.0.1')) or
+                                                   (number == str(port) and address in (bind, '127.0.0.1')))
+        listeners.append({'address': address, 'port': int(number), 'owned': owned})
+    secure = False
+    if marker_path.exists():
+        info = marker_path.stat()
+        secure = info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600 and ROOT.stat().st_uid == 0 and stat.S_IMODE(ROOT.stat().st_mode) == 0o700
+    service = '/etc/systemd/system/pihole-FTL.service'
+    config = {}
+    if Path('/etc/pihole/pihole.toml').is_file():
+        native = tomllib.loads(Path('/etc/pihole/pihole.toml').read_text())
+        for key in ('dns.upstreams', 'dns.hosts', 'dns.cnameRecords', 'dns.interface', 'dns.listeningMode', 'dns.port', 'dns.revServers', 'webserver.advancedOpts',
+                    'dhcp.active', 'ntp.ipv4.active', 'ntp.ipv6.active', 'ntp.sync.active', 'webserver.port', 'webserver.acl',
+                    'misc.etc_dnsmasq_d', 'misc.dnsmasq_lines', 'files.gravity_tmp'):
+            value = native
+            for part in key.split('.'):
+                value = value.get(part) if isinstance(value, dict) else None
+            config[key] = value
+    try:
+        pwd.getpwnam('pihole')
+        native_user = True
+    except KeyError:
+        native_user = False
+    try:
+        grp.getgrnam('pihole')
+        native_user = True
+    except KeyError:
+        pass
     return {
-        'docker_version': info['ServerVersion'], 'compose_version': version,
-        'rootless': any('rootless' in s for s in info.get('SecurityOptions', [])),
-        'native_paths': [p for p in ('/etc/pihole', '/usr/local/bin/pihole', '/usr/bin/pihole') if os.path.lexists(p)],
-        'native_service': service != 'not-found',
-        'root_exists': os.path.lexists(ROOT), 'marker': marker,
-        'data_exists': data_path.is_dir(), 'compose_exists': (ROOT / 'compose.yml').is_file(),
-        'marker_secure': bool(marker and marker_path.stat().st_uid == 0 and not marker_path.stat().st_mode & 0o022),
-        'filesystem': filesystem, 'symlinks': [str(p) for p in paths if p.is_symlink()],
-        'host_ipv4': [a['local'] for interface in addresses for a in interface['addr_info'] if a['family'] == 'inet'],
-        'containers': containers, 'managed_containers': own,
-        'listeners': listeners, 'pinned_image_id': pinned_id,
+        'config': config, 'native_user': native_user,
+        'filesystem': run('findmnt', '-n', '-o', 'FSTYPE', '-T', str(ROOT if ROOT.exists() else ROOT.parent)),
+        'root_exists': ROOT.exists(), 'marker': marker, 'marker_secure': secure, 'symlinks': symlinks,
+        'interface_ipv4': addresses, 'listeners': listeners,
+        'docker_present': any(Path(p).exists() for p in ('/var/lib/docker', '/var/lib/containers', '/usr/bin/docker', '/usr/bin/podman', '/run/docker.sock')),
+        'unsafe_services': [name for name in ('systemd-resolved', 'dnsmasq', 'unbound', 'named', 'apache2', 'nginx', 'lighttpd')
+                            if run('systemctl', 'is-active', name) == 'active' or run('systemctl', 'is-enabled', name) in ('enabled', 'enabled-runtime')],
+        'native_paths': [p for p in NATIVE if os.path.lexists(p)],
+        'native_service': Path(service).exists(), 'config_exists': Path('/etc/pihole/pihole.toml').is_file(),
+        'service_active': run('systemctl', 'is-active', 'pihole-FTL') == 'active',
+        'core_commit': run('git', '-C', '/etc/.pihole', 'rev-parse', 'HEAD') if Path('/usr/bin/pihole-FTL').exists() else '',
+        'web_commit': run('git', '-C', '/var/www/html/admin', 'rev-parse', 'HEAD') if Path('/usr/bin/pihole-FTL').exists() else '',
+        'repos_clean': all(run('git', '-C', p, 'rev-parse', '--is-inside-work-tree') == 'true' and not required('git', '-C', p, 'status', '--porcelain') for p in ('/etc/.pihole', '/var/www/html/admin')) if Path('/etc/.pihole').exists() else False,
+        'ftl_sha256': digest('/usr/bin/pihole-FTL') if Path('/usr/bin/pihole-FTL').exists() else '',
+        'ftl_version': run('/usr/bin/pihole-FTL', '--version') if Path('/usr/bin/pihole-FTL').exists() else '',
+        'service_sha256': digest(service) + digest(service + '.d/10-native-lxc.conf'),
     }
 
 
 if __name__ == '__main__':
-    print(json.dumps(collect(int(sys.argv[1]))))
+    try:
+        print(json.dumps(probe(sys.argv[1], sys.argv[2], int(sys.argv[3]))))
+    except Exception:
+        sys.exit('Native evidence unavailable or unsafe; manual inspection required')

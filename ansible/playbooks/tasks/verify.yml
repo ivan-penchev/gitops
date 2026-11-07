@@ -1,22 +1,55 @@
 ---
-- name: Re-read sanitized actual container health
-  ansible.builtin.import_tasks: probe.yml
-
-- name: Require one running healthy container with managed provenance
+- name: Wait for the local web listener without exposing authentication
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ pihole_ui_port }}"
+    timeout: 60
+  check_mode: false
+- name: Verify admin HTTP access from the controller over the LAN
+  ansible.builtin.uri:
+    url: "http://{{ pihole_dns_bind }}:{{ pihole_ui_port }}/admin/"
+    follow_redirects: safe
+    status_code: 200
+    use_proxy: false
+  delegate_to: localhost
+  become: false
+  check_mode: false
+- ansible.builtin.import_tasks: probe.yml
+- name: Require native runtime identity, exact bindings and safe configuration
   ansible.builtin.assert:
     that:
-      - pihole_managed | length == 1
-      - pihole_managed[0].status == 'running'
-      - pihole_managed[0].health == 'healthy'
-      - pihole_managed[0].labels['com.docker.compose.project'] == 'gitops-pihole'
-      - pihole_managed[0].labels['com.docker.compose.service'] == 'pihole'
-      - pihole_snapshot.marker.owner == 'gitops-ansible-pihole-v1'
-      - pihole_managed[0].image == pihole_snapshot.marker.image
-      - pihole_managed[0].image_id == pihole_snapshot.pinned_image_id
-  vars:
-    pihole_managed: "{{ pihole_snapshot.managed_containers }}"
-
-- name: Query the explicit LAN address from the management controller over both transports
+      - pihole_snapshot.service_active
+      - pihole_snapshot.core_commit == pihole_core_commit
+      - pihole_snapshot.web_commit == pihole_web_commit
+      - pihole_snapshot.ftl_sha256 == pihole_ftl_sha256
+      - pihole_snapshot.ftl_version == pihole_ftl_version
+      - pihole_snapshot.repos_clean
+      - pihole_snapshot.listeners | length >= 3
+      - pihole_snapshot.listeners | rejectattr('owned') | list | length == 0
+      - pihole_snapshot.config == (vars | pihole_native_config)
+      - not pihole_snapshot.symlinks
+      - not pihole_snapshot.docker_present
+      - not pihole_snapshot.unsafe_services
+      - pihole_snapshot.interface_ipv4 == [pihole_dns_bind]
+- name: Require completed ownership when not installing for the first time
+  ansible.builtin.assert:
+    that:
+      - pihole_snapshot.marker is not none
+      - pihole_snapshot.marker_secure
+      - pihole_snapshot.marker.owner == 'gitops-ansible-pihole-native-v1'
+      - pihole_snapshot.marker.ftl_sha256 == pihole_ftl_sha256
+      - pihole_snapshot.marker.core_commit == pihole_core_commit
+      - pihole_snapshot.marker.web_commit == pihole_web_commit
+      - pihole_snapshot.marker.core_version == pihole_core_version
+      - pihole_snapshot.marker.web_version == pihole_web_version
+      - pihole_snapshot.marker.ftl_version == pihole_ftl_version
+      - pihole_snapshot.marker.installer_sha256 == pihole_installer_sha256
+      - pihole_snapshot.marker.dns_bind == pihole_dns_bind
+      - pihole_snapshot.marker.ui_port == pihole_ui_port
+      - pihole_snapshot.marker.interface == pihole_interface
+      - pihole_snapshot.service_sha256 == pihole_snapshot.marker.service_sha256 or (pihole_service_config.changed | default(false))
+  when: not (pihole_fresh_install | default(false))
+- name: Query explicit LAN address from controller over UDP and TCP
   ansible.builtin.command:
     argv:
       - "{{ ansible_playbook_python }}"

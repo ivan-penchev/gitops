@@ -18,7 +18,7 @@ domains and IPs. Change those and the rest should work for you.
 | [talos-k8s-versions.md](docs/talos-k8s-versions.md) | You're upgrading Talos or Kubernetes |
 | [cilium-upgrade.md](docs/cilium-upgrade.md) | You're upgrading Cilium |
 | [backups.md](docs/backups.md) | You need to set up, check or restore the USB drive backup |
-| [Pi-hole Terraform + Ansible](ansible/README.md) | You want one command to provision a separate Debian VM and configure Pi-hole, or rerun configuration without Terraform apply |
+| [Pi-hole Terraform + Ansible](ansible/README.md) | You want to provision an unprivileged Debian LXC through the Proxmox API and configure native Pi-hole, or rerun configuration without Terraform apply |
 | [renovate-live-test.md](docs/renovate-live-test.md) | A Renovate PR runs against the live cluster |
 | [flux-upgrade-test.md](docs/flux-upgrade-test.md) | You're bumping Flux or the Flux Operator |
 
@@ -27,7 +27,7 @@ domains and IPs. Change those and the rest should work for you.
 ```
 terraform/
   shared/          fileserver and pg-01 LXCs, their LAN DNS records
-  servers/         independent non-Kubernetes Linux VMs, starting with Pi-hole
+  servers/         independent non-Kubernetes servers, starting with native Pi-hole in LXC
   cluster/         one cluster: VMs, Talos, tunnel, Flux bootstrap, Terraform-made Secrets, pg databases
   clusters/<name>/ cluster.tfvars and talos-versions.tfvars for each cluster
   tf.sh            runs a root with the credentials from secrets.sops.env
@@ -73,7 +73,7 @@ export TALOSCONFIG=$PWD/talosconfig
 |---|---|---|
 | `terraform/shared` | fileserver and pg-01 LXCs, their LAN DNS records | `homelab/shared.tfstate` |
 | `terraform/cluster` | One cluster | `homelab/clusters/<name>.tfstate` |
-| `terraform/servers` | Independent conventional Linux servers (Pi-hole VM first) | `homelab/servers.tfstate` |
+| `terraform/servers` | Independent conventional Linux servers (unprivileged Pi-hole LXC first) | `homelab/servers.tfstate` |
 
 The **servers** root uses [`ansible/pihole.py`](ansible/README.md), not `tf.sh`.
 It has separate inputs/state and is intentionally excluded from `tf.sh all`.

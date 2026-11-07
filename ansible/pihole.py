@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision a separate Pi-hole VM, then configure its Terraform-derived target."""
+"""Provision a separate Pi-hole LXC, then configure its Terraform-derived target."""
 import argparse
 import ipaddress
 import json
@@ -13,7 +13,8 @@ ANSIBLE = Path(__file__).resolve().parent
 SERVERS = ANSIBLE.parent / "terraform" / "servers"
 ALIAS = "dns_candidate"
 SETTINGS = {
-    "pihole_image", "pihole_upstreams", "pihole_peer_addresses",
+    "pihole_core_version", "pihole_core_commit", "pihole_installer_sha256",
+    "pihole_web_version", "pihole_web_commit", "pihole_ftl_version", "pihole_ftl_sha256", "pihole_interface", "pihole_upstreams", "pihole_peer_addresses",
     "pihole_timezone", "pihole_ui_port", "pihole_local_hosts", "pihole_local_cnames",
     "pihole_verify_external", "pihole_verify_local_name", "pihole_verify_local_address",
     "pihole_verify_blocked_name",
@@ -46,7 +47,7 @@ def validate_inventory(inventory):
         allowed = {"ansible_host", "ansible_user", "pihole_dns_bind", "pihole_trusted_cidr", "pihole_provisioned_by"}
         private = [ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
         if (set(hosts) != {ALIAS} or set(host) != allowed
-                or host["ansible_user"] != "operator"
+                or host["ansible_user"] != "root"
                 or host["pihole_provisioned_by"] != "terraform/servers"
                 or str(ip) != host["pihole_dns_bind"]
                 or ip not in network or ip in (network.network_address, network.broadcast_address)
@@ -119,7 +120,7 @@ def main(argv=None):
         base = [str(playbook), "-i", str(inv), "--limit", ALIAS,
                 "-e", "@" + str(ANSIBLE / "group_vars/pihole.yml"), "-e", "@" + str(extra)]
         # Force trusted-key checking even if the controller environment disables it.
-        base += ["-e", "ansible_ssh_common_args=-o StrictHostKeyChecking=yes"]
+        base += ["-e", json.dumps({"ansible_ssh_common_args": "-o StrictHostKeyChecking=yes"})]
         run(base + ["playbooks/ready.yml"])
         if args.command == "apply":
             run(base + ["playbooks/prepare.yml"])

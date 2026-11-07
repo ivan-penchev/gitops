@@ -8,3 +8,4 @@ MarkupSafe==3.0.4
 packaging==26.3
 pycparser==3.12
 resolvelib==1.2.1
+tomlkit==0.13.3

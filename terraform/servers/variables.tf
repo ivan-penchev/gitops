@@ -18,7 +18,7 @@ variable "proxmox_insecure" {
 }
 
 variable "proxmox_node" {
-  description = "Existing Proxmox node on which to create the fresh VM."
+  description = "Existing Proxmox node on which to create the fresh unprivileged container."
   type        = string
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-]*$", var.proxmox_node))
@@ -26,48 +26,30 @@ variable "proxmox_node" {
   }
 }
 
-variable "proxmox_ssh_address" {
-  description = "Explicit PVE host IPv4 address for snippet upload, independent of Pi-hole DNS."
+variable "proxmox_host_ipv4" {
+  description = "PVE host IPv4 used only to reject a colliding guest address; no host SSH connection is made."
   type        = string
   validation {
-    condition     = can(cidrnetmask("${var.proxmox_ssh_address}/32")) && var.proxmox_ssh_address != "192.168.68.20"
+    condition     = can(cidrnetmask("${var.proxmox_host_ipv4}/32")) && var.proxmox_host_ipv4 != "192.168.68.20"
     error_message = "Specify the Proxmox host IPv4 address, never the existing Pi-hole 192.168.68.20."
   }
 }
 
-variable "proxmox_ssh_username" {
-  description = "PVE SSH user with permission to write snippets (root, or a properly configured sudo account). Authentication uses SSH_AUTH_SOCK."
+variable "rootfs_datastore" {
+  description = "Existing storage with rootdir support for the container root filesystem."
   type        = string
   validation {
-    condition     = can(regex("^[a-z_][a-z0-9_-]*$", var.proxmox_ssh_username))
-    error_message = "Specify an explicit PVE SSH username."
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.rootfs_datastore))
+    error_message = "Specify a rootfs datastore ID."
   }
 }
 
-variable "vm_datastore" {
-  description = "Existing storage for VM and cloud-init disks."
+variable "template_datastore" {
+  description = "Existing file storage with vztmpl content enabled. No Import or snippets content is required."
   type        = string
   validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.vm_datastore))
-    error_message = "Specify a VM datastore ID."
-  }
-}
-
-variable "image_datastore" {
-  description = "Existing file storage with Import content enabled (PVE 8.4+)."
-  type        = string
-  validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.image_datastore))
-    error_message = "Specify an image datastore ID."
-  }
-}
-
-variable "snippet_datastore" {
-  description = "Existing file storage with Snippets content enabled."
-  type        = string
-  validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.snippet_datastore))
-    error_message = "Specify a snippet datastore ID."
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.template_datastore))
+    error_message = "Specify a container template datastore ID."
   }
 }
 
@@ -81,12 +63,33 @@ variable "network_bridge" {
 }
 
 variable "vm_id" {
-  description = "Operator-reserved, unused VMID. No auto-allocation, existing VM import, or reuse. Verify availability outside Terraform."
+  description = "Operator-reserved, unused container ID in Proxmox's shared VM/CT ID namespace. Never reuse or import an existing guest; CT100 is forbidden."
   type        = number
   validation {
-    condition     = var.vm_id >= 100 && var.vm_id <= 999999999 && var.vm_id == floor(var.vm_id)
-    error_message = "Supply an explicit integer Proxmox VMID from 100 through 999999999."
+    condition     = var.vm_id > 100 && var.vm_id <= 999999999 && var.vm_id == floor(var.vm_id)
+    error_message = "Supply an explicit integer Proxmox guest ID from 101 through 999999999; existing CT100 is protected."
   }
+}
+
+variable "container_started" {
+  description = "Explicitly start the container. Defaults stopped; host autostart requires connected static networking, never isolated or DHCP staging."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "bootstrap_dhcp" {
+  description = "Temporary DHCP bootstrap only: suppress Ansible inventory and host autostart. Keep static network inputs for later reserved-address configuration."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "network_link_down" {
+  description = "Isolate the guest by omitting its NIC and IP configuration (not a native link_down flag). Set true before isolated staging; never connect an unreserved address."
+  type        = bool
+  default     = false
+  nullable    = false
 }
 
 variable "network" {
@@ -110,7 +113,7 @@ variable "network" {
       tonumber(split("/", var.network.lan_cidr)[1]) >= (startswith(var.network.ipv4_cidr, "192.168.") ? 16 : startswith(var.network.ipv4_cidr, "172.") ? 12 : 8) &&
       !contains([cidrhost(var.network.lan_cidr, 0), cidrhost(var.network.lan_cidr, -1), var.network.gateway], split("/", var.network.ipv4_cidr)[0]) &&
       !endswith(split("/", var.network.ipv4_cidr)[0], ".20") &&
-      split("/", var.network.ipv4_cidr)[0] != var.proxmox_ssh_address &&
+      split("/", var.network.ipv4_cidr)[0] != var.proxmox_host_ipv4 &&
       can(cidrnetmask("${var.network.gateway}/32")) &&
       cidrhost("${var.network.gateway}/${split("/", var.network.lan_cidr)[1]}", 0) == cidrhost(var.network.lan_cidr, 0) &&
       !contains([cidrhost(var.network.lan_cidr, 0), cidrhost(var.network.lan_cidr, -1), "192.168.68.20"], var.network.gateway),
@@ -136,20 +139,20 @@ variable "ssh_public_key" {
   }
 }
 
-variable "debian_image_url" {
-  description = "Immutable official Debian 13 amd64 genericcloud QCOW2 release URL. No latest/current aliases. Verify its publisher signature before selecting the SHA256."
+variable "debian_template_url" {
+  description = "Version-pinned official Proxmox Debian 13 standard amd64 tar.zst template URL. Authenticate publisher metadata before trusting its checksum; HTTP alone is not authenticated."
   type        = string
   validation {
-    condition     = can(regex("^https://cloud\\.debian\\.org/images/cloud/trixie/[0-9]{8}-[0-9]+/debian-13-genericcloud-amd64-[0-9]{8}-[0-9]+\\.qcow2$", var.debian_image_url))
-    error_message = "Supply a dated official Debian 13 trixie genericcloud amd64 QCOW2 URL, not latest, HTTP, or a different OS."
+    condition     = can(regex("^https?://download\\.proxmox\\.com/images/system/debian-13-standard_13\\.[0-9]+-[0-9]+_amd64\\.tar\\.zst$", var.debian_template_url))
+    error_message = "Supply an official version-pinned Proxmox Debian 13 standard amd64 tar.zst URL, never latest, a different OS, or an arbitrary host."
   }
 }
 
-variable "debian_image_sha256" {
-  description = "Operator-verified SHA256 for the exact downloaded image; required and intentionally has no default."
+variable "debian_template_sha256" {
+  description = "Operator-authenticated SHA256 for the exact template archive; required with no default. Verify against authenticated publisher metadata before calculating SHA256."
   type        = string
   validation {
-    condition     = can(regex("^[0-9a-fA-F]{64}$", var.debian_image_sha256)) && length(distinct(split("", lower(var.debian_image_sha256)))) > 1
-    error_message = "Supply the image's verified 64-hex SHA256, not an empty value or repeated-character placeholder."
+    condition     = can(regex("^[0-9a-fA-F]{64}$", var.debian_template_sha256)) && length(distinct(split("", lower(var.debian_template_sha256)))) > 1
+    error_message = "Supply the template's verified 64-hex SHA256, not an empty value or repeated-character placeholder."
   }
 }

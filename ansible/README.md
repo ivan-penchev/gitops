@@ -1,311 +1,261 @@
-# Pi-hole: standalone Terraform + Ansible
+# Native Pi-hole on a dedicated Debian 13 LXC
 
-**Not deployed. Not completion of issue #134.** This foundation configures one fresh,
-dedicated Debian VM or physical device with official Pi-hole v6 Docker Compose.
-It does not convert, adopt, stop, or replace a native Pi-hole/LXC deployment. In
-particular, there is no implicit writable `.20` target.
+This narrowly scoped deployment creates **no Docker containers**. Terraform in
+`terraform/servers` provisions a fresh, unprivileged Debian 13 amd64 LXC through
+the Proxmox API; `pihole.py` derives its singleton inventory from Terraform output
+and connects directly to the **guest as root over SSH**. No Proxmox-host SSH,
+cloud-init, nesting, privileged LXC, resolver rewrite, OS upgrade, DHCP/NTP server,
+public web listener, or adoption of an existing Pi-hole is supported.
 
-## Integrated VM workflow (recommended)
+The existing `192.168.68.20` Pi-hole is explicitly rejected. Other peers are never
+configuration targets. This does not modify router/DHCP DNS settings or perform a
+production cutover. A dedicated native VM or physical host is also rejected:
+the current identity gate deliberately requires an unprivileged LXC.
 
-[`terraform/servers`](../terraform/servers/README.md) is an independent Linux-server
-root and state, starting with one **fresh Debian 13 VM**. It does not read shared
-or cluster state, move the fileserver/PostgreSQL, or depend on Kubernetes. Terraform
-owns the VM/image/cloud-init; Ansible owns Docker prerequisites and Pi-hole settings.
-There are no Terraform provisioners, destroy/recreate triggers for Ansible changes,
-or automatic applies from Git. Run the operator command again after changing Ansible.
+## Prerequisites and ownership
 
-1. Install controller dependencies below and Terraform; prepare the servers root's
-   explicit inputs/backend credentials as documented there. Reserve an actually free
-   VMID/IP and verify the Debian image checksum. Do not use the current primary.
-   Provisioning also requires authorized Proxmox-host SSH access through an agent
-   and a snippets-enabled datastore for cloud-init; API access alone is insufficient.
-   Confirm both before applying. This workflow does not reconfigure host storage.
-2. Copy `pihole.settings.example.json` to `pihole.settings.local.json`, replace TEST-NET
-   addresses (including the candidate in the peer list), and review the image pin and
-   local DNS records. This file contains **application configuration only**, never
-   connection overrides or passwords. Keep your final non-secret desired settings in
-   a reviewed Git file if preferred; the `*.local.json` examples are ignored.
-3. Export the password to a private file as described below. Terraform never receives it.
-4. From the repository root, with the independent backend/Proxmox credentials already
-   in your environment:
+The Terraform-created LXC must have systemd, root public-key SSH access, a static
+RFC1918 IPv4 on the selected interface, working routing and an independent
+resolver. Python is **not** assumed: `ready.yml` uses TCP readiness and raw SSH;
+`prepare.yml` checks guest identity with raw commands before installing missing
+Python, apt bindings and network-inspection tools. Neither uses Python-dependent
+connection waiting before bootstrap. Ansible does not stop or replace an existing
+resolver/web service to make installation fit; conflicting services, native files,
+Pi-hole accounts, occupied ports, or Docker/Podman state require manual recovery.
 
-   ```sh
-   python3 ansible/pihole.py init --backend-config=terraform/servers/backend.local.hcl
-   python3 ansible/pihole.py plan --var-file=terraform/servers/servers.auto.tfvars
-   python3 ansible/pihole.py apply \
-     --var-file=terraform/servers/servers.auto.tfvars \
-     --settings=ansible/pihole.settings.local.json \
-     --password-file=ansible/secrets/dns-candidate-password
-   ```
-
-   `apply` presents Terraform's plan and **requires its normal approval**. After a
-   successful apply it reads `ansible_inventory` from that root's state, checks its
-   single-target contract, waits up to five minutes for trusted SSH/Python, waits for
-   cloud-init, installs missing Debian Docker/Compose packages, then configures and
-   verifies Pi-hole. It never invokes `terraform/tf.sh all` or accesses cluster state.
-   `--backend-config` can be repeated. Backend **file paths are resolved from your
-   current directory**, and files must contain no plaintext credentials.
-
-**First-boot SSH trust is deliberately not automatic.** Through your trusted
-Proxmox-host SSH connection, run
-`qm guest exec VMID -- /usr/bin/ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`
-after cloud-init starts the guest agent. Compare the returned fingerprint with your
-first `ssh operator@CANDIDATE_IP` prompt before accepting it. This avoids needing a
-guest console password; cloud-init configures key-only access.
-The runner uses the controller's known_hosts and SSH key/agent, never
-`StrictHostKeyChecking=no`, blind `ssh-keyscan` trust, or password authentication
-setup. Verify/accept while the first run waits, or rerun `apply` after it times out:
-a successful VM creation is retained, not rolled back. A changed host key requires
-independent verification, not automatic known_hosts deletion.
-
-For day-2 changes, there is **no Terraform apply and no package bootstrap**:
+Authenticate the guest SSH host key using a trusted Proxmox/API console channel
+before running the workflow. Host-key checking stays enabled; unverified
+`ssh-keyscan` output is not trusted enrollment. Provide the private SSH key via
+the operator's normal SSH agent/config, not inventory connection-variable extras.
+The controller must reach guest TCP/22 and DNS TCP+UDP/53; the guest must reach
+Debian package repositories, GitHub release/source URLs, its DNS upstreams and
+its initial public blocklist. Existing repository virtual environments may be
+reused; otherwise install declared controller dependencies:
 
 ```sh
-python3 ansible/pihole.py check --settings=ansible/pihole.settings.local.json \
-  --maintenance-file=ansible/maintenance.local.json
-python3 ansible/pihole.py configure --settings=ansible/pihole.settings.local.json \
-  --password-file=ansible/secrets/dns-candidate-password \
-  --maintenance-file=ansible/maintenance.local.json
-python3 ansible/pihole.py verify --settings=ansible/pihole.settings.local.json
+python3 -m venv ansible/.venv
+ansible/.venv/bin/pip install -r ansible/requirements.txt
+export PATH="$PWD/ansible/.venv/bin:$PATH"
 ```
 
-`inspect` is also available with the same `--settings`. Check/inspect/verify need
-no password. These commands read existing Terraform state to regenerate identity;
-they do not refresh/apply infrastructure. Temporary inventory/settings live in an
-owner-only ignored directory and are removed even on failure; group variables are
-loaded explicitly. No inventory copy becomes a second source of truth.
+All tasks use Ansible built-ins; `requirements.yml` declares no collections.
+`sudo` is installed only because upstream Pi-hole runtime scripts use it to drop
+root privileges. The SSH connection does not require or invoke sudo/become.
+A temporary DHCP test guest's client on UDP/68 is not a conflicting DHCP server;
+UDP/67 and the DNS/web/NTP ports remain guarded.
 
-Maintenance JSON accepts only the three existing attestations (see **Safe day-2
-boundary**), e.g. `pihole_backup_validated`, `pihole_peer_health_validated`, and dated
-`pihole_maintenance_evidence`. Supply true only after actually checking backup and
-peer health; do not permanently enable them. Image/binding changes remain blocked.
-A failure stops the pipeline without cleanup, rollback, DNS cutover or peer writes.
-After a bootstrap failure, rerun `apply` with a reviewed unchanged Terraform plan;
-a partial Pi-hole deployment still requires manual recovery, not a blind retry.
-Use one operator/run at a time: Terraform's state lock does not lock Ansible.
+Inventory has exactly one host, `all.children.pihole.hosts.dns_candidate`, with
+exactly these five fields:
 
-No live deployment or end-to-end idempotence is claimed. Before production, test
-first boot, second-run convergence, firewall reachability and recovery on a
-throwaway VM; review the resulting plan before every infrastructure change.
+- `ansible_host`: chosen private IPv4, matching `pihole_dns_bind`.
+- `ansible_user: root`.
+- `pihole_dns_bind`: dedicated DNS IPv4.
+- `pihole_trusted_cidr`: canonical RFC1918 LAN CIDR containing the address.
+- `pihole_provisioned_by: terraform/servers`.
 
-## Scope and prerequisites
+The wrapper reconstructs a clean inventory, rejecting extra host fields and
+ignoring unrelated groups/global variables. Every guest play requires the exact
+explicit singleton limit and matching target identity. The default inventory is
+empty. `inventory.example.yml` intentionally uses TEST-NET and is rejected by
+safety gates; do not substitute the example for Terraform provenance.
 
-- Controller: Python **3.12–3.14**, SSH client, and connectivity to the candidate's
-  SSH port and LAN DNS port 53 TCP **and** UDP. Local tests were run with Python
-  3.14, the exact `requirements.txt` pins, and `community.docker` 4.8.2. Python 3.15
-  is not a supported controller for this pinned Ansible release.
-- Target: dedicated **Debian 12+ VM or physical host**, Python 3, rootful Docker
-  Engine, Docker Compose plugin **2.24.0+**, `ip`, `ss`, `findmnt`, and systemd.
-  For the integrated **Debian 13 VM**, `prepare.yml` installs missing `docker.io`,
-  `docker-cli`, `docker-compose` (v2), `iproute2`, and `util-linux` from signed distribution apt
-  repositories. Direct playbook users must supply prerequisites themselves.
-  Neither path runs a curl installer, apt-upgrade, or reboot. Terraform cloud-init
-  sets initial networking/resolvers; Ansible does not rewrite host resolvers.
-- Reserve a verified-free static **RFC1918 IPv4** address, already assigned to
-  the candidate, and explicitly declare its trusted LAN CIDR. DNS binds only to
-  that address, not `0.0.0.0`, IPv6, or host networking. Independently verify that
-  host/router/Docker forwarding rules admit only trusted clients. An address
-  binding is **not** a firewall: no public port forwarding or public UI ingress.
-- Data is a host-local `/opt/pihole-ansible/data` bind at container `/etc/pihole`.
-  Supported local filesystems: ext4, XFS, Btrfs, ZFS, F2FS. No NFS/CIFS, shared
-  SQLite, Kubernetes storage, symlinked managed paths, or existing native data.
-- Disable competing updaters/Watchtower for this host. Do not use `pihole -up`.
-  This role owns the Compose project `gitops-pihole` and the entire
-  `/opt/pihole-ansible` directory; it does not adopt unrelated containers.
-- Review the [official Docker releases](https://github.com/pi-hole/docker-pi-hole/releases)
-  and [Docker configuration](https://docs.pi-hole.net/docker/). Supply an explicit
-  per-host `pihole/pihole:YYYY.MM.N@sha256:<64 lowercase hex>` v6 image pin whose
-  digest supports that host's architecture. **There is no group-wide image default.**
-  The TEST-NET example includes the official `2026.10.1` multi-architecture index
-  digest reviewed on 2026-11-07 for amd64/arm64; explicitly reconfirm it for your
-  target. Date validation cannot prove digest contents: upstream release/architecture
-  review remains an operator gate.
+Missing or null `ansible_inventory` output stops the wrapper before SSH, without
+falling back to input addresses. DHCP-only Terraform staging intentionally has
+no usable inventory; the production wrapper requires reserved-static provisioning.
 
-## Controller setup (no global installation)
+## Reviewed native releases, not a mutable installer
 
-Run all commands from `ansible/` so its configuration and inventory-relative group
-variables are loaded. No setup command contacts a managed host.
+Copy `pihole.settings.example.json` to a reviewed, non-secret JSON settings file.
+Replace its peer and local verification records with your chosen topology. Its
+seven required release pins replace the old `pihole_image` setting:
+
+| Setting | Reviewed example |
+| --- | --- |
+| `pihole_core_version` | `v6.5` |
+| `pihole_core_commit` | `f503a65d3a07cb71fd931389f1d3babf718249aa` |
+| `pihole_installer_sha256` | `0c67c8f8358fede4b4dd8d51b429114461c9bb90ad56ff00ef05637f664bf3ac` |
+| `pihole_web_version` | `v6.6.1` |
+| `pihole_web_commit` | `fb699c4e3fd6965d1c9a5253250d8a9b3c6f7a0e` |
+| `pihole_ftl_version` | `v6.8` |
+| `pihole_ftl_sha256` | `1f511e7053a5ddfae1db1f439ebb986dd8025bf7223e1f70fb8087d9c0fd2b0e` |
+
+The installer is downloaded at the core commit and checked against the reviewed
+SHA256 before execution. Core/Web are checked out at exact commits and their
+release tags must resolve to those commits. The architecture-specific FTL release
+binary is independently SHA256-verified. The implementation **does not execute
+installer main**: that path can select newer component releases, start services,
+change resolver settings and pass passwords through command arguments. Instead,
+`files/install-native.sh` sources the verified script with `SKIP_INSTALL=true`
+and calls only its reviewed user/script/config/default-list installation
+primitives. It installs the pinned logrotate template without migration helpers.
+There is no curl-to-shell pipeline, latest-release lookup, updater, repo reset,
+automatic gravity schedule or automatic component upgrade.
+
+The initial gravity build uses the upstream default StevenBlack list. Thereafter,
+refresh lists deliberately through the password-protected UI or a separately reviewed
+maintenance mechanism; this slice does not silently install upstream cron jobs.
+New release pins, binding/interface changes, source edits or service tampering on
+an owned installation are refused, not treated as an upgrade. Review a separate
+backup/restore/replacement procedure before changing releases. The pin mechanism
+alone is not a promise that arbitrary future v6 releases share these semantics.
+
+Other allowed JSON settings are `pihole_interface` (default `eth0`),
+`pihole_upstreams`, `pihole_peer_addresses`, `pihole_timezone`, `pihole_ui_port`,
+`pihole_local_hosts`, `pihole_local_cnames`, `pihole_verify_external`,
+`pihole_verify_local_name`, `pihole_verify_local_address`, and optional
+`pihole_verify_blocked_name`. Peer addresses must include this target; upstreams
+must be independent public IPv4 addresses, never Pi-hole peers. A local test name
+and address must match an explicitly configured local host record. Unknown JSON
+keys, arbitrary Ansible variables and Docker-image settings are rejected.
+
+## Provision once, then rerun Ansible independently
+
+Run from the repository root. Terraform variables/backend configuration remain
+owned by `terraform/servers`; the wrapper supplies no Proxmox credentials or
+passwords through Ansible settings.
 
 ```sh
-cd ansible
-mkdir -p .cache
-python3.14 -m venv .venv
-export TMPDIR="$PWD/.cache"
-export ANSIBLE_GALAXY_CACHE_DIR="$PWD/.cache/galaxy"
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/ansible-galaxy collection install -r requirements.yml -p .collections
+ansible/.venv/bin/python ansible/pihole.py init
+ansible/.venv/bin/python ansible/pihole.py plan --var-file /absolute/path/candidate.tfvars
+ansible/.venv/bin/python ansible/pihole.py apply \
+  --var-file /absolute/path/candidate.tfvars \
+  --settings /absolute/path/native-settings.json \
+  --password-file /absolute/path/private-webpassword
 ```
 
-`inventory.yml` intentionally contains an **empty** `pihole` group. Tests and
-examples never imply permission to contact an address. Create a private copy:
+`apply` performs Terraform apply, reads `ansible_inventory`, then invokes
+ready → prepare → configure. Preparation is intentionally fresh-only: do not use
+`apply` to re-adopt or re-bootstrap an installed candidate. These commands read
+existing Terraform output but **never run Terraform apply**:
 
 ```sh
-(umask 077; cp inventory.example.yml inventory.local.yml)
+ansible/.venv/bin/python ansible/pihole.py inspect --settings /absolute/path/native-settings.json
+ansible/.venv/bin/python ansible/pihole.py verify --settings /absolute/path/native-settings.json
+ansible/.venv/bin/python ansible/pihole.py check \
+  --settings /absolute/path/native-settings.json --maintenance-file /absolute/path/current-evidence.json
+ansible/.venv/bin/python ansible/pihole.py configure \
+  --settings /absolute/path/native-settings.json \
+  --password-file /absolute/path/private-webpassword \
+  --maintenance-file /absolute/path/current-evidence.json
 ```
 
-Replace **all TEST-NET example addresses**, SSH identity, peer list, trusted CIDR,
-and password source path in that copy before use; reconfirm the example image pin
-for the target architecture. TEST-NET binds are rejected. The example is documentation, not runnable infrastructure.
-The checked-in group variables explicitly define timezone, local records, CNAMEs,
-and probes; replace the illustrative `recovery-check.home.arpa` record/address
-with an approved real local record before deployment. Keep desired non-secret
-settings under review in Git; keep actual access details in the private inventory.
-If the inventory is elsewhere, copy/link its `group_vars/pihole.yml` deliberately
-or explicitly load this file; Ansible group-variable search is inventory-relative.
+`check` runs configure with `--check --diff`: identity/preflight inspection and
+sanitized configuration rendering only, without reading passwords, modifying
+files/packages/services or claiming runtime readiness. It requires Python already
+bootstrapped. `verify` checks the native binary/source identity, ownership and
+service hashes, exact safe settings/listeners, LAN admin HTTP, and controller-origin
+external/local DNS over both UDP and TCP. An optional blocked-name check verifies
+an operator-maintained deny rule. It does not fabricate backup or peer evidence.
 
-Set **all** Pi-hole node IPs in `pihole_peer_addresses`, including the candidate.
-This slice accepts only public unicast IPv4 `pihole_upstreams`, never either
-Pi-hole, loopback, or an empty list. Verify their actual independent routing from
-this host; an IP check cannot prove an upstream's network path. Private recursive
-upstreams and nonstandard upstream port/syntax support are deferred.
+Every managed configure/check requires a JSON evidence file containing exactly
+the permitted maintenance keys. Record **actual current** backup/restore testing
+and peer TCP/UDP DNS checks, including timestamps and artifact/check references:
 
-## Private password
+- `pihole_backup_validated`: boolean true only after validating recoverability.
+- `pihole_peer_health_validated`: boolean true only after validating healthy peers.
+- `pihole_maintenance_evidence`: meaningful current evidence, at least 16 characters.
 
-Use a distinct password for each node. Provision a one-line, nonempty password
-into an **absolute controller-private file** using your password manager's secure
-file export (not a literal CLI argument or environment variable). For example,
-choose `ansible/secrets/dns-candidate-password`, under an owner-only directory:
+These are operator attestations, not automatic backup creation or proof by string
+length. No example pre-asserts success. Preserve `/etc/pihole` (including gravity,
+policy, native config and runtime databases) and root-private ownership/secret
+state in protected recoverable backups; do not place database contents or private
+files into Git. Coordinate consistent backups using Pi-hole's supported export
+and/or stopped-service filesystem backups, and test restore separately.
+
+## Secrets, configuration and failure behavior
+
+The password comes from a private regular controller file (0400/0600), containing
+one nonempty UTF-8 line, at most 4096 bytes and an optional final LF. No CR, embedded
+LF or NUL is accepted. Keep the file out of Git and retrieve it using your secret
+manager; never put plaintext in CLI arguments, environment variables or settings.
+Ansible copies it with `no_log` and `diff: false` to
+`/opt/pihole-ansible/secrets/webpassword` as root:root0600 under root0700 parents.
+
+The native module uses system Nettle's BALLOON-SHA256 primitive and FTL's exact
+salt/cost/PHC format, installing only the hash in `webserver.api.pwhash`. It does
+not call `pihole setpassword` or the FTL password setter, both of which can expose
+plaintext through argv. Matching hashes are reused. The first installation proves
+authentication using a private loopback API request and closes the session before
+claiming ownership. Controller unit tests validate ABI/encoding/idempotence using
+a mocked primitive; the real Linux library/FTL compatibility is verified by that
+first-install API check, not by the controller tests.
+
+Ansible atomically merges its explicit TOML keys while preserving unrelated
+UI-owned settings and gravity/policy databases. Changed settings stop FTL first
+to avoid concurrent UI writes, replace and fsync the config, and restart; identical
+settings/password/service content do not restart. A concurrent managed-key change
+after a no-op preview is refused without writing to the running service. DNS listens only on the selected
+IPv4 and loopback, with mode `NONE` plus explicit dnsmasq bindings. DHCP/NTP,
+reverse forwarding, extra dnsmasq snippets and advanced web overrides are disabled.
+The password-protected web server binds to the selected LAN IPv4 and loopback,
+using port **80** by default. Open `http://CHOSEN_PRIVATE_IP/admin/` from a LAN
+computer. Its access-control list allows only loopback and `pihole_trusted_cidr`;
+it does not bind wildcard or IPv6 addresses. Do not forward this port from the
+internet. HTTP is unencrypted; use an SSH tunnel on untrusted networks:
 
 ```sh
-(umask 077; mkdir -p secrets)
-chmod 700 secrets
-# Export securely to secrets/dns-candidate-password, then:
-chmod 600 secrets/dns-candidate-password
+ssh -N -L 127.0.0.1:18080:127.0.0.1:80 root@CHOSEN_PRIVATE_IP
+# Open http://127.0.0.1:18080/admin/ on the controller running this tunnel.
 ```
 
-Set `pihole_password_source` to that file's absolute path. Do not add this file,
-private inventories, Teleporter exports, or backups to Git. The subtree's
-`.gitignore` excludes `secrets/`, `inventory.local.yml`, and local tooling.
-Controller source must be a regular non-symlink file with mode 0400 or 0600.
-Ansible copies it root-owned **0600** to
-`/opt/pihole-ansible/secrets/webpassword`; Compose mounts the file read-only at
-`/run/secrets/pihole_password`. Set `WEBPASSWORD_FILE: pihole_password` to the
-**secret basename**, not an absolute path: the pinned official image prepends
-`/run/secrets/` itself. An absolute value would point at the wrong location.
-No password is templated into Compose, CLI arguments, environment values, or
-metadata. All secret tasks and Compose execution use `no_log: true`, `diff: false`.
-Do not enable secret-revealing custom callbacks/transport debug. Root/controller
-administrators necessarily retain access to the plaintext runtime file.
+Existing managed installations reject port changes until separately reviewed
+maintenance is performed; changing the default does not authorize adoption.
 
-## Explicit one-host workflow
+The service drop-in retains only DNS-required ambient capabilities compatible
+with an unprivileged LXC. It does not relax host security or enable nesting. Real
+LXC/systemd startup must still pass runtime verification on the selected template.
 
-Every play requires **exactly one selected inventory alias** and the matching
-`pihole_target` argument. `serial: 1` plus `any_errors_fatal: true` also prevents a
-failure from progressing to a peer. The guard runs before remote fact gathering.
-Use the inventory alias, not a guessed IP; choose a fresh candidate, not the
-existing primary. These commands are examples to run only after preflight review:
+Ownership `/opt/pihole-ansible/ownership.json` is written root0600 only after
+successful runtime/DNS/private-auth verification. Partial installation leaves
+residue and no ownership marker; error handling attempts to stop and disable the
+new service. An interrupted/unreachable run cannot guarantee cleanup. Subsequent
+runs refuse that residue: inspect the candidate via its trusted console and
+recreate/recover it deliberately. Never manufacture a marker or delete individual
+files merely to bypass the gate. Managed failures preserve the existing marker
+and require investigation; no automatic rollback or implicit adoption is claimed.
+
+## Live validation status — 2026-11-07
+
+CT190 on Debian 13.6 passed readiness, raw bootstrap and native installation with
+nesting disabled. The FTL service, exact bindings/configuration and gravity build
+passed; the Linux Nettle password hash was independently verified by successful
+API login/logout. Guest UDP DNS, controller TCP DNS and the tunneled admin login
+page also passed manual checks.
+
+The full configure play failed its controller UDP local-record assertion. The
+controller still received external UDP DNS answers while the candidate's FTL was
+stopped, demonstrating interception rather than a valid candidate response. Do
+not weaken or skip that check: pause/reconfigure the controller's DNS-intercepting
+software or use an unaffected controller before a fresh deployment. No completed
+ownership marker or successful day-2 run is claimed. FTL was manually started for
+diagnosis/admin access; guest and FTL autostart were left disabled throughout the
+test. Production peers and router DNS were not modified.
+
+Following explicit approval, the candidate's admin interface was changed to port
+80 on its LAN IPv4 and loopback, with a trusted-LAN ACL. Direct controller HTTP
+access passed. This supersedes the initial loopback-only web configuration; a
+successful HTTP login page does not establish DNS readiness.
+
+At the operator's request, Terraform subsequently destroyed CT190 and its dedicated
+Debian template on the same date. The separate servers state is empty; the existing
+Pi-hole and all other guests were preserved. The candidate admin endpoint and SSH
+tunnel are no longer available. These results describe the historical test, not a
+currently deployed service or successful end-to-end configuration.
+
+## Offline validation and upstream references
 
 ```sh
-.venv/bin/ansible-playbook -i inventory.local.yml playbooks/inspect.yml \
-  --limit dns_candidate -e pihole_target=dns_candidate --ask-become-pass
-.venv/bin/ansible-playbook -i inventory.local.yml playbooks/configure.yml \
-  --limit dns_candidate -e pihole_target=dns_candidate --check --diff --ask-become-pass
-.venv/bin/ansible-playbook -i inventory.local.yml playbooks/configure.yml \
-  --limit dns_candidate -e pihole_target=dns_candidate --ask-become-pass
-.venv/bin/ansible-playbook -i inventory.local.yml playbooks/verify.yml \
-  --limit dns_candidate -e pihole_target=dns_candidate --ask-become-pass
+ansible/.venv/bin/python -m unittest discover -s ansible/tests -v
+(cd ansible && .venv/bin/ansible-playbook -i localhost, tests/render.yml)
+(cd ansible && .venv/bin/ansible-playbook -i inventory.example.yml playbooks/configure.yml --syntax-check)
+bash -n ansible/files/install-native.sh
 ```
 
-- **Inspect** reads host/Docker state, metadata, native-path/service presence,
-  filesystem, and listeners; reports sanitized image IDs/health/mounts/ports, never
-  Docker environment or secret content. Requires Docker prerequisites but no image
-  variable or password. Nothing is installed or reconciled.
-- **Configure --check** runs read-only validation/probes and renders non-secret
-  Compose in memory. It does not read the password, create target paths, pull an
-  image, or run Compose. It deliberately does not predict container convergence;
-  missing first-host directories cannot trigger mutation in check mode.
-- **Configure** refuses native Pi-hole, existing unmanaged/partial data, symlinks,
-  shared storage, competing Docker projects, foreign Pi-hole containers, and
-  occupied DNS/UI ports. Existing ownership requires metadata **and** actual
-  Compose labels, image ID/digest, local bind mounts, and precise published ports.
-  A container merely named `pihole` is never adopted. Host-port validation is
-  conservative: other bindings on these port numbers are rejected even when an
-  address-specific combination might work. Existing Docker proxy listeners must
-  match this managed container; no host service is stopped to free a port.
-- **Verify** waits indirectly through Compose's health wait during configure;
-  standalone verify reads current health. It requires a running, healthy,
-  provenance-matched image, and issues real A queries **from the controller** to
-  the explicit LAN IP over both UDP/TCP. External resolution and a Git-owned local
-  A record must succeed. Optional `pihole_verify_blocked_name` must return NXDOMAIN
-  or `0.0.0.0` (other blocking modes require a future probe extension). It does not
-  modify gravity lists. Verify also queries in `--check`: DNS queries are read-only.
+- [Pinned official installer](https://github.com/pi-hole/pi-hole/blob/f503a65d3a07cb71fd931389f1d3babf718249aa/automated%20install/basic-install.sh)
+- [Native FTL configuration](https://docs.pi-hole.net/ftldns/configfile/)
+- [FTL v6.8 password implementation](https://github.com/pi-hole/FTL/blob/v6.8/src/api/password.c)
+- [Nettle BALLOON interface](https://www.lysator.liu.se/~nisse/nettle/nettle.html#Key-derivation-functions)
+- [Native API authentication](https://docs.pi-hole.net/api/auth/)
 
-The management UI publishes only **127.0.0.1:8080** by default (configurable high
-port). Use a tunnel, with the actual candidate's SSH address:
-
-```sh
-ssh -N -L 8080:127.0.0.1:8080 operator@YOUR_CANDIDATE_IP
-# Open http://127.0.0.1:8080/admin/ locally.
-```
-
-No public HTTPS/Cloudflare ingress, DHCP, or NTP capability is configured.
-`FTLCONF_dns_listeningMode=ALL` is necessary inside the Docker bridge; host
-publishing/firewall controls the permitted client network. DHCP and IPv4/IPv6 NTP
-servers are explicitly disabled. Environment-owned FTL settings (upstreams,
-local hosts/CNAMEs) are Git's authority and must not also be written via TOML,
-dnsmasq files, APIs, or policy synchronization. Empty arrays serialize as explicit
-empty strings to clear those settings, never YAML null. UI-owned gravity policy
-is deliberately separate.
-
-## Safe day-2 boundary
-
-**Image changes are always blocked on an existing managed deployment.** There is
-no `force`/upgrade override. Config-only convergence uses the same immutable image
-and `pull: missing`, not an implicit tag update. Do not edit/delete metadata to
-bypass the gate. Published DNS/UI binding changes are similarly blocked.
-
-Every repeat configure (even a no-op/check run) requires current operator evidence:
-
-1. Take a private pre-change Teleporter export and a consistent recoverable state
-   backup; validate restoration separately. A copy of live SQLite files is not a
-   validated backup. Retain the exact image alongside compatible state.
-2. Query the healthy peer over UDP/TCP for external/local/blocked records, and
-   prove management access/emergency DNS does not depend on the node being changed.
-3. Record non-secret dated evidence and set `pihole_backup_validated: true`,
-   `pihole_peer_health_validated: true`, and `pihole_maintenance_evidence` for this
-   invocation via a private `-e @maintenance.yml` file. Both flags default false.
-   These are **human attestations**, not automated backup validation. Do not store
-   permanently true flags in inventory. Rotate the password only within this gate;
-   a changed secret deliberately recreates the container so Docker rereads it.
-
-Compose recreation can interrupt this node. A second same-host VM gives only
-maintenance redundancy, not Proxmox-host HA. If first creation fails after paths
-are created, the next run fails closed rather than adopting partial state. Preserve
-and inspect that state manually; no automated cleanup, data deletion, or rollback
-is included. Verification failure also stops without blind rollback. Re-running
-healthy unchanged desired state with valid attestations should yield no changes;
-**runtime idempotence has not yet been demonstrated on a disposable daemon**.
-
-Deferred: native/LXC migration and `.20` cutover,
-router DHCP/IPv6 changes, peer installation/cutover, selective Nebula Sync,
-backup scheduling/encryption/export automation, tested image+state upgrades and
-rollback, offline image archives, OS/Docker maintenance, CNAME/AAAA/PTR and client
-failover coverage, and independent-host disaster recovery. Nothing here claims
-that issue #134 or its production acceptance criteria are complete.
-
-## Offline validation
-
-No test below contacts the example/production IPs or any Docker daemon:
-
-```sh
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/ansible-playbook -i localhost, tests/render.yml
-for playbook in inspect configure verify ready prepare; do
-  .venv/bin/ansible-playbook --syntax-check "playbooks/$playbook.yml" || exit 1
-done
-```
-
-Unit tests cover dangerous inputs, empty inventory, native/unmanaged/shared-state
-refusal, metadata versus actual-state drift, image-update and maintenance gates,
-secret logging constraints, and mocked UDP/TCP success/failure. Every dynamic
-Compose field escapes `$` as `$$` before YAML quoting; validation also rejects
-interpolation syntax in deployment settings. Password file bytes never pass through
-Compose interpolation. When Docker CLI with its Compose plugin is available, the
-unit suite additionally runs **daemon-free** `docker compose config` over stdin
-with a synthetic interpolation fixture and no `.env` file; otherwise that check is
-explicitly skipped. The controller-only Ansible play checks real filter integration,
-string/list serialization, and dollar escaping without writing a Compose file.
-Syntax checks load the pinned collection. A future isolated
-runtime test must demonstrate first creation, second-run idempotence, password
-rotation, actual v6 health, firewall reachability, and restart from cached image
-before production use.
+Offline checks do not replace a disposable fresh-LXC live test and a second
+attested no-op run. Do not cut over production clients based on a render alone.

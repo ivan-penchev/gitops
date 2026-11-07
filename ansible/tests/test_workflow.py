@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import yaml
+
 spec = importlib.util.spec_from_file_location("pihole_workflow", Path(__file__).resolve().parents[1] / "pihole.py")
 workflow = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(workflow)
@@ -15,7 +17,7 @@ spec.loader.exec_module(workflow)
 
 def inventory():
     return {"all": {"children": {"pihole": {"hosts": {"dns_candidate": {
-        "ansible_host": "10.77.0.10", "ansible_user": "operator",
+        "ansible_host": "10.77.0.10", "ansible_user": "root",
         "pihole_dns_bind": "10.77.0.10", "pihole_trusted_cidr": "10.77.0.0/24",
         "pihole_provisioned_by": "terraform/servers",
     }}}}}}
@@ -23,13 +25,13 @@ def inventory():
 
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(dir=workflow.ANSIBLE)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / ".venv/bin").mkdir(parents=True)
         (self.root / ".venv/bin/ansible-playbook").touch()
         self.settings = self.root / "settings.json"
-        self.settings.write_text(json.dumps({"pihole_image": "test-pin"}))
+        self.settings.write_text(json.dumps({"pihole_ftl_version": "v6.8"}))
         self.password = self.root / "password"
         self.password.write_text("never-in-terraform-or-arguments\n")
         self.password.chmod(0o600)
@@ -73,7 +75,8 @@ class WorkflowTests(unittest.TestCase):
         self.invoke("configure", "--password-file", str(self.password))
         self.assertEqual(self.calls[0][2:], ["output", "-json", "ansible_inventory"])
         self.assertFalse(any("apply" in args or "playbooks/prepare.yml" in args for args in self.calls))
-        self.assertIn("ansible_ssh_common_args=-o StrictHostKeyChecking=yes", self.calls[-1])
+        ssh_options = next(json.loads(arg) for arg in self.calls[-1] if arg.startswith('{'))
+        self.assertEqual(ssh_options, {"ansible_ssh_common_args": "-o StrictHostKeyChecking=yes"})
         self.assertIn("@" + str(self.root / "group_vars/pihole.yml"), self.calls[-1])
 
     def test_check_does_not_need_password_or_bootstrap(self):
@@ -98,6 +101,23 @@ class WorkflowTests(unittest.TestCase):
                     self.invoke("apply", "--password-file", str(self.password))
                 self.assertIn(failure, self.calls[-1])
                 self.assertFalse(list(self.root.glob(".pihole-run-*")))
+
+    def test_missing_or_null_inventory_never_starts_ansible(self):
+        for value in (None, {}, []):
+            with self.subTest(inventory=value):
+                self.calls.clear()
+                self.inv = value
+                with self.assertRaises(ValueError):
+                    self.invoke("check")
+                self.assertEqual(len(self.calls), 1)
+                self.assertEqual(self.calls[0][2:], ["output", "-json", "ansible_inventory"])
+                self.assertFalse(list(self.root.glob(".pihole-run-*")))
+        self.calls.clear()
+        self.fail = "output"
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.invoke("check")
+        self.assertEqual(len(self.calls), 1)
+        self.assertFalse(list(self.root.glob(".pihole-run-*")))
 
     def test_reject_inventory_before_ssh(self):
         self.inv["all"]["children"]["pihole"]["hosts"]["dns_candidate"]["ansible_host"] = "192.168.68.20"
@@ -154,7 +174,7 @@ class InventoryContractTests(unittest.TestCase):
         changes = [
             {"ansible_host": "192.168.68.20", "pihole_dns_bind": "192.168.68.20", "pihole_trusted_cidr": "192.168.68.0/24"},
             {"ansible_host": "192.0.2.10", "pihole_dns_bind": "192.0.2.10", "pihole_trusted_cidr": "192.0.2.0/24"},
-            {"ansible_user": "root"}, {"pihole_provisioned_by": "terraform/cluster"},
+            {"ansible_user": "operator"}, {"pihole_provisioned_by": "terraform/cluster"},
             {"ansible_host": "10.77.0.0", "pihole_dns_bind": "10.77.0.0"},
             {"ansible_connection": "local"}, {"pihole_dns_bind": "10.77.0.11"},
         ]
@@ -176,6 +196,49 @@ class InventoryContractTests(unittest.TestCase):
             workflow.run(["ansible-playbook", "play.yml"])
         self.assertEqual(execute.call_args.kwargs["env"]["ANSIBLE_HOST_KEY_CHECKING"], "True")
         self.assertEqual(execute.call_args.kwargs["env"]["ANSIBLE_CONFIG"], str(workflow.ANSIBLE / "ansible.cfg"))
+
+
+class GuestBootstrapTests(unittest.TestCase):
+    def setUp(self):
+        path = Path(__file__).resolve().parents[1] / "playbooks/prepare.yml"
+        self.play = yaml.safe_load(path.read_text())[0]
+        self.tasks = self.play["tasks"]
+
+    def test_raw_bootstrap_precedes_guest_python_modules(self):
+        raw = [(i, task) for i, task in enumerate(self.tasks) if "ansible.builtin.raw" in task]
+        self.assertEqual(len(raw), 2)
+        self.assertIn("/proc/self/uid_map", raw[0][1]["ansible.builtin.raw"])
+        self.assertIn("python3-apt", raw[1][1]["ansible.builtin.raw"])
+        facts = next(i for i, task in enumerate(self.tasks) if task.get("ansible.builtin.import_tasks") == "tasks/target.yml")
+        self.assertLess(raw[1][0], facts)
+        self.assertEqual(raw[1][1]["when"], "not ansible_check_mode")
+        self.assertFalse(self.play["become"])
+
+    def test_native_and_container_state_refused_before_bootstrap(self):
+        raw = [task["ansible.builtin.raw"] for task in self.tasks if "ansible.builtin.raw" in task]
+        for path in ("/etc/pihole", "/opt/pihole-ansible", "/var/lib/docker", "/etc/.pihole"):
+            self.assertIn(path, raw[0])
+        self.assertNotIn("apt-get", raw[0])
+        self.assertIn("apt-get install", raw[1])
+        self.assertNotIn("cloud-init", str(self.tasks))
+
+    def test_bootstrap_does_not_upgrade_the_distribution(self):
+        self.assertNotIn("apt-get upgrade", str(self.tasks))
+        self.assertNotIn("dist-upgrade", str(self.tasks))
+        self.assertNotIn("docker.io", str(self.tasks))
+
+    def test_virtualization_facts_use_supported_subset(self):
+        tasks = yaml.safe_load((workflow.ANSIBLE / "playbooks/tasks/target.yml").read_text())
+        setup = next(task["ansible.builtin.setup"] for task in tasks if "ansible.builtin.setup" in task)
+        self.assertEqual(setup["gather_subset"], ["!all", "min", "virtual"])
+
+    def test_ready_requires_no_guest_python(self):
+        ready = yaml.safe_load((workflow.ANSIBLE / "playbooks/ready.yml").read_text())[0]
+        self.assertFalse(ready["gather_facts"])
+        self.assertNotIn("wait_for_connection", str(ready))
+        for task in ready["tasks"]:
+            if "ansible.builtin.wait_for" in task:
+                self.assertEqual(task["delegate_to"], "localhost")
 
 
 if __name__ == "__main__":

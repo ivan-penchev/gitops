@@ -1,24 +1,16 @@
 ---
-- name: Require explicit single inventory host before gathering facts or remote commands
-  ansible.builtin.assert:
-    that:
-      - pihole_target is defined
-      - pihole_target is string
-      - inventory_hostname == pihole_target
-      - inventory_hostname in groups['pihole']
-      - ansible_play_hosts_all | length == 1
-    fail_msg: Use --limit ONE_ALIAS -e pihole_target=ONE_ALIAS; no fleet operations.
-
-- name: Read minimal Debian and virtualization facts
+- ansible.builtin.import_tasks: identity.yml
+- name: Read minimal Debian and virtualization facts after readiness/bootstrap
   ansible.builtin.setup:
-    gather_subset:
-      - '!all'
-      - min
-      - virtualization
-
-- name: Require a dedicated Debian VM or physical machine, not a container
+    gather_subset: ['!all', min, virtual]
+- name: Require dedicated Debian 13 amd64 LXC
   ansible.builtin.assert:
     that:
       - ansible_facts.distribution == 'Debian'
-      - ansible_facts.distribution_major_version | int >= 12
-      - ansible_facts.virtualization_type not in ['lxc', 'docker', 'container', 'podman', 'openvz', 'systemd-nspawn']
+      - ansible_facts.distribution_major_version == '13'
+      - ansible_facts.architecture == 'x86_64'
+      - ansible_facts.virtualization_type == 'lxc'
+- name: Verify the guest root is mapped to an unprivileged host UID
+  ansible.builtin.command: /usr/bin/awk '$1 == 0 && $2 > 0 { ok=1 } END { exit !ok }' /proc/self/uid_map
+  changed_when: false
+  check_mode: false

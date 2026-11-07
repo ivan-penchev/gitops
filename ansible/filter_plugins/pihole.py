@@ -5,9 +5,8 @@ import re
 from ansible.errors import AnsibleFilterError
 
 ROOT = "/opt/pihole-ansible"
-OWNER = "gitops-ansible-pihole-v1"
-PROJECT = "gitops-pihole"
-IMAGE = re.compile(r"^pihole/pihole:20\d{2}\.\d{1,2}\.\d+(?:-\d+)?@sha256:[0-9a-f]{64}$")
+OWNER = "gitops-ansible-pihole-native-v1"
+PINS = ('core_version', 'core_commit', 'installer_sha256', 'web_version', 'web_commit', 'ftl_version', 'ftl_sha256')
 NAME = re.compile(r"^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$")
 
 
@@ -30,7 +29,7 @@ def name(value):
                 for label in value.split('.')), "Invalid DNS label")
 
 
-def validate(values, image_required=True):
+def validate(values, pins_required=True):
     def value(key):
         require(key in values, f"Missing required variable: {key}")
         return values[key]
@@ -54,7 +53,7 @@ def validate(values, image_required=True):
                 not ipv4(upstream).is_reserved and ipv4(upstream) not in peer_ips for upstream in upstreams),
             "This slice requires independent public IPv4 upstreams; never forward to a Pi-hole peer")
     port = value("pihole_ui_port")
-    require(isinstance(port, int) and not isinstance(port, bool) and 1024 <= port <= 65535 and port != 53, "UI port must be an integer in 1024..65535")
+    require(isinstance(port, int) and not isinstance(port, bool) and (port == 80 or 1024 <= port <= 65535), "UI port must be 80 or an integer in 1024..65535")
     timezone = value("pihole_timezone")
     require(isinstance(timezone, str) and re.fullmatch(r"[A-Za-z_+-]+(?:/[A-Za-z0-9_+-]+)+", timezone), "Supply an IANA timezone, e.g. Etc/UTC")
     hosts = value("pihole_local_hosts")
@@ -78,68 +77,58 @@ def validate(values, image_required=True):
                 for record in hosts), "Verification record must exist in Git-owned local hosts")
     if value("pihole_verify_blocked_name"):
         name(values["pihole_verify_blocked_name"])
-    if image_required:
-        require(isinstance(value("pihole_image"), str) and IMAGE.fullmatch(values["pihole_image"]),
-                "Supply an official Pi-hole date tag plus immutable sha256 digest; latest is forbidden")
-        release = values["pihole_image"].split(':', 1)[1].split('@', 1)[0].split('.')
-        year, month = int(release[0]), int(release[1])
-        require(1 <= month <= 12 and (year, month) >= (2025, 2), "Pin a reviewed v6-era release, not a pre-v6 or malformed date tag")
+    require(isinstance(value("pihole_interface"), str) and
+            re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,14}", values["pihole_interface"]), "Invalid dedicated interface")
+    if pins_required:
+        for pin in PINS:
+            pattern = r"v6\.\d+(?:\.\d+)?" if pin.endswith("version") else (r"[0-9a-f]{40}" if pin.endswith("commit") else r"[0-9a-f]{64}")
+            require(isinstance(value("pihole_" + pin), str) and re.fullmatch(pattern, values["pihole_" + pin]),
+                    "Supply explicit reviewed native release pin: " + pin)
     return True
 
 
 def preflight(snapshot, values):
-    """Never adopt existing state based only on a name or a marker."""
-    require(not snapshot["native_paths"], "Native Pi-hole paths exist; migration is outside this slice")
-    require(not snapshot["native_service"], "Native pihole-FTL service exists")
-    require(snapshot["filesystem"] in ("ext4", "xfs", "btrfs", "zfs", "f2fs"), "Data must be on an approved local filesystem, not shared/NFS/overlay storage")
+    """A marker is necessary but never sufficient evidence of ownership."""
+    require(snapshot["filesystem"] in ("ext4", "xfs", "btrfs", "zfs", "f2fs"), "Require local storage")
     require(not snapshot["symlinks"], "Managed paths must not be symlinks")
-    require(values["pihole_dns_bind"] in snapshot["host_ipv4"], "DNS bind is not assigned to this host")
-    require(not snapshot["rootless"], "A conventional rootful Docker Engine is required")
-    containers = snapshot["containers"]
-    own = [c for c in containers if c["labels"].get("io.gitops.owner") == OWNER]
-    foreign = [c for c in containers if c not in own]
-    for container in foreign:
-        require(not (re.match(r"^(?:(?:index\.)?docker\.io/)?pihole/pihole(?::|@|$)", container["image"]) or
-                     container["name"] == "pihole" or
-                     container["labels"].get("com.docker.compose.project") == PROJECT or
-                     any(mount["source"].startswith(ROOT) or mount["destination"] == "/etc/pihole"
-                         for mount in container["mounts"])), "Unmanaged Pi-hole deployment or conflicting project/storage exists")
-        require(not any(int(port) in (53, values["pihole_ui_port"]) for port in container["host_ports"]),
-                "Another container publishes DNS/UI ports")
+    require(snapshot["interface_ipv4"] == [values["pihole_dns_bind"]], "Dedicated interface must carry exactly the chosen IPv4")
+    require(not snapshot["docker_present"], "Docker/Podman deployment is outside native ownership")
+    require(not snapshot["unsafe_services"], "Conflicting resolver/web service exists; manual recovery required")
     marker = snapshot["marker"]
     if marker is None:
-        require(not snapshot["root_exists"] and not own, "Unmanaged or interrupted deployment exists; manual recovery required")
-        require(not snapshot["listeners"], "DNS/UI host port is occupied")
+        require(not snapshot["root_exists"] and not snapshot["native_paths"] and not snapshot["native_service"] and not snapshot["native_user"],
+                "Existing or interrupted deployment: do not adopt; manual recovery required")
+        require(not snapshot["listeners"], "DNS/UI/DHCP/NTP host port occupied")
         return True
-    require(snapshot["data_exists"] and snapshot["compose_exists"], "Managed data or Compose file is missing; manual recovery required")
-    require(snapshot["marker_secure"], "Deployment metadata must be root-owned and not writable by others")
-    require(marker.get("owner") == OWNER, "Invalid deployment provenance")
-    require(marker.get("image") == values["pihole_image"], "Image changes are blocked: tested backup/upgrade/rollback procedure is not implemented")
-    require(marker.get("dns_bind") == values["pihole_dns_bind"] and marker.get("ui_port") == values["pihole_ui_port"],
-            "Changing published bindings requires a separate maintenance procedure")
-    require(len(own) == 1, "Expected exactly one provenance-matched container; missing/duplicate state requires recovery")
-    container = own[0]
-    labels = container["labels"]
-    require(labels.get("com.docker.compose.project") == PROJECT and labels.get("com.docker.compose.service") == "pihole" and
-            labels.get("com.docker.compose.project.working_dir") == ROOT, "Container Compose provenance does not match")
-    require(container["image"] == marker["image"] and container["image_id"] == snapshot["pinned_image_id"],
-            "Actual running image does not match the pinned deployment")
-    require({"source": ROOT + "/data", "destination": "/etc/pihole", "type": "bind", "rw": True} in container["mounts"],
-            "Persistent data mount differs from managed local storage")
-    require({"source": ROOT + "/secrets/webpassword", "destination": "/run/secrets/pihole_password", "type": "bind", "rw": False} in container["mounts"],
-            "Password must be a read-only file-backed secret")
-    expected = {"53/tcp": [{"HostIp": values["pihole_dns_bind"], "HostPort": "53"}],
-                "53/udp": [{"HostIp": values["pihole_dns_bind"], "HostPort": "53"}],
-                "80/tcp": [{"HostIp": "127.0.0.1", "HostPort": str(values["pihole_ui_port"])}]}
-    require(container["bindings"] == expected, "Actual container bindings drifted; refusing to take over")
-    require(all(listener["owned"] for listener in snapshot["listeners"]), "Host port listener is not the managed Docker proxy")
+    require(snapshot["marker_secure"] and marker.get("owner") == OWNER, "Invalid native ownership metadata")
+    require(all(marker.get(pin) == values["pihole_" + pin] for pin in PINS), "Release changes are blocked; explicit upgrade procedure required")
+    require(all(marker.get(key) == values["pihole_" + key] for key in ("dns_bind", "ui_port", "interface")), "Binding changes require separate maintenance")
+    require(snapshot["config_exists"] and snapshot["native_service"] and snapshot["service_active"], "Missing native runtime: manual recovery required")
+    require(snapshot["core_commit"] == marker["core_commit"] and snapshot["web_commit"] == marker["web_commit"] and
+            snapshot["ftl_sha256"] == marker["ftl_sha256"] and snapshot["ftl_version"] == marker["ftl_version"], "Installed release drift")
+    require(snapshot["service_sha256"] == marker.get("service_sha256") and snapshot["repos_clean"], "Installed source/service drift")
+    require(all(listener["owned"] for listener in snapshot["listeners"]), "Foreign DNS/UI listener")
     require(values.get("pihole_backup_validated") is True and values.get("pihole_peer_health_validated") is True,
-            "Reconfiguration requires manually validated recoverable backup and healthy peer")
+            "Reconfiguration requires validated recoverable backup and healthy peer")
     evidence = values.get("pihole_maintenance_evidence", "")
-    require(isinstance(evidence, str) and len(evidence.strip()) >= 16, "Record current backup/restore and peer-health evidence (no secrets)")
+    require(isinstance(evidence, str) and len(evidence.strip()) >= 16, "Record current backup/restore and peer-health evidence")
     return True
+
+
+def native_config(values):
+    return {
+        "dns.upstreams": values["pihole_upstreams"], "dns.hosts": values["pihole_local_hosts"],
+        "dns.cnameRecords": values["pihole_local_cnames"], "dns.interface": values["pihole_interface"],
+        "dns.listeningMode": "NONE", "dns.port": 53, "dns.revServers": [], "dhcp.active": False,
+        "webserver.advancedOpts": [],
+        "ntp.ipv4.active": False, "ntp.ipv6.active": False, "ntp.sync.active": False,
+        "webserver.port": "127.0.0.1:" + str(values["pihole_ui_port"]) + "," + values["pihole_dns_bind"] + ":" + str(values["pihole_ui_port"]),
+        "webserver.acl": "+127.0.0.1,+" + values["pihole_trusted_cidr"],
+        "misc.etc_dnsmasq_d": False, "files.gravity_tmp": "/etc/pihole/gravity-work",
+        "misc.dnsmasq_lines": ["bind-interfaces", "listen-address=" + values["pihole_dns_bind"] + ",127.0.0.1"],
+    }
 
 
 class FilterModule:
     def filters(self):
-        return {"pihole_validate": validate, "pihole_preflight": preflight}
+        return {"pihole_validate": validate, "pihole_preflight": preflight, "pihole_native_config": native_config}
