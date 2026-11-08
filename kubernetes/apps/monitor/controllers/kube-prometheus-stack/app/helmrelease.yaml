@@ -44,12 +44,21 @@ spec:
     kubeProxy:
       enabled: false
 
-    # ---- Alerting: default rules evaluate, but no external receiver yet ----
+    # ---- Alerting: default rules + SOPS-backed Telegram receiver ----
     defaultRules:
       create: true
 
     alertmanager:
       alertmanagerSpec:
+        alertmanagerConfigSelector:
+          matchLabels:
+            alertmanager: homelab
+        alertmanagerConfigNamespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring
+        # The trusted monitoring config routes node and workload alerts cluster-wide.
+        alertmanagerConfigMatcherStrategy:
+          type: None
         retention: 120h
         resources:
           requests:

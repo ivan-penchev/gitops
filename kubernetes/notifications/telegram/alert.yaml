@@ -1,0 +1,108 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: telegram-errors
+  namespace: flux-system
+spec:
+  providerRef:
+    name: telegram
+  eventSeverity: error
+  eventMetadata:
+    cluster: homelab
+  eventSources:
+  - kind: FluxInstance
+    name: '*'
+    namespace: flux-system
+  - kind: GitRepository
+    name: '*'
+    namespace: flux-system
+  - kind: HelmChart
+    name: '*'
+    namespace: arc-runners
+  - kind: HelmChart
+    name: '*'
+    namespace: arc-systems
+  - kind: HelmChart
+    name: '*'
+    namespace: cert-manager
+  - kind: HelmChart
+    name: '*'
+    namespace: external-dns
+  - kind: HelmChart
+    name: '*'
+    namespace: flux-system
+  - kind: HelmChart
+    name: '*'
+    namespace: homepage
+  - kind: HelmChart
+    name: '*'
+    namespace: kube-system
+  - kind: HelmChart
+    name: '*'
+    namespace: monitoring
+  - kind: HelmChart
+    name: '*'
+    namespace: traefik
+  - kind: HelmRelease
+    name: '*'
+    namespace: arc-runners
+  - kind: HelmRelease
+    name: '*'
+    namespace: arc-systems
+  - kind: HelmRelease
+    name: '*'
+    namespace: cert-manager
+  - kind: HelmRelease
+    name: '*'
+    namespace: external-dns
+  - kind: HelmRelease
+    name: '*'
+    namespace: flux-system
+  - kind: HelmRelease
+    name: '*'
+    namespace: homepage
+  - kind: HelmRelease
+    name: '*'
+    namespace: kube-system
+  - kind: HelmRelease
+    name: '*'
+    namespace: monitoring
+  - kind: HelmRelease
+    name: '*'
+    namespace: traefik
+  - kind: HelmRepository
+    name: '*'
+    namespace: cert-manager
+  - kind: HelmRepository
+    name: '*'
+    namespace: external-dns
+  - kind: HelmRepository
+    name: '*'
+    namespace: kube-system
+  - kind: HelmRepository
+    name: '*'
+    namespace: monitoring
+  - kind: HelmRepository
+    name: '*'
+    namespace: traefik
+  - kind: Kustomization
+    name: '*'
+    namespace: flux-system
+  - kind: OCIRepository
+    name: '*'
+    namespace: arc-runners
+  - kind: OCIRepository
+    name: '*'
+    namespace: arc-systems
+  - kind: OCIRepository
+    name: '*'
+    namespace: flux-system
+  - kind: OCIRepository
+    name: '*'
+    namespace: homepage
+  - kind: OCIRepository
+    name: '*'
+    namespace: kube-system
+  - kind: OCIRepository
+    name: '*'
+    namespace: monitoring
