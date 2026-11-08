@@ -1,0 +1,41 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: telegram
+  namespace: monitoring
+  labels:
+    alertmanager: homelab
+spec:
+  route:
+    receiver: telegram
+    groupBy: [alertname, namespace]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 12h
+    matchers:
+      - name: severity
+        matchType: '=~'
+        value: warning|critical
+      - name: alertname
+        matchType: '!~'
+        value: Watchdog|InfoInhibitor
+  receivers:
+    - name: telegram
+      telegramConfigs:
+        - apiURL: https://api.telegram.org
+          botToken:
+            name: telegram-bot-token
+            key: token
+          chatID: -1003812945390
+          sendResolved: true
+          parseMode: HTML
+          message: |-
+            <b>homelab · {{ .Status | toUpper }}</b>
+            {{ range .Alerts }}
+            <b>{{ .Labels.alertname | html }}</b> ({{ .Labels.severity | html }})
+            {{ if .Labels.namespace }}Namespace: {{ .Labels.namespace | html }}{{ end }}
+            {{ if .Labels.pod }}Pod: {{ .Labels.pod | html }}{{ end }}
+            {{ if .Labels.instance }}Instance: {{ .Labels.instance | html }}{{ end }}
+            {{ .Annotations.summary | html }}
+            {{ .Annotations.description | html }}
+            {{ end }}
