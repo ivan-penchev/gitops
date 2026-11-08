@@ -183,9 +183,9 @@ Secret holds the break-glass password.
   collected.
 - pve-exporter scrapes the Proxmox host. Set `pve_exporter_proxmox_user` on
   one cluster only, or every cluster scrapes the same host.
-- [Telegram failure notifications](alerting.md) cover Flux errors and the existing
-  warning/critical monitoring alarms, using SOPS-encrypted bot credentials.
-  Whole-site outages still need an independent external monitor.
+- Flux and Alertmanager send [failure notifications to Telegram](alerting.md).
+  SOPS encrypts the bot token in Git. A whole-site outage needs an external monitor
+  because both senders run inside the homelab.
 - The namespace runs Pod Security `privileged` because node-exporter needs
   host access.
 
