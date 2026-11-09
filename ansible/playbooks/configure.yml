@@ -1,0 +1,193 @@
+---
+- name: Configure exactly one dedicated Pi-hole host without implicit native upgrades
+  hosts: pihole
+  gather_facts: false
+  become: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/target.yml
+    - name: Validate explicit non-secret configuration
+      ansible.builtin.assert:
+        that: vars | pihole_validate
+    - ansible.builtin.import_tasks: tasks/probe.yml
+    - name: Refuse takeover, drift, native upgrades, unsafe ports or unvalidated maintenance
+      ansible.builtin.assert:
+        that: pihole_snapshot | pihole_preflight(vars)
+    - name: Record whether this is a fresh installation
+      ansible.builtin.set_fact:
+        pihole_fresh_install: "{{ pihole_snapshot.marker is none }}"
+    - name: Explain read-only check mode
+      ansible.builtin.debug:
+        msg: Check validates identity and ownership only. No passwords, packages, files or services are changed; this is not a runtime test.
+      when: ansible_check_mode
+    - name: Render planned non-secret native settings in memory
+      ansible.builtin.debug:
+        msg: "{{ vars | pihole_native_config }}"
+      when: ansible_check_mode
+    - name: Apply only outside check mode
+      when: not ansible_check_mode
+      block:
+        - name: Require a private controller password source
+          ansible.builtin.assert:
+            that:
+              - pihole_password_source is defined
+              - pihole_password_source is string
+              - pihole_password_source.startswith('/')
+          no_log: true
+          diff: false
+        - name: Inspect controller password permissions without reading it
+          ansible.builtin.stat:
+            path: "{{ pihole_password_source }}"
+            get_checksum: false
+            get_mime: false
+          delegate_to: localhost
+          become: false
+          register: pihole_password_stat
+          no_log: true
+          diff: false
+        - name: Reject absent, empty, symlinked or exposed source files
+          ansible.builtin.assert:
+            that:
+              - pihole_password_stat.stat.exists
+              - pihole_password_stat.stat.isreg
+              - not pihole_password_stat.stat.islnk
+              - pihole_password_stat.stat.mode in ['0400', '0600']
+              - pihole_password_stat.stat.size > 0
+              - pihole_password_stat.stat.size <= 4097
+          no_log: true
+          diff: false
+        - name: Validate password content privately before any target mutation
+          ansible.builtin.assert:
+            that:
+              - pihole_private_password | trim | length > 0
+              - "'\\n' not in pihole_private_password.removesuffix('\\n')"
+              - "'\\r' not in pihole_private_password"
+              - "'\\x00' not in pihole_private_password"
+              - pihole_private_password.removesuffix('\n').encode('utf-8') | length <= 4096
+          vars:
+            pihole_private_password: "{{ lookup('ansible.builtin.file', pihole_password_source, rstrip=false) }}"
+          no_log: true
+          diff: false
+        - name: Create exclusively managed local directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0700'
+          loop:
+            - /opt/pihole-ansible
+            - /opt/pihole-ansible/secrets
+        - ansible.builtin.import_tasks: tasks/install.yml
+          when: pihole_fresh_install
+        - name: Copy password without disclosure
+          ansible.builtin.copy:
+            src: "{{ pihole_password_source }}"
+            dest: /opt/pihole-ansible/secrets/webpassword
+            owner: root
+            group: root
+            mode: '0600'
+          no_log: true
+          diff: false
+          register: pihole_password_copy
+        - name: Converge the DNS-only native service drop-in
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/pihole-FTL.service.d/10-native-lxc.conf
+            owner: root
+            group: root
+            mode: '0644'
+            content: |
+              [Service]
+              AmbientCapabilities=
+              AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_CHOWN
+              Environment=TZ={{ pihole_timezone }}
+          register: pihole_service_config
+        - name: Privately compare Git-owned settings and the native password hash
+          pihole_native_config:
+            settings: "{{ vars | pihole_native_config }}"
+            password_file: /opt/pihole-ansible/secrets/webpassword
+          check_mode: true
+          no_log: true
+          diff: false
+          register: pihole_native_change
+        - name: Stop FTL only for a real change, preventing concurrent UI writes during atomic merge
+          ansible.builtin.systemd_service:
+            name: pihole-FTL
+            state: stopped
+          when: pihole_native_change.changed or pihole_service_config.changed
+        - name: Atomically merge native settings while preserving UI-owned configuration and databases
+          pihole_native_config:
+            settings: "{{ vars | pihole_native_config }}"
+            password_file: /opt/pihole-ansible/secrets/webpassword
+            write_allowed: "{{ pihole_native_change.changed or pihole_service_config.changed }}"
+          no_log: true
+          diff: false
+        - name: Confirm FTL accepts the native DNS mode using its official configuration CLI
+          ansible.builtin.command:
+            argv: [/usr/bin/pihole-FTL, --config, dns.listeningMode]
+          register: pihole_mode
+          changed_when: false
+          failed_when: pihole_mode.rc != 0 or pihole_mode.stdout | trim != 'NONE'
+        - name: Enable and start the restricted native service
+          ansible.builtin.systemd_service:
+            name: pihole-FTL
+            state: started
+            enabled: true
+            daemon_reload: "{{ pihole_fresh_install or pihole_service_config.changed }}"
+        - name: Initialize native gravity from the official default list only on first installation
+          ansible.builtin.command:
+            argv: [/usr/local/bin/pihole, -g]
+          when: pihole_fresh_install
+          changed_when: true
+        - ansible.builtin.import_tasks: tasks/verify.yml
+        - name: Prove the private native password works on the first installation
+          when: pihole_fresh_install
+          no_log: true
+          diff: false
+          block:
+            - ansible.builtin.slurp:
+                src: /opt/pihole-ansible/secrets/webpassword
+              register: pihole_private_source
+            - ansible.builtin.uri:
+                url: "http://127.0.0.1:{{ pihole_ui_port }}/api/auth"
+                method: POST
+                body_format: json
+                body:
+                  password: "{{ (pihole_private_source.content | b64decode).removesuffix('\\n') }}"
+                status_code: 200
+                use_proxy: false
+              register: pihole_private_login
+            - ansible.builtin.assert:
+                that: pihole_private_login.json.session.valid
+          always:
+            - name: Close the private verification session
+              ansible.builtin.uri:
+                url: "http://127.0.0.1:{{ pihole_ui_port }}/api/auth"
+                method: DELETE
+                headers:
+                  X-FTL-SID: "{{ pihole_private_login.json.session.sid }}"
+                status_code: 204
+                use_proxy: false
+              when: pihole_private_login.json.session.valid | default(false)
+        - name: Record native ownership only after actual service and controller DNS verification
+          ansible.builtin.copy:
+            content: "{{ {'owner': 'gitops-ansible-pihole-native-v1', 'core_version': pihole_core_version, 'core_commit': pihole_core_commit, 'installer_sha256': pihole_installer_sha256, 'web_version': pihole_web_version, 'web_commit': pihole_web_commit, 'ftl_version': pihole_ftl_version, 'ftl_sha256': pihole_ftl_sha256, 'dns_bind': pihole_dns_bind, 'ui_port': pihole_ui_port, 'interface': pihole_interface, 'service_sha256': pihole_snapshot.service_sha256} | to_nice_json }}\n"
+            dest: /opt/pihole-ansible/ownership.json
+            owner: root
+            group: root
+            mode: '0600'
+      rescue:
+        - name: Detect a newly installed service after an incomplete first attempt
+          ansible.builtin.stat:
+            path: /etc/systemd/system/pihole-FTL.service
+          register: pihole_failed_service
+          when: pihole_fresh_install
+        - name: Leave an incomplete fresh install stopped and disabled, never claim ownership
+          ansible.builtin.systemd_service:
+            name: pihole-FTL
+            state: stopped
+            enabled: false
+          when: pihole_fresh_install and pihole_failed_service.stat.exists
+        - ansible.builtin.fail:
+            msg: Configuration or verification failed. First-install residue must be recovered manually; no adoption or automatic retry.

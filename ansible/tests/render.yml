@@ -1,0 +1,26 @@
+---
+- name: Render restricted native settings without contacting a guest
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../group_vars/pihole.yml
+    - ../pihole.settings.example.json
+  vars:
+    pihole_dns_bind: 10.77.0.10
+    pihole_trusted_cidr: 10.77.0.0/24
+    pihole_peer_addresses: [10.77.0.10, 10.77.0.11]
+  tasks:
+    - ansible.builtin.set_fact:
+        pihole_peer_addresses: [10.77.0.10, 10.77.0.11]
+    - ansible.builtin.assert:
+        that:
+          - vars | pihole_validate
+          - (vars | pihole_native_config)['webserver.port'] == '127.0.0.1:80,10.77.0.10:80'
+          - (vars | pihole_native_config)['webserver.acl'] == '+127.0.0.1,+10.77.0.0/24'
+          - (vars | pihole_native_config)['misc.dnsmasq_lines'] == ['bind-interfaces', 'listen-address=10.77.0.10,127.0.0.1']
+          - not (vars | pihole_native_config)['dhcp.active']
+          - not (vars | pihole_native_config)['ntp.sync.active']
+    - name: Render non-secret native managed keys
+      ansible.builtin.debug:
+        msg: "{{ vars | pihole_native_config | to_nice_json }}"

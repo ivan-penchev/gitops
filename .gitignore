@@ -25,6 +25,20 @@ key.txt
 *.env
 !*.sops.env
 
+# ---- Ansible operator-local state ----
+/ansible/inventory.local.yml
+/ansible/inventory.local.yaml
+/ansible/secrets/
+/ansible/.venv/
+/ansible/.ansible/
+/ansible/.cache/
+/ansible/*.retry
+/ansible/.pihole-run-*/
+/ansible/pihole.settings.local.json
+/ansible/maintenance.local.json
+/terraform/servers/*.tfplan
+/terraform/servers/backend.local.hcl
+
 # ---- Terraform ----
 .terraform/
 .terraform.lock.hcl.tmp

@@ -1,0 +1,84 @@
+---
+- name: Install only missing native runtime dependencies, never upgrade the OS
+  ansible.builtin.apt:
+    name:
+      - bash-completion
+      - binutils
+      - ca-certificates
+      - cron
+      - curl
+      - dialog
+      - bind9-dnsutils
+      - dns-root-data
+      - git
+      - iproute2
+      - iputils-ping
+      - jq
+      - libcap2
+      - libcap2-bin
+      - logrotate
+      - lshw
+      - procps
+      - psmisc
+      - sudo
+      - unzip
+      - libnettle8t64
+      - python3-tomlkit
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+- name: Download the immutable official installer with independently reviewed checksum
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/pi-hole/pi-hole/{{ pihole_core_commit }}/automated%20install/basic-install.sh"
+    dest: /opt/pihole-ansible/installer.sh
+    checksum: "sha256:{{ pihole_installer_sha256 }}"
+    owner: root
+    group: root
+    mode: '0600'
+- name: Clone the exact core commit without selecting a mutable branch
+  ansible.builtin.git:
+    repo: https://github.com/pi-hole/pi-hole.git
+    dest: /etc/.pihole
+    version: "{{ pihole_core_commit }}"
+    update: false
+- name: Clone the exact web commit
+  ansible.builtin.git:
+    repo: https://github.com/pi-hole/web.git
+    dest: /var/www/html/admin
+    version: "{{ pihole_web_commit }}"
+    update: false
+- name: Verify reviewed release labels resolve to the specified commits
+  ansible.builtin.command:
+    argv: [git, -C, "{{ item.path }}", rev-parse, "{{ item.version }}^{commit}"]
+  loop:
+    - {path: /etc/.pihole, version: "{{ pihole_core_version }}", commit: "{{ pihole_core_commit }}"}
+    - {path: /var/www/html/admin, version: "{{ pihole_web_version }}", commit: "{{ pihole_web_commit }}"}
+  register: pihole_release_commit
+  changed_when: false
+  failed_when: pihole_release_commit.rc != 0 or pihole_release_commit.stdout != item.commit
+- name: Download exact amd64 FTL release with independent SHA256
+  ansible.builtin.get_url:
+    url: "https://github.com/pi-hole/FTL/releases/download/{{ pihole_ftl_version }}/pihole-FTL-amd64"
+    dest: /usr/bin/pihole-FTL
+    checksum: "sha256:{{ pihole_ftl_sha256 }}"
+    owner: root
+    group: root
+    mode: '0755'
+- name: Execute only reviewed official installation primitives, never installer main
+  ansible.builtin.command:
+    argv: [/bin/bash, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../files/install-native.sh') }}"]
+  changed_when: true
+- name: Create native gravity working directory without shared temporary storage
+  ansible.builtin.file:
+    path: /etc/pihole/gravity-work
+    state: directory
+    owner: pihole
+    group: pihole
+    mode: '0700'
+- name: Create dedicated service drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/pihole-FTL.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'

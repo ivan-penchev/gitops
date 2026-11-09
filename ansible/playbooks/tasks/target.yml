@@ -1,0 +1,16 @@
+---
+- ansible.builtin.import_tasks: identity.yml
+- name: Read minimal Debian and virtualization facts after readiness/bootstrap
+  ansible.builtin.setup:
+    gather_subset: ['!all', min, virtual]
+- name: Require dedicated Debian 13 amd64 LXC
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Debian'
+      - ansible_facts.distribution_major_version == '13'
+      - ansible_facts.architecture == 'x86_64'
+      - ansible_facts.virtualization_type == 'lxc'
+- name: Verify the guest root is mapped to an unprivileged host UID
+  ansible.builtin.command: /usr/bin/awk '$1 == 0 && $2 > 0 { ok=1 } END { exit !ok }' /proc/self/uid_map
+  changed_when: false
+  check_mode: false

@@ -1,0 +1,6 @@
+---
+# Intentionally non-runnable. Use an explicitly selected private inventory.
+all:
+  children:
+    pihole:
+      hosts: {}

@@ -1,0 +1,18 @@
+---
+# Non-secret desired state; host-specific identity and native release pins have no defaults.
+pihole_timezone: Etc/UTC
+pihole_ui_port: 80
+pihole_local_hosts:
+  - "192.0.2.123 recovery-check.home.arpa"
+pihole_local_cnames: []
+pihole_verify_external: example.com
+pihole_verify_local_name: recovery-check.home.arpa
+pihole_verify_local_address: 192.0.2.123
+# Optional; only use a domain deliberately denied in the UI-owned policy.
+pihole_verify_blocked_name: ""
+# Every subsequent configure requires current human evidence, even for no-op runs.
+pihole_backup_validated: false
+pihole_peer_health_validated: false
+pihole_maintenance_evidence: ""
+
+pihole_interface: eth0

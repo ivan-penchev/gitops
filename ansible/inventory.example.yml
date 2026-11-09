@@ -1,0 +1,13 @@
+---
+# Documentation-only TEST-NET identity; runtime guards deliberately reject this.
+# The runner obtains this exact five-field contract from terraform/servers.
+all:
+  children:
+    pihole:
+      hosts:
+        dns_candidate:
+          ansible_host: 192.0.2.10
+          ansible_user: root
+          pihole_dns_bind: 192.0.2.10
+          pihole_trusted_cidr: 192.0.2.0/24
+          pihole_provisioned_by: terraform/servers

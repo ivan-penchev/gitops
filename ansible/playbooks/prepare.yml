@@ -1,0 +1,40 @@
+---
+- name: Bootstrap only missing Python prerequisites on the fresh unprivileged LXC
+  hosts: pihole
+  gather_facts: false
+  become: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/identity.yml
+    - name: Raw fail-closed fresh guest gate before any package mutation
+      ansible.builtin.raw: |
+        set -eu
+        test "$(id -u)" = 0
+        . /etc/os-release
+        test "$ID" = debian && test "$VERSION_ID" = 13
+        test "$(dpkg --print-architecture)" = amd64
+        test "$(systemd-detect-virt --container)" = lxc
+        awk '$1 == 0 && $2 > 0 { ok=1 } END { exit !ok }' /proc/self/uid_map
+        for path in /opt/pihole-ansible /etc/pihole /etc/.pihole /opt/pihole /var/www/html/admin /usr/local/bin/pihole /usr/bin/pihole-FTL /var/lib/docker /var/lib/containers /etc/systemd/system/pihole-FTL.service /etc/systemd/system/pihole-FTL.service.d /etc/init.d/pihole-FTL /etc/bash_completion.d/pihole /etc/bash_completion.d/pihole-FTL /usr/local/bin/pihole-FTL /etc/logrotate.d/pihole /etc/cron.d/pihole /var/lib/pihole /var/log/pihole /etc/dnsmasq.conf /etc/dnsmasq.d; do
+          test ! -e "$path" && test ! -L "$path"
+        done
+        ! getent passwd pihole
+        ! getent group pihole
+      changed_when: false
+      check_mode: false
+    - name: Bootstrap Python and apt bindings using raw SSH only
+      ansible.builtin.raw: |
+        set -eu
+        if /usr/bin/python3 -c 'import apt' >/dev/null 2>&1 && command -v ip >/dev/null && command -v findmnt >/dev/null; then
+          echo prerequisites-present
+        else
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3 python3-apt iproute2 util-linux
+          echo prerequisites-installed
+        fi
+      register: pihole_bootstrap
+      changed_when: "'prerequisites-installed' in pihole_bootstrap.stdout"
+      when: not ansible_check_mode
+    - ansible.builtin.import_tasks: tasks/target.yml
+      when: not ansible_check_mode
