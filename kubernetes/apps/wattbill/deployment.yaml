@@ -68,7 +68,7 @@ spec:
               value: production
             - name: WATTBILL_LOG_FORMAT
               value: json
-            # NetworkPolicy allows ingress-controller Pods to reach this port.
+            # NetworkPolicies allow ingress-controller and Prometheus Pods here.
             # Client-IP integrity still depends on Traefik's trusted
             # proxy configuration; this setting does not validate the headers.
             - name: WATTBILL_TRUST_PROXY

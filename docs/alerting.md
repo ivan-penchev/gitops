@@ -46,6 +46,18 @@ control-plane scrape jobs are disabled, so they provide no scheduler,
 controller-manager or etcd alarms. Proxmox-exporter collects metrics, but this
 configuration adds no Proxmox, ZFS or LXC alarm rules.
 
+## Wattbill scrape access
+
+`TargetDown` means Prometheus cannot scrape a target. It does not prove the app
+has crashed. For Wattbill, check the scrape error, pod restarts and readiness.
+
+`kubernetes/apps/wattbill/networkpolicy.yaml` allows the
+`kube-prometheus-stack-prometheus` pods in `monitoring` to reach Wattbill's named
+`http` port, TCP 8080. The shared Traefik ingress policy still applies. Both the
+namespace and pod labels must match; other monitoring pods get no extra access.
+NetworkPolicy cannot restrict HTTP paths, so this permits the whole port, not
+just `/metrics`.
+
 ## Secrets and rotation
 
 SOPS encrypts the bot token in two Secrets, one for each consumer's namespace:
