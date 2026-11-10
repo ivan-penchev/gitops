@@ -7,5 +7,6 @@ resources:
   - namespace.yaml
   - ghcr-pull.sops.yaml
   - deployment.yaml
+  - networkpolicy.yaml
   - ingress-internal.yaml
   - ingress-public.yaml
