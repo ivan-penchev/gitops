@@ -15,10 +15,12 @@ one is available. Major updates stay separate and require manual review; no
 updates auto-merge. Minor and patch updates of the same dependency no longer
 create duplicate PRs.
 
-Renovate ignores `*.sops.yaml` and `kubernetes/clusters/homelab/flux-system/**`.
-Flux Operator and FluxInstance files are outside the live test, because it
-suspends the root Kustomization that owns them. Upgrade those through the
-[Flux transition test](flux-upgrade-test.md) and a manual rollout.
+Renovate ignores `*.sops.yaml`. The Flux Operator chart tag and the
+FluxInstance `distribution.version` share one `renovate/flux` PR that never
+auto-merges. The live test skips that branch, because it suspends the root
+Kustomization that owns those files. The
+[Flux transition test](flux-upgrade-test.md) checks the PR on kind instead, and
+you roll it out by hand after review.
 
 Terraform provider bumps get one PR per root. The live test skips them. The
 Terraform plan workflow comments on the PR instead, and you apply by hand after
