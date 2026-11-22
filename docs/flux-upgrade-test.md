@@ -200,9 +200,10 @@ succeeded.
 - The generated fixtures exclude production sync and patches deliberately; they
   cannot prove those settings survive an upgrade or that the homelab root remains
   healthy.
-- The existing [Renovate live health test](renovate-live-test.md) still rejects
-  changes under `kubernetes/clusters/homelab/`. This test does not relax that gate
-  or make the suspended-root live test suitable for controller upgrades.
+- The [Renovate live health test](renovate-live-test.md) still rejects changes
+  under `kubernetes/clusters/homelab/` and skips the `renovate/flux` branch.
+  Renovate's Flux PRs get this test only. It does not make the suspended-root
+  live test suitable for controller upgrades.
 - Production changes require a separately reviewed, manually approved rollout,
   explicit reconciliation ordering, production health checks, and out-of-band
   recovery access that does not depend on healthy Flux controllers.

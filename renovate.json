@@ -15,8 +15,7 @@
   "separateMinorPatch": false,
   "separateMultipleMajor": false,
   "ignorePaths": [
-    "**/*.sops.yaml",
-    "kubernetes/clusters/homelab/flux-system/**"
+    "**/*.sops.yaml"
   ],
   "flux": {
     "managerFilePatterns": [
@@ -38,6 +37,19 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Flux version in the FluxInstance. The flux manager reads the Operator chart tag but not spec.distribution.version.",
+      "managerFilePatterns": [
+        "/^kubernetes/clusters/homelab/flux-system/flux-instance\\.yaml$/"
+      ],
+      "matchStrings": [
+        "distribution:\\s+version:\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "fluxcd/flux2",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ],
   "github-actions": {
@@ -77,6 +89,12 @@
       "matchFileNames": ["kubernetes/apps/monitor/controllers/**"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "monitoring charts"
+    },
+    {
+      "description": "Flux Operator chart and Flux version in one PR. flux-upgrade-test.yml tests the pair on kind; the live test skips this branch. Never automerged, because these files are the cluster root.",
+      "matchFileNames": ["kubernetes/clusters/homelab/flux-system/**"],
+      "groupName": "flux",
+      "automerge": false
     },
     {
       "description": "Combine routine workflow updates without coupling them to cluster changes.",
