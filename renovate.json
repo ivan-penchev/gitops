@@ -10,7 +10,7 @@
     "renovate"
   ],
   "commitMessagePrefix": "chore(deps):",
-  "prConcurrentLimit": 5,
+  "prConcurrentLimit": 55,
   "prHourlyLimit": 0,
   "separateMinorPatch": false,
   "separateMultipleMajor": false,
