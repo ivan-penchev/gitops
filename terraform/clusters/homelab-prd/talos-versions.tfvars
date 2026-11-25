@@ -4,7 +4,7 @@
 # Kubernetes: https://www.talos.dev/latest/introduction/support-matrix/
 
 # renovate: datasource=github-releases depName=siderolabs/talos
-talos_version = "v1.14.5"
+talos_version = "v1.14.7"
 
 # Config format the provider generates. Keep the version the cluster was
 # created with. Raising it is a separate change, see docs/talos-k8s-versions.md.
