@@ -75,7 +75,7 @@ resource "kubernetes_secret_v1" "cluster_secrets_tf" {
 # from Git afterwards. Bump revision to run the bootstrap again.
 module "flux_operator_bootstrap" {
   source  = "controlplaneio-fluxcd/flux-operator-bootstrap/kubernetes"
-  version = "0.9.0"
+  version = "0.10.0"
 
   revision = 1
   gitops_resources = {
